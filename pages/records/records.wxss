@@ -1,0 +1,100 @@
+/* pages/records/records.wxss */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30rpx;
+}
+
+.page-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #333;
+}
+
+.add-btn {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 24rpx;
+  background: #e6f7ff;
+  border-radius: 32rpx;
+  color: #1890ff;
+  font-size: 26rpx;
+}
+
+.add-icon {
+  margin-right: 8rpx;
+  font-size: 32rpx;
+}
+
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.record-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.record-type {
+  padding: 8rpx 20rpx;
+  background: #e6f7ff;
+  color: #1890ff;
+  border-radius: 8rpx;
+  font-size: 24rpx;
+}
+
+.record-status {
+  font-size: 24rpx;
+}
+
+.record-status.parsed {
+  color: #52c41a;
+}
+
+.record-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-bottom: 20rpx;
+}
+
+.record-diagnosis {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.record-date {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.record-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.match-count {
+  font-size: 26rpx;
+  color: #1890ff;
+}
+
+.arrow {
+  font-size: 32rpx;
+  color: #ccc;
+}

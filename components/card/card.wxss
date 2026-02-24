@@ -1,0 +1,14 @@
+/** components/card/card.wxss **/
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.card.shadow {
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.card.border {
+  border: 1rpx solid #f0f0f0;
+}

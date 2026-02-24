@@ -1,0 +1,65 @@
+<!--pages/upload/status/status.wxml-->
+<view class="container">
+  <!-- 进度展示 -->
+  <view class="status-section" wx:if="{{status !== 'completed'}}">
+    <view class="status-icon">
+      <view class="pulse-circle"></view>
+    </view>
+    <text class="status-title">{{statusText}}</text>
+    <text class="status-desc">{{statusDesc}}</text>
+    
+    <!-- 进度条 -->
+    <view class="progress-bar">
+      <view class="progress-track">
+        <view class="progress-fill" style="width: {{progress}}%"></view>
+      </view>
+      <text class="progress-text">{{progress}}%</text>
+    </view>
+    
+    <!-- 步骤状态 -->
+    <view class="steps-list">
+      <view class="step-item {{item.completed ? 'completed' : ''}} {{item.active ? 'active' : ''}}" wx:for="{{steps}}" wx:key="name">
+        <view class="step-icon">
+          <text wx:if="{{item.completed}}">✓</text>
+          <text wx:elif="{{item.active}}">●</text>
+          <text wx:else">○</text>
+        </view>
+        <text class="step-name">{{item.name}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 解析完成 -->
+  <view class="result-section" wx:if="{{status === 'completed'}}">
+    <view class="success-header">
+      <view class="success-icon">✓</view>
+      <text class="success-title">解析完成</text>
+      <text class="success-desc">AI已成功提取病历关键信息</text>
+    </view>
+
+    <!-- 结构化结果 -->
+    <view class="result-card">
+      <view class="card-title">病历信息</view>
+      <view class="info-list">
+        <view class="info-item" wx:for="{{parsedResult}}" wx:key="label">
+          <text class="info-label">{{item.label}}</text>
+          <text class="info-value">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 操作按钮 -->
+    <view class="action-btns">
+      <button class="btn btn-default" bindtap="editResult">手动修正</button>
+      <button class="btn btn-primary" bindtap="goToMatches">查看匹配试验</button>
+    </view>
+  </view>
+
+  <!-- 错误状态 -->
+  <view class="error-section" wx:if="{{status === 'error'}}">
+    <view class="error-icon">✗</view>
+    <text class="error-title">解析失败</text>
+    <text class="error-desc">{{errorMsg}}</text>
+    <button class="btn btn-primary" bindtap="retry">重新上传</button>
+  </view>
+</view>

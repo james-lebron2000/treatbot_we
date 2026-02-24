@@ -1,0 +1,4 @@
+<!--components/card/card.wxml-->
+<view class="card {{shadow ? 'shadow' : ''}} {{border ? 'border' : ''}}" style="padding: {{padding}}rpx;">
+  <slot></slot>
+</view>

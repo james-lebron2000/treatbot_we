@@ -1,0 +1,79 @@
+<!--pages/profile/profile.wxml-->
+<view class="container">
+  <!-- 用户信息卡片 -->
+  <view class="user-card">
+    <image class="avatar" src="{{userInfo.avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill"></image>
+    <view class="user-info">
+      <text class="user-name">{{userInfo.nickName || '微信用户'}}</text>
+      <text class="user-phone">{{userPhone || '未绑定手机号'}}</text>
+    </view>
+    <view class="edit-btn" bindtap="editProfile">
+      <text>编辑</text>
+    </view>
+  </view>
+
+  <!-- 数据统计 -->
+  <view class="stats-grid">
+    <view class="stats-item" bindtap="goToRecords">
+      <text class="stats-num">{{stats.records}}</text>
+      <text class="stats-label">病历</text>
+    </view>
+    <view class="stats-item" bindtap="goToMatches">
+      <text class="stats-num">{{stats.matches}}</text>
+      <text class="stats-label">匹配</text>
+    </view>
+    <view class="stats-item">
+      <text class="stats-num">{{stats.applications}}</text>
+      <text class="stats-label">报名</text>
+    </view>
+  </view>
+
+  <!-- 功能菜单 -->
+  <view class="menu-section">
+    <view class="menu-title">我的服务</view>
+    <view class="menu-list">
+      <view class="menu-item" bindtap="goToRecords">
+        <text class="menu-icon">📋</text>
+        <text class="menu-text">我的病历</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="goToMatches">
+        <text class="menu-icon">🎯</text>
+        <text class="menu-text">匹配记录</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="goToApplications">
+        <text class="menu-icon">📝</text>
+        <text class="menu-text">报名记录</text>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 设置菜单 -->
+  <view class="menu-section">
+    <view class="menu-title">设置</view>
+    <view class="menu-list">
+      <view class="menu-item" bindtap="contactSupport">
+        <text class="menu-icon">💬</text>
+        <text class="menu-text">联系客服</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="aboutUs">
+        <text class="menu-icon">ℹ️</text>
+        <text class="menu-text">关于我们</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="showPrivacyPolicy">
+        <text class="menu-icon">🔒</text>
+        <text class="menu-text">隐私政策</text>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 版本信息 -->
+  <view class="version-info">
+    <text>海马智合 v1.0.0</text>
+  </view>
+</view>

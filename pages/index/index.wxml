@@ -1,0 +1,119 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+  <!-- 顶部横幅 -->
+  <view class="hero-section">
+    <view class="hero-content">
+      <text class="hero-title">临床试验精准匹配</text>
+      <text class="hero-subtitle">上传病历，AI自动匹配适合您的临床试验</text>
+    </view>
+    <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
+  </view>
+
+  <!-- 核心数据 -->
+  <view class="stats-section">
+    <view class="stat-item">
+      <text class="stat-number">50,000+</text>
+      <text class="stat-label">试验数据库</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-number">10,000+</text>
+      <text class="stat-label">成功匹配</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-number">98%</text>
+      <text class="stat-label">准确率</text>
+    </view>
+  </view>
+
+  <!-- 主要功能入口 -->
+  <view class="feature-section">
+    <view class="section-title">快速开始</view>
+    
+    <view class="feature-grid">
+      <view class="feature-card primary" bindtap="goToUpload">
+        <view class="feature-icon">📷</view>
+        <view class="feature-info">
+          <text class="feature-title">上传病历</text>
+          <text class="feature-desc">拍照或选择相册</text>
+        </view>
+        <view class="feature-arrow">→</view>
+      </view>
+
+      <view class="feature-card" bindtap="goToRecords">
+        <view class="feature-icon">📋</view>
+        <view class="feature-info">
+          <text class="feature-title">我的病历</text>
+          <text class="feature-desc">管理已上传病历</text>
+        </view>
+        <view class="feature-arrow">→</view>
+      </view>
+
+      <view class="feature-card" bindtap="goToMatches">
+        <view class="feature-icon">🎯</view>
+        <view class="feature-info">
+          <text class="feature-title">匹配结果</text>
+          <text class="feature-desc">查看推荐试验</text>
+        </view>
+        <view class="feature-arrow">→</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 最近匹配记录 -->
+  <view class="recent-section" wx:if="{{recentMatches.length > 0}}">
+    <view class="section-header">
+      <text class="section-title">最近匹配</text>
+      <text class="view-all" bindtap="goToMatches">查看全部</text>
+    </view>
+    
+    <view class="match-list">
+      <view class="match-item" wx:for="{{recentMatches}}" wx:key="id" bindtap="viewMatchDetail" data-id="{{item.id}}">
+        <view class="match-header">
+          <text class="match-title">{{item.trialName}}</text>
+          <view class="match-score">
+            <text class="score-value">{{item.matchScore}}%</text>
+            <text class="score-label">匹配度</text>
+          </view>
+        </view>
+        <view class="match-tags">
+          <text class="tag tag-primary">{{item.phase}}</text>
+          <text class="tag tag-success">{{item.location}}</text>
+        </view>
+        <view class="match-info">
+          <text class="info-item">适应症：{{item.indication}}</text>
+          <text class="info-item">研究机构：{{item.institution}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 流程说明 -->
+  <view class="process-section">
+    <view class="section-title">如何使用</view>
+    <view class="process-steps">
+      <view class="step">
+        <view class="step-number">1</view>
+        <text class="step-title">上传病历</text>
+        <text class="step-desc">拍照或选择病历照片</text>
+      </view>
+      <view class="step-arrow">→</view>
+      <view class="step">
+        <view class="step-number">2</view>
+        <text class="step-title">AI解析</text>
+        <text class="step-desc">自动提取关键信息</text>
+      </view>
+      <view class="step-arrow">→</view>
+      <view class="step">
+        <view class="step-number">3</view>
+        <text class="step-title">智能匹配</text>
+        <text class="step-desc">推荐适合试验</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 底部安全提示 -->
+  <view class="safety-tips">
+    <text class="tips-icon">🔒</text>
+    <text class="tips-text">您的病历信息将严格保密，仅用于试验匹配</text>
+  </view>
+</view>

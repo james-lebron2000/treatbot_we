@@ -1,0 +1,10 @@
+<!--components/loading/loading.wxml-->
+<view class="loading-container {{fullscreen ? 'fullscreen' : ''}}">
+  <view class="loading-animation">
+    <view class="loading-circle"></view>
+    <view class="loading-circle"></view>
+    <view class="loading-circle"></view>
+  </view>
+  <text class="loading-text" wx:if="{{text}}">{{text}}</text>
+  <text class="loading-text" wx:else>加载中...</text>
+</view>

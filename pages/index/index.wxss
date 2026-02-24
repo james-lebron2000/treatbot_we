@@ -1,0 +1,292 @@
+/* pages/index/index.wxss */
+.hero-section {
+  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  border-radius: 24rpx;
+  padding: 40rpx;
+  margin-bottom: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero-content {
+  flex: 1;
+}
+
+.hero-title {
+  display: block;
+  font-size: 44rpx;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 16rpx;
+}
+
+.hero-subtitle {
+  display: block;
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.5;
+}
+
+.hero-image {
+  width: 180rpx;
+  height: 180rpx;
+}
+
+/* 统计数据 */
+.stats-section {
+  display: flex;
+  justify-content: space-around;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-number {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1890ff;
+  margin-bottom: 8rpx;
+}
+
+.stat-label {
+  display: block;
+  font-size: 24rpx;
+  color: #666;
+}
+
+/* 功能区域 */
+.feature-section {
+  margin-bottom: 30rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 20rpx;
+  padding-left: 10rpx;
+}
+
+.feature-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.feature-card {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+  transition: all 0.3s;
+}
+
+.feature-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.12);
+}
+
+.feature-card.primary {
+  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+}
+
+.feature-card.primary .feature-title,
+.feature-card.primary .feature-desc {
+  color: #fff;
+}
+
+.feature-icon {
+  font-size: 48rpx;
+  margin-right: 24rpx;
+}
+
+.feature-info {
+  flex: 1;
+}
+
+.feature-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.feature-desc {
+  display: block;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.feature-arrow {
+  font-size: 36rpx;
+  color: #ccc;
+}
+
+.feature-card.primary .feature-arrow {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 最近匹配 */
+.recent-section {
+  margin-bottom: 30rpx;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+  padding-left: 10rpx;
+}
+
+.view-all {
+  font-size: 26rpx;
+  color: #1890ff;
+}
+
+.match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.match-item {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16rpx;
+}
+
+.match-title {
+  flex: 1;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+  margin-right: 20rpx;
+  line-height: 1.4;
+}
+
+.match-score {
+  text-align: center;
+}
+
+.score-value {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #52c41a;
+}
+
+.score-label {
+  display: block;
+  font-size: 20rpx;
+  color: #999;
+}
+
+.match-tags {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.match-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.info-item {
+  font-size: 26rpx;
+  color: #666;
+}
+
+/* 流程说明 */
+.process-section {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.process-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+}
+
+.step {
+  text-align: center;
+  flex: 1;
+}
+
+.step-number {
+  width: 60rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 28rpx;
+  font-weight: 600;
+  margin: 0 auto 16rpx;
+}
+
+.step-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.step-desc {
+  display: block;
+  font-size: 22rpx;
+  color: #999;
+}
+
+.step-arrow {
+  font-size: 32rpx;
+  color: #ccc;
+  padding: 0 10rpx;
+}
+
+/* 安全提示 */
+.safety-tips {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx;
+  background: #f6ffed;
+  border-radius: 12rpx;
+  margin-bottom: 30rpx;
+}
+
+.tips-icon {
+  margin-right: 12rpx;
+}
+
+.tips-text {
+  font-size: 24rpx;
+  color: #52c41a;
+}
