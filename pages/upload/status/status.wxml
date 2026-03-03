@@ -22,7 +22,7 @@
         <view class="step-icon">
           <text wx:if="{{item.completed}}">✓</text>
           <text wx:elif="{{item.active}}">●</text>
-          <text wx:else">○</text>
+          <text wx:else>○</text>
         </view>
         <text class="step-name">{{item.name}}</text>
       </view>

@@ -2,126 +2,118 @@ App({
   globalData: {
     userInfo: null,
     token: null,
-    apiBaseUrl: 'https://api.treatbot.example.com', // 生产环境替换为真实域名
-    mockMode: true // 开发模式使用模拟数据
+    apiBaseUrl: 'http://49.235.162.129',
+    allowLocalFallback: false,
+    mockMode: false,
+    systemInfo: null
   },
 
   onLaunch() {
-    console.log('Treatbot WeApp Launch')
-    
-    // 检查登录状态
-    this.checkLoginStatus()
-    
-    // 获取系统信息
-    this.getSystemInfo()
+    wx.setStorageSync('enableLocalFallback', false)
+    this.restoreSession()
+    this.collectSystemInfo()
   },
 
-  // 检查登录状态
-  checkLoginStatus() {
+  restoreSession() {
     const token = wx.getStorageSync('token')
+    const userInfo = wx.getStorageSync('userInfo')
+
     if (token) {
       this.globalData.token = token
-      this.getUserInfo()
+    }
+
+    if (userInfo) {
+      this.globalData.userInfo = userInfo
     }
   },
 
-  // 获取用户信息
-  getUserInfo() {
-    wx.getUserProfile({
-      desc: '用于完善用户资料',
-      success: (res) => {
-        this.globalData.userInfo = res.userInfo
-      }
-    })
+  collectSystemInfo() {
+    const systemInfo = {}
+
+    if (wx.getDeviceInfo) {
+      Object.assign(systemInfo, wx.getDeviceInfo())
+    }
+    if (wx.getWindowInfo) {
+      Object.assign(systemInfo, wx.getWindowInfo())
+    }
+    if (wx.getAppBaseInfo) {
+      Object.assign(systemInfo, wx.getAppBaseInfo())
+    }
+    if (wx.getSystemSetting) {
+      Object.assign(systemInfo, { systemSetting: wx.getSystemSetting() })
+    }
+    if (wx.getAppAuthorizeSetting) {
+      Object.assign(systemInfo, { authorizeSetting: wx.getAppAuthorizeSetting() })
+    }
+
+    this.globalData.systemInfo = systemInfo
   },
 
-  // 获取系统信息
-  getSystemInfo() {
-    wx.getSystemInfo({
-      success: (res) => {
-        this.globalData.systemInfo = res
-      }
-    })
+  setUserInfo(userInfo) {
+    this.globalData.userInfo = userInfo
+    wx.setStorageSync('userInfo', userInfo)
   },
 
-  // 全局登录方法
-  login() {
-    return new Promise((resolve, reject) => {
-      wx.login({
-        success: (res) => {
-          if (res.code) {
-            // 调用后端登录接口
-            this.request({
-              url: '/api/auth/weapp-login',
-              method: 'POST',
-              data: { code: res.code }
-            }).then((result) => {
-              const { token, userInfo } = result.data
-              wx.setStorageSync('token', token)
-              this.globalData.token = token
-              this.globalData.userInfo = userInfo
-              resolve(result)
-            }).catch(reject)
-          } else {
-            reject(new Error('登录失败'))
-          }
-        },
-        fail: reject
-      })
-    })
-  },
-
-  // 全局请求方法
   request(options) {
     const { token, apiBaseUrl } = this.globalData
-    
+
     return new Promise((resolve, reject) => {
       wx.request({
         url: `${apiBaseUrl}${options.url}`,
         method: options.method || 'GET',
         data: options.data || {},
+        timeout: options.timeout || 15000,
         header: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
+          'Content-Type': options.contentType || 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
         },
         success: (res) => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve(res.data)
-          } else if (res.statusCode === 401) {
-            // Token过期，重新登录
-            this.login().then(() => {
-              this.request(options).then(resolve).catch(reject)
-            }).catch(reject)
-          } else {
-            reject(new Error(res.data.message || '请求失败'))
+            return
           }
+
+          if (res.statusCode === 401) {
+            wx.removeStorageSync('token')
+            this.globalData.token = null
+            reject(new Error('登录已过期'))
+            return
+          }
+
+          reject(new Error(res.data?.message || '请求失败'))
         },
-        fail: reject
+        fail: (error) => {
+          reject(error)
+        }
       })
     })
   },
 
-  // 上传文件
   uploadFile(options) {
     const { token, apiBaseUrl } = this.globalData
-    
+
     return new Promise((resolve, reject) => {
       wx.uploadFile({
         url: `${apiBaseUrl}${options.url}`,
         filePath: options.filePath,
         name: options.name || 'file',
+        timeout: options.timeout || 30000,
         header: {
-          'Authorization': token ? `Bearer ${token}` : ''
+          Authorization: token ? `Bearer ${token}` : ''
         },
         formData: options.formData || {},
         success: (res) => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            resolve(JSON.parse(res.data))
-          } else {
-            reject(new Error('上传失败'))
+            const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+            resolve(payload)
+            return
           }
+
+          reject(new Error('上传失败'))
         },
-        fail: reject
+        fail: (error) => {
+          reject(error)
+        }
       })
     })
   }

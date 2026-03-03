@@ -93,7 +93,23 @@ globalData: {
 2. 填写 AppID（测试可使用测试号）
 3. 点击编译运行
 
-### 4. 真机调试
+### 4. H5 患者端（新增）
+项目新增 `web/` 子工程（Vue3 + Vite + TypeScript）：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+生产构建：
+
+```bash
+cd web
+npm run build
+```
+
+### 5. 真机调试
 1. 点击预览获取二维码
 2. 使用微信扫描二维码
 3. 在真机上测试功能

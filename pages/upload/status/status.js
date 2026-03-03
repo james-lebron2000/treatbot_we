@@ -36,7 +36,8 @@ Page({
   async checkStatus() {
     try {
       const res = await api.getParseStatus(this.data.fileId)
-      const { status, progress, result } = res.data
+      const payload = api.normalizePayload(res) || {}
+      const { status, progress, result } = payload
       
       // 更新步骤状态
       const steps = this.data.steps.map((step, index) => {
@@ -57,11 +58,12 @@ Page({
         completed: { text: '解析完成', desc: '' },
         error: { text: '解析失败', desc: '' }
       }
+      const currentStatus = statusMap[status] || { text: '处理中', desc: '' }
 
       this.setData({
         status,
-        statusText: statusMap[status]?.text || '处理中',
-        statusDesc: statusMap[status]?.desc || '',
+        statusText: currentStatus.text,
+        statusDesc: currentStatus.desc,
         progress,
         steps
       })
@@ -75,7 +77,7 @@ Page({
       // 解析错误
       if (status === 'error') {
         clearInterval(this.pollTimer)
-        this.setData({ errorMsg: res.data.message || '解析失败，请重试' })
+        this.setData({ errorMsg: payload.errorMsg || payload.message || '解析失败，请重试' })
       }
     } catch (error) {
       console.error('检查状态失败:', error)

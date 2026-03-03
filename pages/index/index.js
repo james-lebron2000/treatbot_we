@@ -1,94 +1,112 @@
-// pages/index/index.js
-const app = getApp()
+const api = require('../../utils/api')
+const auth = require('../../utils/auth')
+
+const pickList = (res) => {
+  if (!res) {
+    return []
+  }
+
+  const payload = api.normalizePayload(res)
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  return payload.list || payload.items || payload.records || payload.matches || payload.data || []
+}
+
+const normalizeMatch = (item) => {
+  return {
+    id: item.id || item.trialId || '',
+    trialName: item.trialName || item.name || item.title || '未命名临床试验',
+    matchScore: Number(item.matchScore || item.score || 0),
+    phase: item.phase || item.trialPhase || '待补',
+    location: item.location || item.city || '待补',
+    indication: item.indication || item.cancerType || '待补',
+    institution: item.institution || item.hospital || '待补',
+    updatedAt: item.updatedAt || item.updateTime || item.createdAt || ''
+  }
+}
 
 Page({
   data: {
     recentMatches: [],
-    loading: false
+    loading: false,
+    errorMessage: ''
   },
 
-  onLoad() {
-    this.loadRecentMatches()
+  async onLoad() {
+    await this.bootstrap()
   },
 
-  onShow() {
-    // 每次显示页面时刷新数据
-    this.loadRecentMatches()
+  async onShow() {
+    await this.loadRecentMatches()
   },
 
-  // 加载最近匹配记录
+  async bootstrap() {
+    try {
+      await auth.ensureLogin()
+      this.setData({ errorMessage: '' })
+    } catch (error) {
+      this.setData({ errorMessage: '登录失败，请稍后重试' })
+      wx.showToast({ title: '登录失败', icon: 'none' })
+      return
+    }
+
+    await this.loadRecentMatches()
+  },
+
   async loadRecentMatches() {
     this.setData({ loading: true })
-    
+
     try {
-      // 实际项目中调用API
-      // const result = await app.request({
-      //   url: '/api/matches/recent',
-      //   method: 'GET'
-      // })
-      
-      // 模拟数据
-      const mockMatches = [
-        {
-          id: '1',
-          trialName: 'PD-1抑制剂治疗晚期肺癌II期临床试验',
-          matchScore: 92,
-          phase: 'II期',
-          location: '上海',
-          indication: '非小细胞肺癌',
-          institution: '复旦大学附属肿瘤医院'
-        },
-        {
-          id: '2',
-          trialName: '新型靶向药物治疗EGFR突变肺癌研究',
-          matchScore: 85,
-          phase: 'III期',
-          location: '北京',
-          indication: 'EGFR突变阳性肺癌',
-          institution: '中国医学科学院肿瘤医院'
-        }
-      ]
-      
+      await auth.ensureLogin()
+      const res = await api.getMatches({ pageSize: 3, useDraft: false })
+      const list = pickList(res)
+      const normalized = list
+        .map(normalizeMatch)
+        .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, 3)
+
       this.setData({
-        recentMatches: mockMatches,
-        loading: false
+        recentMatches: normalized,
+        loading: false,
+        errorMessage: ''
       })
     } catch (error) {
       console.error('加载匹配记录失败:', error)
-      this.setData({ loading: false })
+      this.setData({
+        recentMatches: [],
+        loading: false,
+        errorMessage: '暂时无法加载匹配记录'
+      })
     }
   },
 
-  // 跳转到上传页面
   goToUpload() {
     wx.navigateTo({
       url: '/pages/upload/upload'
     })
   },
 
-  // 跳转到病历页面
   goToRecords() {
     wx.switchTab({
       url: '/pages/records/records'
     })
   },
 
-  // 跳转到匹配页面
   goToMatches() {
     wx.switchTab({
       url: '/pages/matches/matches'
     })
   },
 
-  // 查看匹配详情
   viewMatchDetail(e) {
     const { id } = e.currentTarget.dataset
     wx.navigateTo({
-      url: `/pages/matches/detail?id=${id}`
+      url: `/pages/matches/detail/detail?id=${id}`
     })
   },
 
-  // 下拉刷新
   async onPullDownRefresh() {
     await this.loadRecentMatches()
     wx.stopPullDownRefresh()

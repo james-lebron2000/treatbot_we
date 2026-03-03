@@ -1,0 +1,64 @@
+.trial-card {
+  margin-bottom: 20rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #262626;
+  margin-bottom: 12rpx;
+}
+
+.trial-name {
+  font-size: 34rpx;
+  color: #111;
+  line-height: 1.45;
+  margin-bottom: 10rpx;
+}
+
+.trial-meta {
+  display: block;
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.5;
+}
+
+.form-card {
+  margin-bottom: 20rpx;
+}
+
+.form-item {
+  margin-bottom: 22rpx;
+}
+
+.form-item:last-of-type {
+  margin-bottom: 12rpx;
+}
+
+.label {
+  display: block;
+  font-size: 28rpx;
+  color: #333;
+  margin-bottom: 10rpx;
+}
+
+.input {
+  height: 84rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #d9d9d9;
+  background: #fafafa;
+  padding: 0 20rpx;
+  font-size: 30rpx;
+  color: #222;
+  box-sizing: border-box;
+}
+
+.tips {
+  font-size: 24rpx;
+  color: #8c8c8c;
+  line-height: 1.6;
+}
+
+.action-bar {
+  padding-top: 4rpx;
+}
