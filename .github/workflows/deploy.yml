@@ -30,7 +30,7 @@ jobs:
     
     - name: Run tests
       working-directory: ./server
-      run: npm test || true
+      run: npm test -- --runInBand --forceExit || true
       env:
         NODE_ENV: test
 
