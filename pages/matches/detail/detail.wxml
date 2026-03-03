@@ -1,89 +1,172 @@
-<!--pages/matches/detail/detail.wxml-->
 <view class="container">
-  <!-- 头部信息 -->
-  <view class="trial-header">
-    <view class="match-score">
-      <text class="score-value">{{trial.score}}</text>
-      <text class="score-label">匹配度</text>
-    </view>
-    <view class="trial-title">{{trial.name}}</view>
-    <view class="trial-tags">
-      <text class="tag tag-primary">{{trial.phase}}</text>
-      <text class="tag tag-success">{{trial.location}}</text>
-      <text class="tag tag-warning">{{trial.type}}</text>
-    </view>
+  <view class="loading" wx:if="{{loading}}">
+    <text>试验详情加载中...</text>
   </view>
 
-  <!-- 基本信息 -->
-  <view class="info-section">
-    <view class="section-title">基本信息</view>
-    <view class="info-list">
-      <view class="info-item">
-        <text class="info-label">适应症</text>
-        <text class="info-value">{{trial.indication}}</text>
+  <view class="empty-state" wx:if="{{!loading && errorMessage}}">
+    <text>{{errorMessage}}</text>
+  </view>
+
+  <block wx:if="{{!loading && trial}}">
+    <view class="trial-header">
+      <view class="match-score">
+        <text class="score-value">{{trial.score}}</text>
+        <text class="score-label">匹配度</text>
       </view>
-      <view class="info-item">
-        <text class="info-label">研究机构</text>
-        <text class="info-value">{{trial.institution}}</text>
+      <view class="trial-title">{{trial.name}}</view>
+      <view class="trial-tags">
+        <text class="tag tag-level level-{{trial.score <= 0 ? 'pending' : (trial.score >= 80 ? 'high' : (trial.score >= 60 ? 'mid' : 'low'))}}">{{trial.matchLevel}}</text>
+        <text class="tag">{{trial.phase}}</text>
+        <text class="tag">{{trial.location}}</text>
+        <text class="tag">{{trial.type}}</text>
       </view>
-      <view class="info-item">
-        <text class="info-label">申办方</text>
-        <text class="info-value">{{trial.sponsor}}</text>
+      <text class="trial-meta" wx:if="{{trial.nctId}}">试验编号：{{trial.nctId}}</text>
+      <text class="trial-meta" wx:if="{{trial.status}}">招募状态：{{trial.status}}</text>
+    </view>
+
+    <view class="fallback-tip" wx:if="{{usingCachedData}}">
+      <text>当前详情由试验列表数据补全，建议稍后刷新获取完整入排标准。</text>
+    </view>
+
+    <view class="decision-banner tone-{{trial.decisionTone}}">
+      <text class="decision-label">综合建议</text>
+      <text class="decision-text">{{trial.decisionHint}}</text>
+    </view>
+
+    <view class="explain-section">
+      <view class="section-title">预筛解释</view>
+
+      <view class="explain-column column-hit">
+        <view class="column-title">入组命中</view>
+        <view class="column-item" wx:for="{{trial.inclusionHits}}" wx:key="index">
+          <text class="column-icon hit">✓</text>
+          <text class="column-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{trial.inclusionHits.length === 0}}">
+          <text>暂无明确命中证据</text>
+        </view>
+      </view>
+
+      <view class="explain-column column-risk">
+        <view class="column-title">排除风险</view>
+        <view class="column-item" wx:for="{{trial.exclusionRisks}}" wx:key="index">
+          <text class="column-icon risk">!</text>
+          <text class="column-text">{{item}}</text>
+        </view>
+        <view class="column-empty safe" wx:if="{{trial.exclusionRisks.length === 0}}">
+          <text>暂未识别明确排除风险</text>
+        </view>
+      </view>
+
+      <view class="explain-column column-missing">
+        <view class="column-title">缺失证据</view>
+        <view class="column-item" wx:for="{{trial.missingEvidence}}" wx:key="index">
+          <text class="column-icon missing">?</text>
+          <text class="column-text">{{item}}</text>
+        </view>
+        <view class="column-empty safe" wx:if="{{trial.missingEvidence.length === 0}}">
+          <text>关键证据基本齐全</text>
+        </view>
+        <button class="supplement-btn" wx:if="{{trial.missingEvidence.length > 0}}" bindtap="goToUpload">去补全病历</button>
       </view>
     </view>
-  </view>
 
-  <!-- 匹配理由 -->
-  <view class="reasons-section">
-    <view class="section-title">匹配理由</view>
-    <view class="reason-list">
-      <view class="reason-item" wx:for="{{trial.reasons}}" wx:key="*this">
-        <text class="reason-icon">✓</text>
-        <text class="reason-text">{{item}}</text>
+    <view class="evidence-section">
+      <view class="section-title">证据来源</view>
+      <view class="evidence-group">
+        <text class="evidence-title">入组证据片段</text>
+        <view class="evidence-item" wx:for="{{trial.hitSources}}" wx:key="index">
+          <text class="evidence-dot hit">●</text>
+          <text class="evidence-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{!trial.hitSources || trial.hitSources.length === 0}}">
+          <text>暂无可提取入组证据</text>
+        </view>
+      </view>
+
+      <view class="evidence-group">
+        <text class="evidence-title">排除风险片段</text>
+        <view class="evidence-item" wx:for="{{trial.riskSources}}" wx:key="index">
+          <text class="evidence-dot risk">●</text>
+          <text class="evidence-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{!trial.riskSources || trial.riskSources.length === 0}}">
+          <text>暂无可提取排除风险证据</text>
+        </view>
+      </view>
+
+      <view class="evidence-group">
+        <text class="evidence-title">待补证据片段</text>
+        <view class="evidence-item" wx:for="{{trial.missingSources}}" wx:key="index">
+          <text class="evidence-dot missing">●</text>
+          <text class="evidence-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{!trial.missingSources || trial.missingSources.length === 0}}">
+          <text>暂无可提取待补证据</text>
+        </view>
       </view>
     </view>
-  </view>
 
-  <!-- 研究介绍 -->
-  <view class="description-section">
-    <view class="section-title">研究介绍</view>
-    <text class="description-text">{{trial.description}}</text>
-  </view>
-
-  <!-- 入组标准 -->
-  <view class="criteria-section">
-    <view class="section-title">入选标准</view>
-    <view class="criteria-list">
-      <view class="criteria-item inclusion" wx:for="{{trial.inclusion}}" wx:key="*this">
-        <text class="criteria-icon">+</text>
-        <text class="criteria-text">{{item}}</text>
+    <view class="info-section">
+      <view class="section-title">基本信息</view>
+      <view class="info-list">
+        <view class="info-item">
+          <text class="info-label">适应症</text>
+          <text class="info-value">{{trial.indication}}</text>
+        </view>
+        <view class="info-item">
+          <text class="info-label">研究机构</text>
+          <text class="info-value">{{trial.institution}}</text>
+        </view>
+        <view class="info-item">
+          <text class="info-label">申办方</text>
+          <text class="info-value">{{trial.sponsor}}</text>
+        </view>
       </view>
     </view>
-  </view>
 
-  <!-- 排除标准 -->
-  <view class="criteria-section">
-    <view class="section-title">排除标准</view>
-    <view class="criteria-list">
-      <view class="criteria-item exclusion" wx:for="{{trial.exclusion}}" wx:key="*this">
-        <text class="criteria-icon">-</text>
-        <text class="criteria-text">{{item}}</text>
+    <view class="description-section">
+      <view class="section-title">研究介绍</view>
+      <text class="description-text">{{trial.description}}</text>
+    </view>
+
+    <view class="criteria-section">
+      <view class="section-title">入选标准</view>
+      <view class="criteria-list">
+        <view class="criteria-item inclusion" wx:for="{{trial.inclusion}}" wx:key="index">
+          <text class="criteria-icon">+</text>
+          <text class="criteria-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{trial.inclusion.length === 0}}">
+          <text>暂无入选标准文本</text>
+        </view>
       </view>
     </view>
-  </view>
 
-  <!-- 联系方式 -->
-  <view class="contact-section">
-    <view class="section-title">联系方式</view>
-    <view class="contact-info">
-      <text class="contact-name">联系人：{{trial.contact.name}}</text>
-      <text class="contact-phone" bindtap="callPhone">电话：{{trial.contact.phone}}</text>
-      <text class="contact-email">邮箱：{{trial.contact.email}}</text>
+    <view class="criteria-section">
+      <view class="section-title">排除标准</view>
+      <view class="criteria-list">
+        <view class="criteria-item exclusion" wx:for="{{trial.exclusion}}" wx:key="index">
+          <text class="criteria-icon">-</text>
+          <text class="criteria-text">{{item}}</text>
+        </view>
+        <view class="column-empty" wx:if="{{trial.exclusion.length === 0}}">
+          <text>暂无排除标准文本</text>
+        </view>
+      </view>
     </view>
-  </view>
 
-  <!-- 底部操作栏 -->
-  <view class="bottom-bar">
-    <button class="btn btn-primary btn-block" bindtap="applyTrial">立即报名</button>
-  </view>
+    <view class="contact-section">
+      <view class="section-title">联系方式</view>
+      <view class="contact-info">
+        <text class="contact-name">联系人：{{trial.contact.name}}</text>
+        <text class="contact-phone" bindtap="callPhone">电话：{{trial.contact.phoneMasked || '--'}}</text>
+        <text class="contact-email">邮箱：{{trial.contact.email}}</text>
+      </view>
+    </view>
+
+    <view class="bottom-bar">
+      <button class="btn btn-primary btn-block" bindtap="applyTrial">立即报名</button>
+    </view>
+  </block>
 </view>

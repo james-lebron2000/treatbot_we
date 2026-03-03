@@ -1,98 +1,137 @@
 const api = require('../../utils/api')
-const { getCache, setCache } = require('../../utils/cache')
-const MATCHES_CACHE_KEY = 'cache_matches'
-const REFRESH_INTERVAL = 30 * 1000
+const auth = require('../../utils/auth')
+const matchExplainer = require('../../utils/match-explainer')
+
+const pickList = (res) => {
+  const payload = api.normalizePayload(res)
+  if (!payload) {
+    return []
+  }
+  if (Array.isArray(payload)) {
+    return payload
+  }
+  return payload.list || payload.items || payload.trials || payload.matches || payload.data || payload.results || []
+}
 
 Page({
   data: {
+    recordId: '',
     matches: [],
-    highMatches: 2,
-    loading: false
+    highMatches: 0,
+    readyMatches: 0,
+    needSupplement: 0,
+    loading: false,
+    errorMessage: '',
+    lowScoreMode: false,
+    usingFallback: false,
+    fallbackMessage: ''
   },
 
-  onLoad() {
-    this.loadMatches()
-  },
-
-  onShow() {
-    const now = Date.now()
-    if (this.lastLoadedAt && now - this.lastLoadedAt > REFRESH_INTERVAL) {
-      this.loadMatches({ silent: true })
+  onLoad(options) {
+    if (options.recordId) {
+      this.setData({ recordId: options.recordId })
     }
   },
 
-  async loadMatches(options = {}) {
-    if (this.loadingPromise) {
-      return this.loadingPromise
-    }
+  async onShow() {
+    await this.loadMatches()
+  },
 
-    const { silent = false } = options
-    const cachedMatches = getCache(MATCHES_CACHE_KEY)
-    if (cachedMatches && cachedMatches.length) {
+  async loadMatches() {
+    this.setData({
+      loading: true,
+      errorMessage: '',
+      lowScoreMode: false,
+      usingFallback: false,
+      fallbackMessage: ''
+    })
+
+    try {
+      await auth.ensureLogin()
+      const storageRecordId = wx.getStorageSync('currentRecordId')
+      const recordId = this.data.recordId || storageRecordId || ''
+      const params = recordId ? { recordId } : {}
+      const patientProfile = matchExplainer.getPatientProfile()
+
+      const res = await api.getMatches(params)
+      const rawMatches = pickList(res)
+
+      const normalizedAll = rawMatches
+        .map((item, index) => matchExplainer.normalizeMatchItem(item, index))
+        .map((item) => matchExplainer.enrichMatchExplanation(item, patientProfile))
+
+      const highOrMidMatches = normalizedAll.filter((item) => item.score >= 40)
+      const lowScoreMode = highOrMidMatches.length === 0 && normalizedAll.length > 0
+      const matches = matchExplainer.sortMatchesByScoreAndTime(lowScoreMode ? normalizedAll : highOrMidMatches)
+      const highMatches = matches.filter((item) => item.score >= 80).length
+      const readyMatches = matches.filter((item) => item.exclusionRisks.length === 0 && item.missingEvidence.length <= 2).length
+      const needSupplement = matches.filter((item) => item.missingEvidence.length >= 3).length
+
       this.setData({
-        matches: cachedMatches,
-        highMatches: cachedMatches.filter(item => item.score > 80).length
+        matches,
+        highMatches,
+        readyMatches,
+        needSupplement,
+        lowScoreMode,
+        loading: false,
+        errorMessage: '',
+        usingFallback: !!res.fallback,
+        fallbackMessage: res.message || ''
+      })
+
+      if (res && res.fallback) {
+        wx.showToast({
+          title: '匹配接口异常，已使用兜底推荐',
+          icon: 'none'
+        })
+      }
+    } catch (error) {
+      console.error('加载匹配失败:', error)
+      this.setData({
+        matches: [],
+        highMatches: 0,
+        readyMatches: 0,
+        needSupplement: 0,
+        loading: false,
+        errorMessage: '暂无匹配结果，请稍后重试',
+        lowScoreMode: false,
+        usingFallback: false,
+        fallbackMessage: ''
       })
     }
-
-    if (!silent) {
-      this.setData({ loading: true })
-    }
-
-    this.loadingPromise = (async () => {
-      try {
-        const res = await api.getMatches()
-        const matches = res.data || []
-        this.setData({
-          matches,
-          highMatches: matches.filter(item => item.score > 80).length
-        })
-        setCache(MATCHES_CACHE_KEY, matches)
-        this.lastLoadedAt = Date.now()
-      } catch (error) {
-        console.error('加载匹配列表失败:', error)
-        wx.showToast({ title: '匹配数据加载失败', icon: 'none' })
-      } finally {
-        if (!silent) {
-          this.setData({ loading: false })
-        }
-        this.loadingPromise = null
-      }
-    })()
-
-    return this.loadingPromise
   },
 
   viewDetail(e) {
     const { id } = e.currentTarget.dataset
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (trial) {
+      wx.setStorageSync('selectedMatchDetail', trial)
+    }
     wx.navigateTo({ url: `/pages/matches/detail/detail?id=${id}` })
   },
 
-  async applyTrial(e) {
+  applyTrial(e) {
     const { id } = e.currentTarget.dataset
-    if (!id || this.applyingId) {
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (!trial) {
+      wx.showToast({ title: '试验信息缺失', icon: 'none' })
       return
     }
 
-    wx.showModal({
-      title: '确认报名',
-      content: '报名后研究机构将在3个工作日内与您联系，确认是否继续？',
-      success: async (res) => {
-        if (res.confirm) {
-          this.applyingId = id
-          wx.showLoading({ title: '提交中...' })
-          try {
-            await api.applyTrial({ trialId: id })
-            wx.showToast({ title: '报名成功', icon: 'success' })
-          } catch (error) {
-            console.error('报名失败:', error)
-            wx.showToast({ title: '报名失败，请稍后重试', icon: 'none' })
-          } finally {
-            this.applyingId = ''
-            wx.hideLoading()
-          }
-        }
-      }
+    wx.setStorageSync('selectedApplyTrial', trial)
+    wx.navigateTo({
+      url: `/pages/matches/apply/apply?trialId=${encodeURIComponent(trial.id)}`
     })
+  },
+
+  goToUpload() {
+    wx.navigateTo({
+      url: '/pages/upload/upload'
+    })
+  },
+
+  async onPullDownRefresh() {
+    await this.loadMatches()
+    wx.stopPullDownRefresh()
   }
 })

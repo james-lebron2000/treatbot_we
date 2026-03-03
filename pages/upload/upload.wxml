@@ -1,6 +1,4 @@
-<!--pages/upload/upload.wxml-->
 <view class="container">
-  <!-- 步骤指示器 -->
   <view class="step-indicator">
     <view class="step {{currentStep >= 1 ? 'active' : ''}}">
       <view class="step-dot">1</view>
@@ -14,79 +12,205 @@
     <view class="step-line {{currentStep >= 3 ? 'active' : ''}}"></view>
     <view class="step {{currentStep >= 3 ? 'active' : ''}}">
       <view class="step-dot">3</view>
-      <text class="step-text">匹配试验</text>
+      <text class="step-text">完善并匹配</text>
     </view>
   </view>
 
-  <!-- 步骤1: 上传病历 -->
   <view wx:if="{{currentStep === 1}}">
     <view class="upload-section">
-      <view class="upload-title">请选择病历资料</view>
-      <view class="upload-desc">支持出院小结、病理报告、影像报告、基因检测等</view>
+      <view class="upload-title">请上传全部病历资料</view>
+      <view class="upload-desc">系统会自动识别资料类型，无需手动选择</view>
 
-      <!-- 上传区域 -->
       <view class="upload-area" bindtap="chooseImage">
         <view wx:if="{{tempFiles.length === 0}}" class="upload-placeholder">
           <text class="upload-icon">📷</text>
-          <text class="upload-text">点击拍照或从相册选择</text>
-          <text class="upload-hint">支持 JPG、PNG 格式，单张不超过10MB（每次仅 1 张）</text>
+          <text class="upload-text">请选择上传方式</text>
+          <text class="upload-hint">支持 JPG、PNG、PDF，支持从聊天记录选文件</text>
         </view>
-        
-        <!-- 已选图片预览 -->
+
         <view wx:else class="image-preview-list">
           <view class="preview-item" wx:for="{{tempFiles}}" wx:key="index">
-            <image src="{{item.path}}" mode="aspectFill" bindtap="previewImage" data-index="{{index}}"></image>
+            <image
+              wx:if="{{item.fileType === 'image'}}"
+              src="{{item.path}}"
+              mode="aspectFill"
+              bindtap="previewFile"
+              data-index="{{index}}"
+            ></image>
+            <view
+              wx:else
+              class="file-preview"
+              bindtap="previewFile"
+              data-index="{{index}}"
+            >
+              <text class="file-icon">📄</text>
+              <text class="file-name">{{item.name}}</text>
+              <text class="file-type">{{item.fileType === 'pdf' ? 'PDF' : '文件'}}</text>
+            </view>
             <view class="delete-btn" catchtap="deleteImage" data-index="{{index}}">×</view>
           </view>
-          <view class="add-more" bindtap="chooseImage" wx:if="{{tempFiles.length < maxFileCount}}">
+          <view class="add-more" bindtap="chooseImage" wx:if="{{tempFiles.length < 9}}">
             <text class="add-icon">+</text>
             <text class="add-text">添加</text>
           </view>
         </view>
       </view>
 
-      <!-- 病历类型选择 -->
-      <view class="record-type-section">
-        <view class="section-label">病历类型</view>
-        <view class="type-options">
-          <view class="type-option {{selectedType === item ? 'active' : ''}}" 
-                wx:for="{{recordTypes}}" 
-                wx:key="*this"
-                bindtap="selectType"
-                data-type="{{item}}">
-            {{item}}
-          </view>
-        </view>
-      </view>
-
-      <!-- 备注 -->
       <view class="remark-section">
         <view class="section-label">备注（选填）</view>
-        <textarea class="remark-input" 
-                  placeholder="请补充说明病历情况，如：最新检查结果、当前治疗方案等"
-                  maxlength="500"
-                  bindinput="onRemarkInput"
-                  value="{{remark}}"></textarea>
+        <textarea
+          class="remark-input"
+          placeholder="补充当前治疗方案或近期检查信息"
+          maxlength="500"
+          bindinput="onRemarkInput"
+          value="{{remark}}"
+        ></textarea>
         <view class="remark-count">{{remark.length}}/500</view>
       </view>
     </view>
 
-    <!-- 上传按钮 -->
     <view class="action-bar">
-      <button class="btn btn-primary {{tempFiles.length === 0 ? 'disabled' : ''}}" 
-              bindtap="uploadFiles"
-              disabled="{{tempFiles.length === 0 || uploading}}">
-        {{uploading ? '上传中...' : '开始上传'}}
+      <button
+        class="btn btn-primary {{tempFiles.length === 0 ? 'disabled' : ''}}"
+        bindtap="uploadFiles"
+        disabled="{{tempFiles.length === 0 || uploading}}"
+      >
+        {{uploading ? '上传中...' : '上传资料'}}
       </button>
     </view>
   </view>
 
-  <!-- 提示信息 -->
+  <view wx:if="{{currentStep === 2}}" class="processing-section">
+    <view class="processing-animation">
+      <view class="animation-circle"></view>
+      <view class="animation-circle"></view>
+      <view class="animation-circle"></view>
+    </view>
+    <view class="processing-title">正在为您整理病历信息...</view>
+    <view class="processing-desc">{{processingStatus}}</view>
+
+    <view class="progress-section">
+      <view class="progress-bar">
+        <view class="progress-fill" style="{{parseProgressStyle}}"></view>
+      </view>
+      <text class="progress-text">{{parseProgress}}%</text>
+    </view>
+
+    <view class="parse-steps">
+      <view class="parse-step {{parseStep >= 1 ? 'completed' : ''}}">
+        <text class="step-icon">{{parseStep >= 1 ? '✓' : '○'}}</text>
+        <text class="step-name">OCR文字识别</text>
+      </view>
+      <view class="parse-step {{parseStep >= 2 ? 'completed' : ''}}">
+        <text class="step-icon">{{parseStep >= 2 ? '✓' : '○'}}</text>
+        <text class="step-name">医疗信息抽取</text>
+      </view>
+      <view class="parse-step {{parseStep >= 3 ? 'completed' : ''}}">
+        <text class="step-icon">{{parseStep >= 3 ? '✓' : '○'}}</text>
+        <text class="step-name">结构化病历</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{currentStep === 3}}" class="result-section">
+    <view class="result-header">
+      <view class="success-icon">✓</view>
+      <view class="success-title">解析完成</view>
+      <view class="success-desc">病历关键信息已提取，补全后可提升匹配准确率</view>
+    </view>
+
+    <view class="summary-card">
+      <view class="summary-header">
+        <text class="summary-title">关键入组信息完整度</text>
+        <text class="summary-score">{{structuredSummary.completeness}}%</text>
+      </view>
+      <view class="summary-progress-track">
+        <view class="summary-progress-fill" style="{{summaryProgressStyle}}"></view>
+      </view>
+      <view class="summary-metrics">
+        <text class="summary-metric">必填已完成 {{structuredSummary.completedRequired}} / {{structuredSummary.requiredTotal}}</text>
+        <text class="summary-metric warning" wx:if="{{structuredSummary.missingRequired > 0}}">仍缺 {{structuredSummary.missingRequired}} 项</text>
+        <text class="summary-metric success" wx:else>必填信息齐全</text>
+      </view>
+      <text class="summary-note">重点核对：诊断分期、ECOG、病理类型、基因、既往治疗、血液/肝肾功能、感染与妊娠状态</text>
+    </view>
+
+    <view class="structured-sections">
+      <view class="structured-section-card" wx:for="{{parsedSections}}" wx:key="key" wx:for-item="section">
+        <view class="structured-section-head">
+          <text class="structured-section-title">{{section.title}}</text>
+          <text class="structured-section-count">{{section.filledCount}}/{{section.totalCount}} 已填</text>
+        </view>
+        <view
+          class="structured-field {{field.isMissing ? 'is-missing' : ''}} {{fieldIndex === 0 ? 'first-row' : ''}}"
+          wx:for="{{section.fields}}"
+          wx:key="key"
+          wx:for-item="field"
+          wx:for-index="fieldIndex"
+        >
+          <view class="structured-field-left">
+            <text class="structured-field-label">{{field.label}}</text>
+            <view class="structured-field-tags">
+              <text class="field-tag required" wx:if="{{field.required}}">必填</text>
+              <text class="field-tag missing" wx:if="{{field.isMissing}}">待补</text>
+            </view>
+          </view>
+          <text class="structured-field-value">{{field.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view id="gapSection" class="gap-section" wx:if="{{missingFields.length > 0}}">
+      <view class="gap-title">请补全关键字段（{{missingFields.length}}项）</view>
+      <view class="gap-item" wx:for="{{missingFields}}" wx:key="key" wx:for-item="field">
+        <view class="gap-label">{{field.label}}</view>
+
+        <view wx:if="{{field.type === 'select'}}" class="gap-options">
+          <view
+            class="gap-option {{field.currentValue === option ? 'active' : ''}}"
+            wx:for="{{field.options}}"
+            wx:key="*this"
+            wx:for-item="option"
+            bindtap="selectGapOption"
+            data-key="{{field.key}}"
+            data-value="{{option}}"
+          >
+            {{option}}
+          </view>
+        </view>
+
+        <input
+          wx:elif="{{field.type === 'number'}}"
+          class="gap-input"
+          type="number"
+          placeholder="请输入{{field.label}}"
+          value="{{field.currentValue}}"
+          bindinput="onGapInput"
+          data-key="{{field.key}}"
+        />
+
+        <input
+          wx:else
+          class="gap-input"
+          placeholder="请输入{{field.label}}"
+          value="{{field.currentValue}}"
+          bindinput="onGapInput"
+          data-key="{{field.key}}"
+        />
+      </view>
+    </view>
+
+    <view class="action-bar">
+      <button class="btn btn-default" bindtap="editResult">确认补充完成</button>
+      <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">开始匹配</button>
+    </view>
+  </view>
+
   <view class="tips-section">
     <view class="tips-title">💡 上传小贴士</view>
     <view class="tips-list">
       <text class="tip-item">• 确保照片清晰，文字可辨认</text>
-      <text class="tip-item">• 每次上传 1 张病历图片，可重复上传</text>
+      <text class="tip-item">• 建议上传完整的出院小结或诊断证明</text>
       <text class="tip-item">• 如有基因检测报告，请一并上传</text>
       <text class="tip-item">• 所有资料仅用于试验匹配，严格保密</text>
     </view>

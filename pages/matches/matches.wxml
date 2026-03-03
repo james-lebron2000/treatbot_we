@@ -1,13 +1,11 @@
-<!--pages/matches/matches.wxml-->
 <view class="container">
   <view class="page-header">
     <text class="page-title">试验匹配</text>
-    <view class="filter-btn">
-      <text>筛选</text>
+    <view class="filter-btn" bindtap="loadMatches">
+      <text>刷新</text>
     </view>
   </view>
 
-  <!-- 匹配统计 -->
   <view class="match-stats">
     <view class="stat-item">
       <text class="stat-value">{{matches.length}}</text>
@@ -15,34 +13,99 @@
     </view>
     <view class="stat-item">
       <text class="stat-value">{{highMatches}}</text>
-      <text class="stat-label">高匹配度(>80%)</text>
+      <text class="stat-label">高匹配度(>=80%)</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-value">{{readyMatches}}</text>
+      <text class="stat-label">可优先预筛</text>
     </view>
   </view>
 
-  <!-- 匹配列表 -->
-  <view class="matches-list">
+  <view class="score-rule-tip">
+    <text>默认优先展示匹配分数 ≥ 40 的试验；若无40分以上结果，将自动展示低分候选。</text>
+  </view>
+
+  <view class="score-fallback-tip" wx:if="{{lowScoreMode}}">
+    <text>当前暂无40分以上结果，已展示低分候选供人工预筛。</text>
+  </view>
+
+  <view class="supplement-tip" wx:if="{{!loading && needSupplement > 0}}">
+    <text class="supplement-text">有 {{needSupplement}} 个试验因“缺失证据”较多，建议先补全病历再评估。</text>
+    <button class="supplement-btn" bindtap="goToUpload">去补全病历</button>
+  </view>
+
+  <view class="fallback-tip" wx:if="{{usingFallback}}">
+    <text>{{fallbackMessage || '当前使用本地推荐结果（后端匹配接口未就绪）'}}</text>
+  </view>
+
+  <view class="loading" wx:if="{{loading}}">
+    <text>正在加载临床试验...</text>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && errorMessage}}">
+    <text>{{errorMessage}}</text>
+  </view>
+
+  <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
       <view class="match-score-badge">
         <text class="score">{{item.score}}%</text>
         <text class="label">匹配度</text>
       </view>
-      
+
       <view class="match-content">
         <text class="match-title">{{item.name}}</text>
         <view class="match-tags">
+          <text class="tag tag-level level-{{item.score >= 80 ? 'high' : (item.score >= 60 ? 'mid' : 'low')}}">{{item.matchLevel}}</text>
           <text class="tag tag-primary">{{item.phase}}</text>
           <text class="tag tag-success">{{item.location}}</text>
           <text class="tag tag-warning">{{item.type}}</text>
         </view>
-        <text class="match-indication">适应症：{{item.indication}}</text>
-        <text class="match-institution">{{item.institution}}</text>
+        <text class="match-indication">癌种/适应症：{{item.indication}}</text>
+        <text class="match-institution">研究机构：{{item.institution}}</text>
+        <text class="match-meta" wx:if="{{item.nctId}}">试验编号：{{item.nctId}}</text>
+        <text class="match-meta" wx:if="{{item.status}}">招募状态：{{item.status}}</text>
+        <text class="match-summary" wx:if="{{item.inclusionSummary}}">入组摘要：{{item.inclusionSummary}}</text>
+        <text class="match-summary" wx:if="{{item.exclusionSummary}}">排除摘要：{{item.exclusionSummary}}</text>
       </view>
 
-      <view class="match-reasons">
-        <view class="reason-title">匹配理由：</view>
-        <view class="reason-item" wx:for="{{item.reasons}}" wx:key="*this" wx:for-item="reason">
-          <text class="reason-icon">✓</text>
-          <text>{{reason}}</text>
+      <view class="decision-banner tone-{{item.decisionTone}}">
+        <text class="decision-label">综合建议</text>
+        <text class="decision-text">{{item.decisionHint}}</text>
+      </view>
+
+      <view class="explain-board">
+        <view class="explain-column column-hit">
+          <view class="column-title">入组命中</view>
+          <view class="column-item" wx:for="{{item.inclusionHits}}" wx:key="index" wx:for-item="hit">
+            <text class="column-icon hit">✓</text>
+            <text class="column-text">{{hit}}</text>
+          </view>
+          <view class="column-empty" wx:if="{{item.inclusionHits.length === 0}}">
+            <text>暂无明确命中证据</text>
+          </view>
+        </view>
+
+        <view class="explain-column column-risk">
+          <view class="column-title">排除风险</view>
+          <view class="column-item" wx:for="{{item.exclusionRisks}}" wx:key="index" wx:for-item="risk">
+            <text class="column-icon risk">!</text>
+            <text class="column-text">{{risk}}</text>
+          </view>
+          <view class="column-empty safe" wx:if="{{item.exclusionRisks.length === 0}}">
+            <text>暂未识别明确排除风险</text>
+          </view>
+        </view>
+
+        <view class="explain-column column-missing">
+          <view class="column-title">缺失证据</view>
+          <view class="column-item" wx:for="{{item.missingEvidence}}" wx:key="index" wx:for-item="missing">
+            <text class="column-icon missing">?</text>
+            <text class="column-text">{{missing}}</text>
+          </view>
+          <view class="column-empty safe" wx:if="{{item.missingEvidence.length === 0}}">
+            <text>关键证据基本齐全</text>
+          </view>
         </view>
       </view>
 
@@ -51,5 +114,10 @@
         <button class="btn btn-primary" bindtap="applyTrial" data-id="{{item.id}}">立即报名</button>
       </view>
     </view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && !errorMessage && matches.length === 0}}">
+    <text>当前病历暂无可匹配试验</text>
+    <button class="btn btn-default mt-30" bindtap="loadMatches">重新获取</button>
   </view>
 </view>

@@ -76,6 +76,11 @@
   color: #333;
 }
 
+.record-stage {
+  font-size: 26rpx;
+  color: #666;
+}
+
 .record-date {
   font-size: 24rpx;
   color: #999;
@@ -92,6 +97,12 @@
 .match-count {
   font-size: 26rpx;
   color: #1890ff;
+}
+
+.gap-hint {
+  font-size: 24rpx;
+  color: #fa8c16;
+  margin-left: 12rpx;
 }
 
 .arrow {

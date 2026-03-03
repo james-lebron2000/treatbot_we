@@ -1,10 +1,6 @@
 // pages/upload/status/status.js
 const api = require('../../../utils/api')
 
-const POLL_INTERVAL = 1500
-const MAX_POLL_DURATION = 5 * 60 * 1000
-const MAX_CONSECUTIVE_FAILURES = 3
-
 Page({
   data: {
     fileId: '',
@@ -23,77 +19,25 @@ Page({
   },
 
   onLoad(options) {
-    if (!options.fileId) {
-      this.setData({
-        status: 'error',
-        errorMsg: '缺少 fileId，无法查询解析状态'
-      })
-      return
-    }
-    this.setData({ fileId: options.fileId })
-    this.startPolling()
-  },
-
-  onHide() {
-    this.stopPolling()
-  },
-
-  onShow() {
-    if (this.data.fileId && this.data.status !== 'completed' && this.data.status !== 'error') {
+    if (options.fileId) {
+      this.setData({ fileId: options.fileId })
       this.startPolling()
     }
   },
 
   // 开始轮询解析状态
   startPolling() {
-    if (!this.data.fileId) {
-      return
-    }
-    this.stopPolling()
-    this.isPolling = true
-    this.isChecking = false
-    this.pollStartAt = Date.now()
-    this.consecutiveFailures = 0
-    this.scheduleNextPoll()
-  },
-
-  scheduleNextPoll() {
-    if (!this.isPolling) {
-      return
-    }
-
-    this.pollTimer = setTimeout(async () => {
-      if (Date.now() - this.pollStartAt > MAX_POLL_DURATION) {
-        this.stopPolling()
-        this.setData({
-          status: 'error',
-          errorMsg: '解析超时，请稍后在病历列表查看结果'
-        })
-        return
-      }
-      await this.checkStatus()
-      this.scheduleNextPoll()
-    }, POLL_INTERVAL)
-  },
-
-  stopPolling() {
-    this.isPolling = false
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer)
-      this.pollTimer = null
-    }
+    this.pollTimer = setInterval(() => {
+      this.checkStatus()
+    }, 1000)
   },
 
   // 检查解析状态
   async checkStatus() {
-    if (this.isChecking || !this.data.fileId) {
-      return
-    }
-    this.isChecking = true
     try {
       const res = await api.getParseStatus(this.data.fileId)
-      const { status, progress, result } = res.data
-      this.consecutiveFailures = 0
+      const payload = api.normalizePayload(res) || {}
+      const { status, progress, result } = payload
       
       // 更新步骤状态
       const steps = this.data.steps.map((step, index) => {
@@ -114,35 +58,29 @@ Page({
         completed: { text: '解析完成', desc: '' },
         error: { text: '解析失败', desc: '' }
       }
+      const currentStatus = statusMap[status] || { text: '处理中', desc: '' }
 
       this.setData({
         status,
-        statusText: statusMap[status]?.text || '处理中',
-        statusDesc: statusMap[status]?.desc || '',
+        statusText: currentStatus.text,
+        statusDesc: currentStatus.desc,
         progress,
         steps
       })
 
       // 解析完成
       if (status === 'completed' && result) {
-        this.stopPolling()
+        clearInterval(this.pollTimer)
         this.formatResult(result)
       }
 
       // 解析错误
       if (status === 'error') {
-        this.stopPolling()
-        this.setData({ errorMsg: res.data.message || '解析失败，请重试' })
+        clearInterval(this.pollTimer)
+        this.setData({ errorMsg: payload.errorMsg || payload.message || '解析失败，请重试' })
       }
     } catch (error) {
       console.error('检查状态失败:', error)
-      this.consecutiveFailures += 1
-      if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        this.stopPolling()
-        this.setData({ errorMsg: '网络异常，请稍后重试', status: 'error' })
-      }
-    } finally {
-      this.isChecking = false
     }
   },
 
@@ -174,6 +112,8 @@ Page({
   },
 
   onUnload() {
-    this.stopPolling()
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+    }
   }
 })
