@@ -1,0 +1,55 @@
+<view class="container">
+  <!-- 跳过按钮 -->
+  <view class="skip-btn" bindtap="skipGuide" wx:if="{{currentStep < steps.length - 1}}">
+    <text>跳过</text>
+  </view>
+
+  <!-- 引导内容 -->
+  <swiper class="guide-swiper" current="{{currentStep}}" bindchange="onSwiperChange">
+    <swiper-item wx:for="{{steps}}" wx:key="index">
+      <view class="guide-item">
+        <image class="guide-image" src="{{item.image}}" mode="aspectFit"></image>
+        <view class="guide-text">
+          <text class="guide-title">{{item.title}}</text>
+          <text class="guide-desc">{{item.desc}}</text>
+        </view>
+      </view>
+    </swiper-item>
+  </swiper>
+
+  <!-- 指示器 -->
+  <view class="indicator">
+    <view 
+      wx:for="{{steps}}" 
+      wx:key="index"
+      class="indicator-dot {{index === currentStep ? 'active' : ''}}"
+      bindtap="onIndicatorTap"
+      data-index="{{index}}"
+    ></view>
+  </view>
+
+  <!-- 按钮区域 -->
+  <view class="button-area">
+    <button 
+      class="btn btn-primary" 
+      bindtap="nextStep"
+      wx:if="{{currentStep === steps.length - 1}}"
+    >
+      开始使用
+    </button>
+    <button 
+      class="btn btn-primary" 
+      bindtap="nextStep"
+      wx:else
+    >
+      下一步
+    </button>
+    <button 
+      class="btn btn-default" 
+      bindtap="prevStep"
+      wx:if="{{currentStep > 0}}"
+    >
+      上一步
+    </button>
+  </view>
+</view>

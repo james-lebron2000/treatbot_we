@@ -1,12 +1,18 @@
 {
   "pages": [
+    "pages/guide/guide",
     "pages/index/index",
     "pages/upload/upload",
     "pages/upload/status/status",
     "pages/records/records",
+    "pages/records/detail/detail",
     "pages/matches/matches",
     "pages/matches/detail/detail",
-    "pages/profile/profile"
+    "pages/search/search",
+    "pages/profile/profile",
+    "pages/profile/applications/applications",
+    "pages/profile/about/about",
+    "pages/profile/privacy/privacy"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -49,13 +55,15 @@
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents",
+  "networkTimeout": {
+    "request": 15000,
+    "uploadFile": 30000,
+    "downloadFile": 30000,
+    "connectSocket": 15000
+  },
   "permission": {
     "scope.camera": {
       "desc": "用于拍摄病历照片"
-    },
-    "scope.album": {
-      "desc": "用于选择病历照片"
     }
-  },
-  "requiredBackgroundModes": ["audio"]
+  }
 }

@@ -1,4 +1,30 @@
 /* pages/index/index.wxss */
+
+/* 搜索区域 */
+.search-section {
+  margin-bottom: 30rpx;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 36rpx;
+  padding: 20rpx 30rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.search-icon {
+  font-size: 32rpx;
+  margin-right: 16rpx;
+  color: #999;
+}
+
+.search-placeholder {
+  font-size: 28rpx;
+  color: #999;
+}
+
 .hero-section {
   background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
   border-radius: 24rpx;

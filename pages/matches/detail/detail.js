@@ -48,7 +48,7 @@ Page({
           wx.showLoading({ title: '提交中...' })
           
           try {
-            const result = await api.applyTrial({ trialId })
+            await api.applyTrial({ trialId })
             
             wx.showToast({
               title: '报名成功',
@@ -57,7 +57,7 @@ Page({
             
             // 跳转到报名记录
             setTimeout(() => {
-              wx.navigateTo({ url: '/pages/profile/applications' })
+              wx.navigateTo({ url: '/pages/profile/applications/applications' })
             }, 1500)
           } catch (error) {
             wx.showToast({ title: '报名失败', icon: 'none' })

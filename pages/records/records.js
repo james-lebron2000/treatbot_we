@@ -1,26 +1,51 @@
-// pages/records/records.js
+const api = require('../../utils/api')
+const REFRESH_INTERVAL = 20 * 1000
+
 Page({
   data: {
-    records: [
-      {
-        id: '1',
-        type: '出院小结',
-        diagnosis: '非小细胞肺癌 IV期',
-        status: 'parsed',
-        statusText: '已解析',
-        uploadTime: '2024-02-24',
-        matchCount: 3
-      },
-      {
-        id: '2',
-        type: '基因检测',
-        diagnosis: 'EGFR 19del 突变',
-        status: 'parsed',
-        statusText: '已解析',
-        uploadTime: '2024-02-20',
-        matchCount: 5
+    records: [],
+    loading: false
+  },
+
+  onLoad() {
+    this.loadRecords()
+  },
+
+  onShow() {
+    const now = Date.now()
+    if (this.lastLoadedAt && now - this.lastLoadedAt > REFRESH_INTERVAL) {
+      this.loadRecords({ silent: true })
+    }
+  },
+
+  async loadRecords(options = {}) {
+    if (this.loadingPromise) {
+      return this.loadingPromise
+    }
+    const { silent = false } = options
+
+    if (!silent) {
+      this.setData({ loading: true })
+    }
+
+    this.loadingPromise = (async () => {
+      try {
+        const res = await api.getMedicalRecords()
+        const records = res.data || []
+        this.setData({ records })
+        this.lastLoadedAt = Date.now()
+      } catch (error) {
+        console.error('加载病历失败:', error)
+        wx.showToast({ title: '病历加载失败', icon: 'none' })
+      } finally {
+        if (!silent) {
+          this.setData({ loading: false })
+        }
+        this.loadingPromise = null
       }
-    ]
+    })()
+
+    return this.loadingPromise
   },
 
   goToUpload() {
@@ -29,6 +54,6 @@ Page({
 
   viewRecord(e) {
     const { id } = e.currentTarget.dataset
-    wx.navigateTo({ url: `/pages/records/detail?id=${id}` })
+    wx.navigateTo({ url: `/pages/records/detail/detail?id=${id}` })
   }
 })

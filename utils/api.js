@@ -1,108 +1,246 @@
 /**
  * API 请求封装
- * 统一处理所有后端接口请求
+ * 统一处理后端接口请求、环境配置和错误处理
  */
 
-const app = getApp()
+const DEFAULT_TIMEOUT = 15000
+const LOCAL_HTTP_REG = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
 
-// API 基础配置
 const API_CONFIG = {
-  // 开发环境
-  dev: {
-    baseUrl: 'http://localhost:3000',
+  develop: {
+    baseUrl: 'http://127.0.0.1:3000',
     mockMode: true
   },
-  // 生产环境
-  prod: {
+  trial: {
+    baseUrl: 'https://api.treatbot.example.com',
+    mockMode: false
+  },
+  release: {
     baseUrl: 'https://api.treatbot.example.com',
     mockMode: false
   }
 }
 
-// 当前环境
-const ENV = 'dev'
-const { baseUrl, mockMode } = API_CONFIG[ENV]
+const resolveEnv = () => {
+  try {
+    const accountInfo = wx.getAccountInfoSync()
+    const env = accountInfo && accountInfo.miniProgram && accountInfo.miniProgram.envVersion
+    return env || 'develop'
+  } catch (error) {
+    return 'develop'
+  }
+}
 
-/**
- * 通用请求方法
- * @param {Object} options - 请求配置
- * @returns {Promise} 请求结果
- */
-const request = (options) => {
+let runtimeEnv = resolveEnv()
+
+const setRuntimeEnv = (env) => {
+  if (API_CONFIG[env]) {
+    runtimeEnv = env
+  }
+}
+
+const getRuntimeConfig = () => {
+  return API_CONFIG[runtimeEnv] || API_CONFIG.develop
+}
+
+const isMockMode = () => getRuntimeConfig().mockMode
+
+const isSecureBaseUrl = (baseUrl) => {
+  return /^https:\/\//.test(baseUrl) || LOCAL_HTTP_REG.test(baseUrl)
+}
+
+const createRequestId = () => {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+const createNonce = () => {
+  return Math.random().toString(36).slice(2, 14)
+}
+
+const buildHeaders = (method, token) => {
+  const timestamp = String(Date.now())
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': token ? `Bearer ${token}` : '',
+    'X-Request-Id': createRequestId(),
+    'X-Timestamp': timestamp,
+    'X-Nonce': createNonce(),
+    'X-Client-Platform': 'wechat-miniprogram',
+    'X-HTTP-Method': method
+  }
+}
+
+const normalizeErrorMessage = (data, fallback) => {
+  if (!data) {
+    return fallback
+  }
+
+  if (typeof data === 'string') {
+    return data
+  }
+
+  return data.message || data.msg || fallback
+}
+
+const isBusinessSuccess = (data) => {
+  if (!data || typeof data !== 'object' || !Object.prototype.hasOwnProperty.call(data, 'code')) {
+    return true
+  }
+  return data.code === 0 || data.code === '0'
+}
+
+const request = (options = {}) => {
+  const { baseUrl } = getRuntimeConfig()
+
+  if (!options.url) {
+    return Promise.reject(new Error('请求地址不能为空'))
+  }
+
+  if (!isSecureBaseUrl(baseUrl)) {
+    return Promise.reject(new Error('不安全的 API 地址，请使用 HTTPS'))
+  }
+
+  const method = (options.method || 'GET').toUpperCase()
+  const token = wx.getStorageSync('token')
+  const headers = {
+    ...buildHeaders(method, token),
+    ...(options.header || {})
+  }
+
   return new Promise((resolve, reject) => {
-    const token = wx.getStorageSync('token')
-    
     wx.request({
       url: `${baseUrl}${options.url}`,
-      method: options.method || 'GET',
+      method,
       data: options.data || {},
-      header: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
-      },
+      timeout: options.timeout || DEFAULT_TIMEOUT,
+      header: headers,
       success: (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data)
-        } else if (res.statusCode === 401) {
-          // Token 过期，重新登录
+        const { statusCode, data } = res
+
+        if (statusCode >= 200 && statusCode < 300) {
+          if (!isBusinessSuccess(data)) {
+            reject(new Error(normalizeErrorMessage(data, '业务请求失败')))
+            return
+          }
+          resolve(data)
+          return
+        }
+
+        if (statusCode === 401) {
           wx.removeStorageSync('token')
           wx.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
           reject(new Error('Unauthorized'))
-        } else {
-          reject(new Error(res.data.message || '请求失败'))
+          return
         }
+
+        reject(new Error(normalizeErrorMessage(data, `请求失败(${statusCode})`)))
       },
       fail: (err) => {
         console.error('请求失败:', err)
-        reject(new Error('网络请求失败'))
+        reject(new Error('网络请求失败，请检查网络后重试'))
       }
     })
   })
 }
 
-/**
- * 文件上传
- * @param {Object} options - 上传配置
- * @returns {Promise} 上传结果
- */
-const uploadFile = (options) => {
+const uploadFile = (options = {}) => {
+  const { baseUrl } = getRuntimeConfig()
+
+  if (!options.url || !options.filePath) {
+    return Promise.reject(new Error('上传参数不完整'))
+  }
+
+  if (!isSecureBaseUrl(baseUrl)) {
+    return Promise.reject(new Error('不安全的 API 地址，请使用 HTTPS'))
+  }
+
+  const token = wx.getStorageSync('token')
+  const headers = {
+    'Authorization': token ? `Bearer ${token}` : '',
+    'X-Request-Id': createRequestId(),
+    'X-Timestamp': String(Date.now()),
+    'X-Nonce': createNonce()
+  }
+
   return new Promise((resolve, reject) => {
-    const token = wx.getStorageSync('token')
-    
     wx.uploadFile({
       url: `${baseUrl}${options.url}`,
       filePath: options.filePath,
       name: options.name || 'file',
       header: {
-        'Authorization': token ? `Bearer ${token}` : ''
+        ...headers,
+        ...(options.header || {})
       },
       formData: options.formData || {},
+      timeout: options.timeout || 30000,
       success: (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(JSON.parse(res.data))
-        } else {
-          reject(new Error('上传失败'))
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`上传失败(${res.statusCode})`))
+          return
+        }
+
+        try {
+          const data = JSON.parse(res.data)
+          if (!isBusinessSuccess(data)) {
+            reject(new Error(normalizeErrorMessage(data, '上传业务失败')))
+            return
+          }
+          resolve(data)
+        } catch (error) {
+          reject(new Error('上传返回数据格式错误'))
         }
       },
-      fail: reject
+      fail: (err) => {
+        console.error('上传失败:', err)
+        reject(new Error('文件上传失败，请稍后重试'))
+      }
     })
   })
 }
 
+const MOCK_TRIALS = [
+  {
+    id: '1',
+    name: 'PD-1抑制剂联合化疗治疗晚期非小细胞肺癌II期临床试验',
+    score: 92,
+    phase: 'II期',
+    location: '上海',
+    type: '干预性研究',
+    indication: '非小细胞肺癌（EGFR突变阳性）',
+    institution: '复旦大学附属肿瘤医院',
+    reasons: [
+      '诊断为非小细胞肺癌，符合入组条件',
+      'EGFR 19del突变阳性，符合分子标志物要求',
+      '既往化疗2周期，符合治疗线数要求'
+    ]
+  },
+  {
+    id: '2',
+    name: '第三代EGFR-TKI治疗耐药后肺癌III期临床试验',
+    score: 85,
+    phase: 'III期',
+    location: '北京',
+    type: '干预性研究',
+    indication: 'EGFR T790M突变阳性肺癌',
+    institution: '中国医学科学院肿瘤医院',
+    reasons: [
+      'EGFR突变阳性，符合分子标志物要求',
+      '无脑转移，符合入组标准',
+      'ECOG评分预计0-1分'
+    ]
+  }
+]
+
+const mockParseProgress = {}
+
 // ==================== 认证相关 API ====================
 
-/**
- * 微信登录
- * @param {string} code - 微信登录 code
- * @returns {Promise} 登录结果
- */
 const login = (code) => {
-  if (mockMode) {
-    // 模拟登录
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: {
-        token: 'mock_token_' + Date.now(),
+        token: `mock_token_${Date.now()}`,
         userInfo: {
           id: '1',
           nickName: '微信用户',
@@ -111,7 +249,7 @@ const login = (code) => {
       }
     })
   }
-  
+
   return request({
     url: '/api/auth/weapp-login',
     method: 'POST',
@@ -121,23 +259,19 @@ const login = (code) => {
 
 // ==================== 病历相关 API ====================
 
-/**
- * 上传病历文件
- * @param {Object} params - 上传参数
- * @returns {Promise} 上传结果
- */
 const uploadMedicalRecord = (params) => {
-  if (mockMode) {
-    // 模拟上传
+  if (isMockMode()) {
+    const fileId = `file_${Date.now()}`
+    mockParseProgress[fileId] = 0
     return Promise.resolve({
       code: 0,
       data: {
-        fileId: 'file_' + Date.now(),
+        fileId,
         url: params.filePath
       }
     })
   }
-  
+
   return uploadFile({
     url: '/api/medical/upload',
     filePath: params.filePath,
@@ -149,46 +283,51 @@ const uploadMedicalRecord = (params) => {
   })
 }
 
-/**
- * 获取解析状态
- * @param {string} fileId - 文件ID
- * @returns {Promise} 解析状态
- */
 const getParseStatus = (fileId) => {
-  if (mockMode) {
-    // 模拟解析状态（渐进式）
-    const progress = Math.floor(Math.random() * 100)
-    const status = progress < 30 ? 'uploading' : progress < 60 ? 'parsing' : progress < 90 ? 'analyzing' : 'completed'
-    
+  if (isMockMode()) {
+    const currentProgress = mockParseProgress[fileId] || 0
+    const nextProgress = Math.min(100, currentProgress + Math.floor(Math.random() * 20 + 8))
+    mockParseProgress[fileId] = nextProgress
+
+    const status =
+      nextProgress < 25
+        ? 'uploading'
+        : nextProgress < 55
+        ? 'parsing'
+        : nextProgress < 85
+        ? 'analyzing'
+        : nextProgress < 100
+        ? 'structuring'
+        : 'completed'
+
     return Promise.resolve({
       code: 0,
       data: {
         fileId,
         status,
-        progress,
-        result: progress >= 100 ? {
-          diagnosis: '非小细胞肺癌',
-          stage: 'IV期',
-          geneMutation: 'EGFR 19del',
-          treatment: '化疗2周期',
-          ecog: 1
-        } : null
+        progress: nextProgress,
+        result:
+          nextProgress === 100
+            ? {
+                diagnosis: '非小细胞肺癌',
+                stage: 'IV期',
+                geneMutation: 'EGFR 19del',
+                treatment: '化疗2周期',
+                ecog: 1
+              }
+            : null
       }
     })
   }
-  
+
   return request({
-    url: `/api/medical/parse-status?fileId=${fileId}`,
+    url: `/api/medical/parse-status?fileId=${encodeURIComponent(fileId)}`,
     method: 'GET'
   })
 }
 
-/**
- * 获取病历列表
- * @returns {Promise} 病历列表
- */
 const getMedicalRecords = () => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: [
@@ -213,20 +352,15 @@ const getMedicalRecords = () => {
       ]
     })
   }
-  
+
   return request({
     url: '/api/medical/records',
     method: 'GET'
   })
 }
 
-/**
- * 获取病历详情
- * @param {string} id - 病历ID
- * @returns {Promise} 病历详情
- */
 const getMedicalRecordDetail = (id) => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: {
@@ -238,64 +372,28 @@ const getMedicalRecordDetail = (id) => {
         treatment: '化疗2周期',
         status: 'parsed',
         uploadTime: '2024-02-24',
-        images: ['/images/mock/record1.jpg']
+        images: []
       }
     })
   }
-  
+
   return request({
-    url: `/api/medical/records/${id}`,
+    url: `/api/medical/records/${encodeURIComponent(id)}`,
     method: 'GET'
   })
 }
 
 // ==================== 匹配相关 API ====================
 
-/**
- * 获取匹配试验列表
- * @param {Object} params - 查询参数
- * @returns {Promise} 匹配列表
- */
 const getMatches = (params = {}) => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
-      data: [
-        {
-          id: '1',
-          name: 'PD-1抑制剂联合化疗治疗晚期非小细胞肺癌II期临床试验',
-          score: 92,
-          phase: 'II期',
-          location: '上海',
-          type: '干预性研究',
-          indication: '非小细胞肺癌（EGFR突变阳性）',
-          institution: '复旦大学附属肿瘤医院',
-          reasons: [
-            '诊断为非小细胞肺癌，符合入组条件',
-            'EGFR 19del突变阳性，符合分子标志物要求',
-            '既往化疗2周期，符合治疗线数要求'
-          ]
-        },
-        {
-          id: '2',
-          name: '第三代EGFR-TKI治疗耐药后肺癌III期临床试验',
-          score: 85,
-          phase: 'III期',
-          location: '北京',
-          type: '干预性研究',
-          indication: 'EGFR T790M突变阳性肺癌',
-          institution: '中国医学科学院肿瘤医院',
-          reasons: [
-            'EGFR突变阳性，符合分子标志物要求',
-            '无脑转移，符合入组标准',
-            'ECOG评分预计0-1分'
-          ]
-        }
-      ],
-      total: 2
+      data: MOCK_TRIALS,
+      total: MOCK_TRIALS.length
     })
   }
-  
+
   return request({
     url: '/api/matches',
     method: 'GET',
@@ -303,26 +401,15 @@ const getMatches = (params = {}) => {
   })
 }
 
-/**
- * 获取试验详情
- * @param {string} id - 试验ID
- * @returns {Promise} 试验详情
- */
 const getTrialDetail = (id) => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: {
+        ...MOCK_TRIALS[0],
         id,
-        name: 'PD-1抑制剂联合化疗治疗晚期非小细胞肺癌II期临床试验',
-        score: 92,
-        phase: 'II期',
-        location: '上海',
-        type: '干预性研究',
-        indication: '非小细胞肺癌（EGFR突变阳性）',
-        institution: '复旦大学附属肿瘤医院',
         sponsor: '某制药公司',
-        description: '本研究旨在评估PD-1抑制剂联合化疗在EGFR突变阳性非小细胞肺癌患者中的疗效和安全性...',
+        description: '本研究旨在评估PD-1抑制剂联合化疗在EGFR突变阳性非小细胞肺癌患者中的疗效和安全性。',
         inclusion: [
           '年龄18-75岁',
           '组织学或细胞学确诊的非小细胞肺癌',
@@ -344,43 +431,37 @@ const getTrialDetail = (id) => {
       }
     })
   }
-  
+
   return request({
-    url: `/api/trials/${id}`,
+    url: `/api/trials/${encodeURIComponent(id)}`,
     method: 'GET'
   })
 }
 
-/**
- * 报名试验
- * @param {Object} params - 报名参数
- * @returns {Promise} 报名结果
- */
 const applyTrial = (params) => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: {
-        applicationId: 'app_' + Date.now(),
+        applicationId: `app_${Date.now()}`,
         status: 'pending',
         message: '报名成功，研究机构将在3个工作日内与您联系'
       }
     })
   }
-  
+
   return request({
     url: '/api/applications',
     method: 'POST',
-    data: params
+    data: params,
+    header: {
+      'Idempotency-Key': createRequestId()
+    }
   })
 }
 
-/**
- * 获取报名记录
- * @returns {Promise} 报名列表
- */
 const getApplications = () => {
-  if (mockMode) {
+  if (isMockMode()) {
     return Promise.resolve({
       code: 0,
       data: [
@@ -396,32 +477,33 @@ const getApplications = () => {
       ]
     })
   }
-  
+
   return request({
     url: '/api/applications',
     method: 'GET'
   })
 }
 
-// ==================== 导出 API ====================
-
 module.exports = {
   // 配置
-  mockMode,
-  
+  setRuntimeEnv,
+  getRuntimeConfig,
+  mockMode: isMockMode,
+  isMockMode,
+
   // 通用方法
   request,
   uploadFile,
-  
+
   // 认证
   login,
-  
+
   // 病历
   uploadMedicalRecord,
   getParseStatus,
   getMedicalRecords,
   getMedicalRecordDetail,
-  
+
   // 匹配
   getMatches,
   getTrialDetail,

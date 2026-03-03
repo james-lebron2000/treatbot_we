@@ -1,5 +1,7 @@
-// pages/index/index.js
-const app = getApp()
+const api = require('../../utils/api')
+const { getCache, setCache } = require('../../utils/cache')
+const RECENT_MATCHES_CACHE_KEY = 'cache_recent_matches'
+const REFRESH_INTERVAL = 30 * 1000
 
 Page({
   data: {
@@ -12,51 +14,56 @@ Page({
   },
 
   onShow() {
-    // 每次显示页面时刷新数据
-    this.loadRecentMatches()
+    const now = Date.now()
+    if (this.lastLoadedAt && now - this.lastLoadedAt > REFRESH_INTERVAL) {
+      this.loadRecentMatches({ silent: true })
+    }
   },
 
   // 加载最近匹配记录
-  async loadRecentMatches() {
-    this.setData({ loading: true })
-    
-    try {
-      // 实际项目中调用API
-      // const result = await app.request({
-      //   url: '/api/matches/recent',
-      //   method: 'GET'
-      // })
-      
-      // 模拟数据
-      const mockMatches = [
-        {
-          id: '1',
-          trialName: 'PD-1抑制剂治疗晚期肺癌II期临床试验',
-          matchScore: 92,
-          phase: 'II期',
-          location: '上海',
-          indication: '非小细胞肺癌',
-          institution: '复旦大学附属肿瘤医院'
-        },
-        {
-          id: '2',
-          trialName: '新型靶向药物治疗EGFR突变肺癌研究',
-          matchScore: 85,
-          phase: 'III期',
-          location: '北京',
-          indication: 'EGFR突变阳性肺癌',
-          institution: '中国医学科学院肿瘤医院'
-        }
-      ]
-      
-      this.setData({
-        recentMatches: mockMatches,
-        loading: false
-      })
-    } catch (error) {
-      console.error('加载匹配记录失败:', error)
-      this.setData({ loading: false })
+  async loadRecentMatches(options = {}) {
+    if (this.loadingPromise) {
+      return this.loadingPromise
     }
+
+    const { silent = false } = options
+    const cachedMatches = getCache(RECENT_MATCHES_CACHE_KEY)
+    if (cachedMatches && cachedMatches.length) {
+      this.setData({ recentMatches: cachedMatches })
+    }
+
+    if (!silent) {
+      this.setData({ loading: true })
+    }
+
+    this.loadingPromise = (async () => {
+      try {
+        const result = await api.getMatches({ page: 1, pageSize: 3 })
+        const matches = (result.data || []).map((item) => ({
+          id: item.id,
+          trialName: item.name,
+          matchScore: item.score,
+          phase: item.phase,
+          location: item.location,
+          indication: item.indication,
+          institution: item.institution
+        }))
+
+        this.setData({ recentMatches: matches })
+        setCache(RECENT_MATCHES_CACHE_KEY, matches)
+        this.lastLoadedAt = Date.now()
+      } catch (error) {
+        console.error('加载匹配记录失败:', error)
+        wx.showToast({ title: '加载失败，请稍后重试', icon: 'none' })
+      } finally {
+        if (!silent) {
+          this.setData({ loading: false })
+        }
+        this.loadingPromise = null
+      }
+    })()
+
+    return this.loadingPromise
   },
 
   // 跳转到上传页面
@@ -80,11 +87,18 @@ Page({
     })
   },
 
+  // 跳转到搜索页面
+  goToSearch() {
+    wx.navigateTo({
+      url: '/pages/search/search'
+    })
+  },
+
   // 查看匹配详情
   viewMatchDetail(e) {
     const { id } = e.currentTarget.dataset
     wx.navigateTo({
-      url: `/pages/matches/detail?id=${id}`
+      url: `/pages/matches/detail/detail?id=${id}`
     })
   },
 
