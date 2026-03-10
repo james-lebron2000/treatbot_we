@@ -13,6 +13,32 @@ TOKEN="${TOKEN:-}"
 H5_PHONE="${H5_PHONE:-}"
 H5_CODE="${H5_CODE:-000000}"
 ENABLE_TRIAL_FLOW="${ENABLE_TRIAL_FLOW:-0}"
+WAIT_MAX_SECONDS="${WAIT_MAX_SECONDS:-90}"
+WAIT_INTERVAL_SECONDS="${WAIT_INTERVAL_SECONDS:-3}"
+
+wait_for_service_ready() {
+  local deadline=$((SECONDS + WAIT_MAX_SECONDS))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    local health_resp
+    health_resp="$(curl -fsS -m 5 "$BASE_URL/health" || true)"
+    if [ -n "$health_resp" ] && printf '%s' "$health_resp" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+      echo "service is ready: /health ok"
+      return 0
+    fi
+
+    local container_health
+    container_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' treatbot-api 2>/dev/null || true)"
+    if [ "$container_health" = "unhealthy" ]; then
+      echo "service is unhealthy: container health=unhealthy"
+      return 1
+    fi
+
+    sleep "$WAIT_INTERVAL_SECONDS"
+  done
+
+  echo "service is not ready within ${WAIT_MAX_SECONDS}s"
+  return 1
+}
 
 echo "release deploy starting..."
 
@@ -24,6 +50,11 @@ deploy_ok=0
 set +e
 (cd "$ROOT_DIR" && docker compose up -d --build api)
 deploy_status=$?
+if [ "$deploy_status" -eq 0 ]; then
+  wait_for_service_ready
+  deploy_status=$?
+fi
+
 if [ "$deploy_status" -eq 0 ]; then
   BASE_URL="$BASE_URL" \
   FILE_PATH="$FILE_PATH" \
@@ -50,4 +81,3 @@ echo "release deploy failed, start rollback: $release_id"
 "$ROLLBACK_SCRIPT" rollback "$release_id"
 echo "rollback completed"
 exit 1
-

@@ -11,6 +11,8 @@ H5_CODE="${H5_CODE:-000000}"
 ENABLE_TRIAL_FLOW="${ENABLE_TRIAL_FLOW:-0}"
 POLL_MAX="${POLL_MAX:-20}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
+HEALTH_RETRIES="${HEALTH_RETRIES:-6}"
+HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-2}"
 
 PASS=0
 FAIL=0
@@ -47,7 +49,15 @@ require_code_zero() {
 echo "Smoke target: $BASE_URL"
 
 # 1) health
-health_resp="$(curl -fsS -m 15 "$BASE_URL/health" || true)"
+health_resp=""
+for _ in $(seq 1 "$HEALTH_RETRIES"); do
+  health_resp="$(curl -fsS -m 15 "$BASE_URL/health" || true)"
+  if [ -n "$health_resp" ] && printf '%s' "$health_resp" | json_get "return data.status" | grep -q '^ok$'; then
+    break
+  fi
+  sleep "$HEALTH_RETRY_INTERVAL"
+done
+
 if [ -n "$health_resp" ] && printf '%s' "$health_resp" | json_get "return data.status" | grep -q '^ok$'; then
   step_ok "GET /health"
 else
@@ -196,4 +206,3 @@ echo "Smoke summary: PASS=$PASS FAIL=$FAIL WARN=$WARN"
 if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
-
