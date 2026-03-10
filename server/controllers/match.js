@@ -2,7 +2,7 @@ const { Op } = require('sequelize');
 const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
-const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('../services/matchEngine');
+const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText } = require('../services/matchEngine');
 
 const MAX_SCAN_TRIALS = 300;
 
@@ -65,7 +65,7 @@ const trialMatchesFilters = (trial, filters) => {
   const stage = safeText(filters.stage).toLowerCase();
   const geneMutation = safeText(filters.gene_mutation).toLowerCase();
 
-  if (disease && !trialText.includes(disease)) {
+  if (disease && !matchDiseaseText(disease, trialText).matched) {
     return false;
   }
   if (stage && !trialText.includes(stage)) {

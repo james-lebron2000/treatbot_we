@@ -11,6 +11,7 @@ const STATUS_TEXT_MAP = {
 }
 
 const PDF_HINT_FIELDS = ['diagnosis', 'stage', 'geneMutation']
+const TRANSIENT_STORAGE_KEYS = ['currentRecordId', 'structuredRecordDraft', 'selectedMatchDetail', 'selectedApplyTrial']
 
 const pickPayload = (res) => {
   if (!res || typeof res !== 'object') {
@@ -270,6 +271,34 @@ Page({
     }
   },
 
+  resetUploadSessionState() {
+    this.clearPollTimer()
+    TRANSIENT_STORAGE_KEYS.forEach((key) => {
+      try {
+        wx.removeStorageSync(key)
+      } catch (error) {
+        console.warn('清理上传缓存失败:', key, error)
+      }
+    })
+
+    this.setData({
+      fileId: '',
+      recordId: '',
+      parsedData: {},
+      parsedRows: [],
+      parsedSections: [],
+      structuredSummary: schema.buildStructuredSummary({}),
+      summaryProgressStyle: 'width: 0%;',
+      missingFields: [],
+      parseProgress: 0,
+      parseProgressStyle: 'width: 0%;',
+      parseStep: 0,
+      processingStatus: '文件上传中...',
+      parseFallbackNotified: false,
+      pdfQualityHintShown: false
+    })
+  },
+
   async uploadFiles() {
     if (this.data.tempFiles.length === 0) {
       wx.showToast({
@@ -279,6 +308,7 @@ Page({
       return
     }
 
+    this.resetUploadSessionState()
     this.setData({ uploading: true })
 
     try {
@@ -296,8 +326,8 @@ Page({
 
         const payload = pickPayload(res)
         if (!fileId) {
-          fileId = payload.fileId || payload.id || payload.recordId || ''
-          recordId = payload.recordId || payload.id || ''
+          fileId = payload.fileId || payload.recordId || payload.id || ''
+          recordId = payload.recordId || payload.fileId || payload.id || ''
         }
       }
 
@@ -378,6 +408,7 @@ Page({
 
   handleParseCompleted(rawResult) {
     const normalized = schema.normalizeStructuredRecord(rawResult)
+    const resolvedRecordId = this.data.recordId || this.data.fileId || normalized.id || normalized.recordId || ''
     const rows = schema.buildRecordPreview(normalized)
     const parsedSections = schema.buildRecordSections(normalized)
     const structuredSummary = schema.buildStructuredSummary(normalized)
@@ -390,6 +421,7 @@ Page({
       currentStep: 3,
       parseProgress: 100,
       parseStep: 3,
+      recordId: resolvedRecordId,
       parsedData: normalized,
       parsedRows: rows,
       parsedSections,
@@ -398,7 +430,7 @@ Page({
       missingFields
     })
 
-    wx.setStorageSync('currentRecordId', this.data.recordId || normalized.id || '')
+    wx.setStorageSync('currentRecordId', resolvedRecordId)
     wx.setStorageSync('structuredRecordDraft', normalized)
     this.notifyPdfQualityHint(normalized, structuredSummary)
   },
@@ -505,7 +537,7 @@ Page({
     this.setData({ submittingGap: true })
 
     try {
-      const recordId = this.data.recordId || this.data.parsedData.id || ''
+      const recordId = this.data.recordId || this.data.fileId || this.data.parsedData.id || this.data.parsedData.recordId || ''
       if (recordId && Object.keys(supplementPayload).length > 0) {
         await api.enrichMedicalRecord(recordId, supplementPayload).catch(() => null)
       }

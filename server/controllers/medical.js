@@ -130,6 +130,7 @@ const handleUpload = async (req, res, next) => {
 
         return res.json(success({
           fileId: existingRecord.id,
+          recordId: existingRecord.id,
           status: 'pending',
           uploadedAt: existingRecord.created_at,
           isDuplicate: true,
@@ -139,6 +140,7 @@ const handleUpload = async (req, res, next) => {
 
       return res.json(success({
         fileId: existingRecord.id,
+        recordId: existingRecord.id,
         status: existingRecord.status,
         uploadedAt: existingRecord.created_at,
         isDuplicate: true
@@ -186,6 +188,7 @@ const handleUpload = async (req, res, next) => {
 
     res.json(success({
       fileId: record.id,
+      recordId: record.id,
       status: 'pending',
       uploadedAt: record.created_at
     }, '上传成功，正在解析中'));
@@ -218,6 +221,7 @@ const getParseStatus = async (req, res, next) => {
     const mappedStatus = mapParseStatus(record.status);
     const response = {
       fileId: record.id,
+      recordId: record.id,
       status: mappedStatus.status,
       progress: mappedStatus.progress,
       result: null,
@@ -228,6 +232,8 @@ const getParseStatus = async (req, res, next) => {
     // 如果已完成，返回解析结果
     if (record.status === 'completed' && record.structured) {
       response.result = {
+        id: record.id,
+        recordId: record.id,
         diagnosis: record.diagnosis,
         stage: record.stage,
         geneMutation: record.gene_mutation,

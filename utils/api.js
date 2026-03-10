@@ -645,7 +645,8 @@ const uploadMedicalRecord = async (params) => {
     name: 'file',
     formData: {
       type: params.type,
-      remark: params.remark
+      remark: params.remark,
+      forceReparse: '1'
     }
   })
 
