@@ -75,6 +75,45 @@ docker-compose logs -f api
 docker-compose down
 ```
 
+### 生产发布验收与回滚（推荐）
+
+#### 1. 生成发布快照（回滚点）
+```bash
+./scripts/release-rollback.sh snapshot
+```
+
+#### 2. 发布前后自动验收（健康/登录/上传/解析/匹配）
+```bash
+# 最小验收（仅健康 + 鉴权）
+BASE_URL=https://inseq.top TOKEN=your_jwt ./scripts/smoke.sh
+
+# 含文件链路验收（推荐）
+BASE_URL=https://inseq.top \
+TOKEN=your_jwt \
+FILE_PATH=/absolute/path/to/test.jpg \
+./scripts/smoke.sh
+```
+
+#### 3. 一键发布（失败自动回滚）
+```bash
+BASE_URL=https://inseq.top \
+TOKEN=your_jwt \
+FILE_PATH=/absolute/path/to/test.jpg \
+./scripts/release-deploy.sh
+```
+
+#### 4. 手动回滚
+```bash
+# 查看可回滚版本
+./scripts/release-rollback.sh list
+
+# 回滚到最近一次快照
+./scripts/release-rollback.sh rollback latest
+
+# 或指定版本
+./scripts/release-rollback.sh rollback 20260310_173000
+```
+
 ---
 
 ## 方式二：PM2 + 原生 Node.js
