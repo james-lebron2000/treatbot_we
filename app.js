@@ -2,7 +2,7 @@ App({
   globalData: {
     userInfo: null,
     token: null,
-    apiBaseUrl: 'http://49.235.162.129',
+    apiBaseUrl: 'https://inseq.top',
     allowLocalFallback: false,
     mockMode: false,
     systemInfo: null

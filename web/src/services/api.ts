@@ -7,7 +7,7 @@ export type ApiResponse<T> = {
 } & T
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://49.235.162.129',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://inseq.top',
   timeout: 15000
 })
 

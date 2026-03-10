@@ -3,8 +3,8 @@
  * 统一处理所有后端接口请求，生产环境默认禁用本地兜底。
  */
 
-const DEFAULT_TEST_BASE_URL = 'http://49.235.162.129'
-const DEFAULT_PROD_BASE_URL = 'https://api.treatbot.example.com'
+const DEFAULT_TEST_BASE_URL = 'https://inseq.top'
+const DEFAULT_PROD_BASE_URL = 'https://inseq.top'
 
 const API_CONFIG = {
   dev: {
