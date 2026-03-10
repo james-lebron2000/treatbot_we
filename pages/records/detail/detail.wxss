@@ -1,0 +1,67 @@
+.detail-card,
+.images-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24rpx;
+}
+
+.type {
+  background: #e6f7ff;
+  color: #1890ff;
+  border-radius: 8rpx;
+  padding: 8rpx 18rpx;
+  font-size: 24rpx;
+}
+
+.status {
+  color: #52c41a;
+  font-size: 24rpx;
+}
+
+.row {
+  display: flex;
+  margin-bottom: 16rpx;
+}
+
+.row:last-child {
+  margin-bottom: 0;
+}
+
+.label {
+  width: 160rpx;
+  color: #666;
+  font-size: 26rpx;
+}
+
+.value {
+  flex: 1;
+  color: #333;
+  font-size: 26rpx;
+}
+
+.images-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
+}
+
+.images-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.record-image {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 12rpx;
+}

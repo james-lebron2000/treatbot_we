@@ -1,0 +1,72 @@
+groups:
+  - name: treatbot-alerts
+    rules:
+      # API 高错误率告警
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 错误率过高"
+          description: "API 5xx 错误率超过 1%，持续 5 分钟"
+
+      # API 响应时间告警
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 响应时间过长"
+          description: "P95 响应时间超过 2 秒"
+
+      # 数据库连接告警
+      - alert: DatabaseConnectionsHigh
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "数据库连接数过高"
+          description: "数据库连接数超过 80%"
+
+      # 内存使用告警
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "内存使用率过高"
+          description: "服务器内存使用率超过 85%"
+
+      # 磁盘空间告警
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "磁盘空间不足"
+          description: "根分区剩余空间少于 10%"
+
+      # 队列积压告警
+      - alert: QueueBacklog
+        expr: bull_queue_waiting_count > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "任务队列积压"
+          description: "OCR 队列等待任务超过 100 个"
+
+      # 服务不可用告警
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "服务不可用"
+          description: "{{ $labels.job }} 服务已停止"

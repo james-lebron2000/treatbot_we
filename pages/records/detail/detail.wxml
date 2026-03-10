@@ -1,0 +1,48 @@
+<view class="container">
+  <view wx:if="{{record}}" class="detail-card">
+    <view class="detail-header">
+      <text class="type">{{record.type}}</text>
+      <text class="status">{{record.status === 'parsed' ? '已解析' : '处理中'}}</text>
+    </view>
+
+    <view class="row">
+      <text class="label">诊断</text>
+      <text class="value">{{record.diagnosis || '未识别'}}</text>
+    </view>
+    <view class="row">
+      <text class="label">分期</text>
+      <text class="value">{{record.stage || '未识别'}}</text>
+    </view>
+    <view class="row">
+      <text class="label">基因突变</text>
+      <text class="value">{{record.geneMutation || '未识别'}}</text>
+    </view>
+    <view class="row">
+      <text class="label">既往治疗</text>
+      <text class="value">{{record.treatment || '未识别'}}</text>
+    </view>
+    <view class="row">
+      <text class="label">上传时间</text>
+      <text class="value">{{record.uploadTime || '-'}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{record && record.images && record.images.length}}" class="images-card">
+    <view class="images-title">原始病历图片</view>
+    <view class="images-list">
+      <image
+        wx:for="{{record.images}}"
+        wx:key="*this"
+        class="record-image"
+        src="{{item}}"
+        mode="aspectFill"
+        bindtap="previewImage"
+        data-current="{{item}}"
+      />
+    </view>
+  </view>
+
+  <view wx:if="{{!loading && !record}}" class="empty-state">
+    <text>暂无病历详情</text>
+  </view>
+</view>

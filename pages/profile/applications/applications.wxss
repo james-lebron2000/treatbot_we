@@ -1,0 +1,40 @@
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.record-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+.record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12rpx;
+  gap: 16rpx;
+}
+
+.trial-name {
+  flex: 1;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.status {
+  color: #1890ff;
+  font-size: 24rpx;
+}
+
+.institution,
+.apply-time {
+  display: block;
+  color: #666;
+  font-size: 24rpx;
+  line-height: 1.6;
+}

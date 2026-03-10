@@ -1,0 +1,14 @@
+<view class="container">
+  <view class="card">
+    <view class="title">海马智合</view>
+    <view class="desc">
+      海马智合致力于通过 AI 技术帮助患者更高效地匹配临床试验，提升信息获取效率并降低筛选成本。
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">联系我们</view>
+    <view class="desc">客服邮箱：support@treatbot.example.com</view>
+    <view class="desc">客服电话：400-XXX-XXXX（工作日 9:00-18:00）</view>
+  </view>
+</view>

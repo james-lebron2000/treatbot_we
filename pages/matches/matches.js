@@ -1,71 +1,137 @@
-// pages/matches/matches.js
+const api = require('../../utils/api')
+const auth = require('../../utils/auth')
+const matchExplainer = require('../../utils/match-explainer')
+
+const pickList = (res) => {
+  const payload = api.normalizePayload(res)
+  if (!payload) {
+    return []
+  }
+  if (Array.isArray(payload)) {
+    return payload
+  }
+  return payload.list || payload.items || payload.trials || payload.matches || payload.data || payload.results || []
+}
+
 Page({
   data: {
-    matches: [
-      {
-        id: '1',
-        name: 'PD-1抑制剂联合化疗治疗晚期非小细胞肺癌II期临床试验',
-        score: 92,
-        phase: 'II期',
-        location: '上海',
-        type: '干预性研究',
-        indication: '非小细胞肺癌（EGFR突变阳性）',
-        institution: '复旦大学附属肿瘤医院',
-        reasons: [
-          '诊断为非小细胞肺癌，符合入组条件',
-          'EGFR 19del突变阳性，符合分子标志物要求',
-          '既往化疗2周期，符合治疗线数要求'
-        ]
-      },
-      {
-        id: '2',
-        name: '第三代EGFR-TKI治疗耐药后肺癌III期临床试验',
-        score: 85,
-        phase: 'III期',
-        location: '北京',
-        type: '干预性研究',
-        indication: 'EGFR T790M突变阳性肺癌',
-        institution: '中国医学科学院肿瘤医院',
-        reasons: [
-          'EGFR突变阳性，符合分子标志物要求',
-          '无脑转移，符合入组标准',
-          'ECOG评分预计0-1分'
-        ]
-      },
-      {
-        id: '3',
-        name: '抗血管生成药物联合免疫治疗肺癌Ib期临床试验',
-        score: 78,
-        phase: 'Ib期',
-        location: '广州',
-        type: '干预性研究',
-        indication: '晚期非小细胞肺癌',
-        institution: '中山大学肿瘤防治中心',
-        reasons: [
-          '诊断为晚期非小细胞肺癌',
-          '年龄符合18-75岁要求',
-          '需补充：肝肾功能检查结果'
-        ]
+    recordId: '',
+    matches: [],
+    highMatches: 0,
+    readyMatches: 0,
+    needSupplement: 0,
+    loading: false,
+    errorMessage: '',
+    lowScoreMode: false,
+    usingFallback: false,
+    fallbackMessage: ''
+  },
+
+  onLoad(options) {
+    if (options.recordId) {
+      this.setData({ recordId: options.recordId })
+    }
+  },
+
+  async onShow() {
+    await this.loadMatches()
+  },
+
+  async loadMatches() {
+    this.setData({
+      loading: true,
+      errorMessage: '',
+      lowScoreMode: false,
+      usingFallback: false,
+      fallbackMessage: ''
+    })
+
+    try {
+      await auth.ensureLogin()
+      const storageRecordId = wx.getStorageSync('currentRecordId')
+      const recordId = this.data.recordId || storageRecordId || ''
+      const params = recordId ? { recordId } : {}
+      const patientProfile = matchExplainer.getPatientProfile()
+
+      const res = await api.getMatches(params)
+      const rawMatches = pickList(res)
+
+      const normalizedAll = rawMatches
+        .map((item, index) => matchExplainer.normalizeMatchItem(item, index))
+        .map((item) => matchExplainer.enrichMatchExplanation(item, patientProfile))
+
+      const highOrMidMatches = normalizedAll.filter((item) => item.score >= 40)
+      const lowScoreMode = highOrMidMatches.length === 0 && normalizedAll.length > 0
+      const matches = matchExplainer.sortMatchesByScoreAndTime(lowScoreMode ? normalizedAll : highOrMidMatches)
+      const highMatches = matches.filter((item) => item.score >= 80).length
+      const readyMatches = matches.filter((item) => item.exclusionRisks.length === 0 && item.missingEvidence.length <= 2).length
+      const needSupplement = matches.filter((item) => item.missingEvidence.length >= 3).length
+
+      this.setData({
+        matches,
+        highMatches,
+        readyMatches,
+        needSupplement,
+        lowScoreMode,
+        loading: false,
+        errorMessage: '',
+        usingFallback: !!res.fallback,
+        fallbackMessage: res.message || ''
+      })
+
+      if (res && res.fallback) {
+        wx.showToast({
+          title: '匹配接口异常，已使用兜底推荐',
+          icon: 'none'
+        })
       }
-    ],
-    highMatches: 2
+    } catch (error) {
+      console.error('加载匹配失败:', error)
+      this.setData({
+        matches: [],
+        highMatches: 0,
+        readyMatches: 0,
+        needSupplement: 0,
+        loading: false,
+        errorMessage: '暂无匹配结果，请稍后重试',
+        lowScoreMode: false,
+        usingFallback: false,
+        fallbackMessage: ''
+      })
+    }
   },
 
   viewDetail(e) {
     const { id } = e.currentTarget.dataset
-    wx.navigateTo({ url: `/pages/matches/detail?id=${id}` })
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (trial) {
+      wx.setStorageSync('selectedMatchDetail', trial)
+    }
+    wx.navigateTo({ url: `/pages/matches/detail/detail?id=${id}` })
   },
 
   applyTrial(e) {
     const { id } = e.currentTarget.dataset
-    wx.showModal({
-      title: '确认报名',
-      content: '报名后研究机构将在3个工作日内与您联系，确认是否继续？',
-      success: (res) => {
-        if (res.confirm) {
-          wx.showToast({ title: '报名成功', icon: 'success' })
-        }
-      }
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (!trial) {
+      wx.showToast({ title: '试验信息缺失', icon: 'none' })
+      return
+    }
+
+    wx.setStorageSync('selectedApplyTrial', trial)
+    wx.navigateTo({
+      url: `/pages/matches/apply/apply?trialId=${encodeURIComponent(trial.id)}`
     })
+  },
+
+  goToUpload() {
+    wx.navigateTo({
+      url: '/pages/upload/upload'
+    })
+  },
+
+  async onPullDownRefresh() {
+    await this.loadMatches()
+    wx.stopPullDownRefresh()
   }
 })

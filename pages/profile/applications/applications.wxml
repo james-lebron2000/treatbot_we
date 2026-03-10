@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="records-list" wx:if="{{applications.length}}">
+    <view class="record-card" wx:for="{{applications}}" wx:key="id">
+      <view class="record-header">
+        <text class="trial-name">{{item.trialName}}</text>
+        <text class="status">{{item.statusText}}</text>
+      </view>
+      <text class="institution">{{item.institution}}</text>
+      <text class="apply-time">报名时间：{{item.applyTime}}</text>
+    </view>
+  </view>
+
+  <view class="empty-state" wx:else>
+    <text>暂无报名记录</text>
+  </view>
+</view>

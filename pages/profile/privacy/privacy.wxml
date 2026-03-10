@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="card">
+    <view class="title">隐私保护说明</view>
+    <view class="desc">
+      我们仅在提供病历解析与临床试验匹配服务所必需的范围内收集和使用您的信息，所有敏感数据均采用加密传输与分级访问控制。
+    </view>
+    <view class="desc">
+      未经您的明确授权，不会将病历原文、影像资料或可识别身份信息用于营销或对外披露。
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">数据存储与删除</view>
+    <view class="desc">病历数据默认按最小化原则存储，可在联系客服后申请删除个人数据。</view>
+  </view>
+</view>
