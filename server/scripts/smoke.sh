@@ -11,6 +11,8 @@ H5_CODE="${H5_CODE:-000000}"
 ENABLE_TRIAL_FLOW="${ENABLE_TRIAL_FLOW:-0}"
 POLL_MAX="${POLL_MAX:-20}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
+HEALTH_RETRIES="${HEALTH_RETRIES:-6}"
+HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-2}"
 
 PASS=0
 FAIL=0
@@ -47,7 +49,15 @@ require_code_zero() {
 echo "Smoke target: $BASE_URL"
 
 # 1) health
-health_resp="$(curl -fsS -m 15 "$BASE_URL/health" || true)"
+health_resp=""
+for _ in $(seq 1 "$HEALTH_RETRIES"); do
+  health_resp="$(curl -fsS -m 15 "$BASE_URL/health" || true)"
+  if [ -n "$health_resp" ] && printf '%s' "$health_resp" | json_get "return data.status" | grep -q '^ok$'; then
+    break
+  fi
+  sleep "$HEALTH_RETRY_INTERVAL"
+done
+
 if [ -n "$health_resp" ] && printf '%s' "$health_resp" | json_get "return data.status" | grep -q '^ok$'; then
   step_ok "GET /health"
 else
@@ -167,6 +177,14 @@ if [ -n "$TOKEN" ]; then
       step_fail "GET /api/trials/search"
     fi
 
+    if [ -z "$TRIAL_ID" ]; then
+      trials_fallback_resp="$(curl -fsS -m 20 "$BASE_URL/api/trials/search?page=1&pageSize=20" \
+        -H "Authorization: Bearer $TOKEN" || true)"
+      if [ -n "$trials_fallback_resp" ] && require_code_zero "$trials_fallback_resp"; then
+        TRIAL_ID="$(printf '%s' "$trials_fallback_resp" | json_get "const list=(data.data&&data.data.list)||[];return list[0]&&list[0].id" || true)"
+      fi
+    fi
+
     if [ -n "$TRIAL_ID" ]; then
       detail_resp="$(curl -fsS -m 20 "$BASE_URL/api/trials/$TRIAL_ID" -H "Authorization: Bearer $TOKEN" || true)"
       if [ -n "$detail_resp" ] && require_code_zero "$detail_resp"; then
@@ -196,4 +214,3 @@ echo "Smoke summary: PASS=$PASS FAIL=$FAIL WARN=$WARN"
 if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
-
