@@ -60,7 +60,13 @@ Page({
 
     try {
       await auth.ensureLogin()
-      const res = await api.getMatches({ pageSize: 3, useDraft: false })
+      const currentRecordId = wx.getStorageSync('currentRecordId')
+      const params = { pageSize: 3 }
+      if (currentRecordId) {
+        params.recordId = currentRecordId
+      }
+
+      const res = await api.getMatches(params)
       const list = pickList(res)
       const normalized = list
         .map(normalizeMatch)

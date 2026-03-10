@@ -41,6 +41,33 @@ const mapParseStatus = (status) => {
   return { status: 'parsing', progress: 25 };
 };
 
+const truthyText = (value) => {
+  const normalized = `${value || ''}`.trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const hasMeaningfulExtraction = (record) => {
+  if (!record) {
+    return false;
+  }
+
+  const structured = normalizeStructured(record.structured);
+  const entities = normalizeEntities(structured.entities);
+  const candidates = [
+    record.diagnosis,
+    record.stage,
+    record.gene_mutation,
+    record.treatment,
+    entities.diagnosis,
+    entities.stage,
+    entities.geneMutation,
+    entities.gene_mutation,
+    entities.treatment
+  ];
+
+  return candidates.some((item) => `${item || ''}`.trim() !== '');
+};
+
 const normalizeStructured = (value) => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value;
@@ -75,6 +102,41 @@ const handleUpload = async (req, res, next) => {
 
     if (existingRecord) {
       logger.info('检测到重复上传:', { userId, fileHash, existingId: existingRecord.id });
+
+      const forceReparse = truthyText(req.body.forceReparse);
+      const shouldReparse = forceReparse || !hasMeaningfulExtraction(existingRecord);
+
+      if (shouldReparse) {
+        await existingRecord.update({
+          status: 'pending',
+          diagnosis: null,
+          stage: null,
+          gene_mutation: null,
+          treatment: null,
+          structured: null
+        });
+
+        const imageUrl = await ossService.getInternalUrl(existingRecord.file_key);
+        await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
+          mimeType: file.mimetype,
+          fileKey: existingRecord.file_key
+        });
+
+        logger.info('重复文件触发重新解析:', {
+          userId,
+          recordId: existingRecord.id,
+          forceReparse
+        });
+
+        return res.json(success({
+          fileId: existingRecord.id,
+          status: 'pending',
+          uploadedAt: existingRecord.created_at,
+          isDuplicate: true,
+          reparseTriggered: true
+        }, forceReparse ? '检测到重复文件，已强制重新解析' : '检测到历史识别结果缺失，已自动重新解析'));
+      }
+
       return res.json(success({
         fileId: existingRecord.id,
         status: existingRecord.status,

@@ -323,15 +323,18 @@ const buildGuestLoginResponse = () => {
 
 const buildMatchPayload = (params = {}) => {
   const draft = params.useDraft === false ? {} : (wx.getStorageSync('structuredRecordDraft') || {})
+  const hasRecordId = isPresent(params.recordId)
 
-  const diagnosis = params.disease || params.diagnosis || draft.disease || draft.diagnosis || ''
-  const disease = isPresent(diagnosis) ? diagnosis : '肺癌'
-  const payload = { disease }
+  const diagnosis = params.disease || params.diagnosis || (hasRecordId ? '' : (draft.disease || draft.diagnosis || ''))
+  const payload = {}
+  if (isPresent(diagnosis)) {
+    payload.disease = diagnosis
+  }
 
-  const stage = params.stage || draft.stage
-  const city = params.city || params.location || draft.city || draft.location
-  const province = params.province || draft.province || ''
-  const geneMutation = params.gene_mutation || params.geneMutation || draft.gene_mutation || draft.geneMutation
+  const stage = params.stage || (hasRecordId ? '' : draft.stage)
+  const city = params.city || params.location || (hasRecordId ? '' : (draft.city || draft.location))
+  const province = params.province || (hasRecordId ? '' : (draft.province || ''))
+  const geneMutation = params.gene_mutation || params.geneMutation || (hasRecordId ? '' : (draft.gene_mutation || draft.geneMutation))
 
   if (isPresent(stage)) {
     payload.stage = stage

@@ -155,8 +155,19 @@ const getPresignedUrl = async (key, expires = 3600) => {
       Sign: true,
       Expires: expires
     });
-    
-    return result.Url;
+
+    // cos-nodejs-sdk-v5 getObjectUrl can return either string URL or an object.
+    if (typeof result === 'string' && result.trim()) {
+      return result;
+    }
+    if (result && typeof result.Url === 'string' && result.Url.trim()) {
+      return result.Url;
+    }
+    if (result && typeof result.url === 'string' && result.url.trim()) {
+      return result.url;
+    }
+
+    throw new Error('COS 预签名URL返回格式异常');
   } catch (error) {
     logger.error('获取预签名URL失败:', error);
     throw error;
