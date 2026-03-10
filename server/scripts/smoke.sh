@@ -177,6 +177,14 @@ if [ -n "$TOKEN" ]; then
       step_fail "GET /api/trials/search"
     fi
 
+    if [ -z "$TRIAL_ID" ]; then
+      trials_fallback_resp="$(curl -fsS -m 20 "$BASE_URL/api/trials/search?page=1&pageSize=20" \
+        -H "Authorization: Bearer $TOKEN" || true)"
+      if [ -n "$trials_fallback_resp" ] && require_code_zero "$trials_fallback_resp"; then
+        TRIAL_ID="$(printf '%s' "$trials_fallback_resp" | json_get "const list=(data.data&&data.data.list)||[];return list[0]&&list[0].id" || true)"
+      fi
+    fi
+
     if [ -n "$TRIAL_ID" ]; then
       detail_resp="$(curl -fsS -m 20 "$BASE_URL/api/trials/$TRIAL_ID" -H "Authorization: Bearer $TOKEN" || true)"
       if [ -n "$detail_resp" ] && require_code_zero "$detail_resp"; then
