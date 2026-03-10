@@ -170,8 +170,9 @@ if [ -n "$TOKEN" ]; then
       -H "Authorization: Bearer $TOKEN" || true)"
     if [ -n "$trials_resp" ] && require_code_zero "$trials_resp"; then
       step_ok "GET /api/trials/search"
-      if [ -z "$TRIAL_ID" ]; then
-        TRIAL_ID="$(printf '%s' "$trials_resp" | json_get "const list=(data.data&&data.data.list)||[];return list[0]&&list[0].id" || true)"
+      trials_search_id="$(printf '%s' "$trials_resp" | json_get "const list=(data.data&&data.data.list)||[];return list[0]&&list[0].id" || true)"
+      if [ -n "$trials_search_id" ]; then
+        TRIAL_ID="$trials_search_id"
       fi
     else
       step_fail "GET /api/trials/search"
@@ -193,7 +194,7 @@ if [ -n "$TOKEN" ]; then
         step_fail "GET /api/trials/:id"
       fi
 
-      apply_resp="$(curl -fsS -m 20 -X POST "$BASE_URL/api/applications" \
+      apply_resp="$(curl -sS -m 20 -X POST "$BASE_URL/api/applications" \
         -H "Authorization: Bearer $TOKEN" \
         -H "Content-Type: application/json" \
         -H "Idempotency-Key: smoke-$(date +%s)" \
@@ -201,7 +202,15 @@ if [ -n "$TOKEN" ]; then
       if [ -n "$apply_resp" ] && require_code_zero "$apply_resp"; then
         step_ok "POST /api/applications"
       else
-        step_fail "POST /api/applications"
+        apply_code="$(printf '%s' "$apply_resp" | json_get "return data.code" || true)"
+        apply_msg="$(printf '%s' "$apply_resp" | json_get "return data.message" || true)"
+        if [ "$apply_code" = "409" ]; then
+          step_ok "POST /api/applications (already applied)"
+        elif [ -n "$apply_msg" ]; then
+          step_fail "POST /api/applications ($apply_msg)"
+        else
+          step_fail "POST /api/applications"
+        fi
       fi
     else
       step_warn "No trialId available; trial apply checks are skipped"
