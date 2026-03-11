@@ -1,4 +1,5 @@
 const axios = require('axios');
+const fs = require('fs/promises');
 const path = require('path');
 const pdfParse = require('pdf-parse');
 const tencentcloud = require('tencentcloud-sdk-nodejs');
@@ -38,6 +39,7 @@ const MIME_BY_EXT = {
   '.webp': 'image/webp',
   '.bmp': 'image/bmp'
 };
+const LOCAL_UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
 
 const cleanJsonContent = (content) => {
   if (!content) {
@@ -101,6 +103,28 @@ const isPrivateOrIpUrl = (imageUrl) => {
   }
 };
 
+const normalizeLocalKey = (fileKey = '') => `${fileKey}`.replace(/^\/+/, '').replace(/^uploads\//, '');
+
+const getLocalFilePath = (fileKey = '') => {
+  const normalized = normalizeLocalKey(fileKey);
+  if (!normalized) {
+    return '';
+  }
+  return path.join(LOCAL_UPLOAD_ROOT, normalized);
+};
+
+const readLocalFileAsDataUrl = async (fileKey, mimeType = '') => {
+  const fullPath = getLocalFilePath(fileKey);
+  if (!fullPath) {
+    throw new Error('缺少本地文件路径');
+  }
+
+  const buffer = await fs.readFile(fullPath);
+  const extMimeType = MIME_BY_EXT[path.extname(fullPath).toLowerCase()] || 'image/jpeg';
+  const resolvedMimeType = (mimeType || '').split(';')[0].trim() || extMimeType;
+  return `data:${resolvedMimeType};base64,${buffer.toString('base64')}`;
+};
+
 const fetchImageAsDataUrl = async (imageUrl) => {
   const response = await axios.get(imageUrl, {
     responseType: 'arraybuffer',
@@ -109,6 +133,28 @@ const fetchImageAsDataUrl = async (imageUrl) => {
   const mimeType = getImageMimeType(imageUrl, response.headers['content-type']);
   const base64 = Buffer.from(response.data).toString('base64');
   return `data:${mimeType};base64,${base64}`;
+};
+
+const resolveImageDataUrl = async ({ imageUrl, fileKey, mimeType }) => {
+  const errors = [];
+
+  if (imageUrl) {
+    try {
+      return await fetchImageAsDataUrl(imageUrl);
+    } catch (error) {
+      errors.push(`url:${error.message}`);
+    }
+  }
+
+  if (fileKey) {
+    try {
+      return await readLocalFileAsDataUrl(fileKey, mimeType);
+    } catch (error) {
+      errors.push(`file:${error.message}`);
+    }
+  }
+
+  throw new Error(`无法读取图片内容 (${errors.join(', ') || 'no-source'})`);
 };
 
 const estimateConfidence = (entities) => {
@@ -256,13 +302,13 @@ const requestKimi = async (imageRef) => {
   };
 };
 
-const recognizeByKimi = async (imageUrl) => {
+const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
   if (!hasKimiCredential) {
     throw new Error('Kimi API Key 未配置');
   }
 
   if (isPrivateOrIpUrl(imageUrl)) {
-    const dataUrl = await fetchImageAsDataUrl(imageUrl);
+    const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
     return requestKimi(dataUrl);
   }
 
@@ -270,7 +316,7 @@ const recognizeByKimi = async (imageUrl) => {
     return await requestKimi(imageUrl);
   } catch (firstError) {
     logger.warn('Kimi URL 模式失败，尝试 Base64 回退', { error: firstError.message });
-    const dataUrl = await fetchImageAsDataUrl(imageUrl);
+    const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
     return requestKimi(dataUrl);
   }
 };
@@ -299,11 +345,10 @@ const recognizeByTencent = async (imageUrl) => {
   };
 };
 
-const recognizeByRule = async (imageUrl) => {
+const recognizeByRule = async ({ imageUrl, fileKey, mimeType }) => {
   let text = '';
   try {
-    const maybeDataUrl = await fetchImageAsDataUrl(imageUrl);
-    text = maybeDataUrl ? '' : '';
+    await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
   } catch (error) {
     logger.warn('规则OCR读取图片失败，继续返回空文本', { error: error.message });
   }
@@ -319,14 +364,14 @@ const recognizeByRule = async (imageUrl) => {
   };
 };
 
-const recognizeGeneral = async (imageUrl) => {
+const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
   const providerPreference = OCR_PROVIDER;
   const attemptedProviders = new Set();
 
   try {
     if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential)) {
       attemptedProviders.add('kimi');
-      return await recognizeByKimi(imageUrl);
+      return await recognizeByKimi({ imageUrl, fileKey, mimeType });
     }
 
     if (providerPreference === 'tencent' || (providerPreference === 'auto' && hasTencentCredential)) {
@@ -334,7 +379,7 @@ const recognizeGeneral = async (imageUrl) => {
       return await recognizeByTencent(imageUrl);
     }
 
-    return recognizeByRule(imageUrl);
+    return recognizeByRule({ imageUrl, fileKey, mimeType });
   } catch (error) {
     logger.warn('首选OCR提供方失败，进入回退路径', {
       provider: providerPreference,
@@ -343,7 +388,7 @@ const recognizeGeneral = async (imageUrl) => {
 
     if (hasKimiCredential && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
-        return await recognizeByKimi(imageUrl);
+        return await recognizeByKimi({ imageUrl, fileKey, mimeType });
       } catch (e) {
         logger.warn('Kimi 回退失败', { error: e.message });
       }
@@ -357,7 +402,7 @@ const recognizeGeneral = async (imageUrl) => {
       }
     }
 
-    return recognizeByRule(imageUrl);
+    return recognizeByRule({ imageUrl, fileKey, mimeType });
   }
 };
 
@@ -388,7 +433,17 @@ const processMedicalImage = async (imageUrl) => {
       try {
         text = await extractTextFromPdf(sourceUrl);
       } catch (pdfError) {
-        logger.warn('PDF 文本解析失败，使用空文本回退', { error: pdfError.message });
+        if (source.fileKey) {
+          const localPdfPath = getLocalFilePath(source.fileKey);
+          try {
+            const parsed = await pdfParse(await fs.readFile(localPdfPath));
+            text = (parsed.text || '').trim();
+          } catch (localPdfError) {
+            logger.warn('PDF 本地文本解析失败，使用空文本回退', { error: localPdfError.message });
+          }
+        } else {
+          logger.warn('PDF 文本解析失败，使用空文本回退', { error: pdfError.message });
+        }
       }
       const entities = extractMedicalEntities(text);
       return {
@@ -400,7 +455,11 @@ const processMedicalImage = async (imageUrl) => {
       };
     }
 
-    const result = await recognizeGeneral(sourceUrl);
+    const result = await recognizeGeneral({
+      imageUrl: sourceUrl,
+      fileKey: source.fileKey,
+      mimeType: source.mimeType
+    });
     return {
       success: true,
       text: result.text,

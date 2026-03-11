@@ -14,6 +14,18 @@ const redisConfig = {
 const ocrQueue = new Queue('ocr processing', { redis: redisConfig });
 const notificationQueue = new Queue('notifications', { redis: redisConfig });
 
+const hasMeaningfulOcrResult = (result = {}) => {
+  const text = `${result.text || ''}`.trim();
+  const entities = result.entities || {};
+  return Boolean(
+    text ||
+    `${entities.diagnosis || ''}`.trim() ||
+    `${entities.stage || ''}`.trim() ||
+    `${entities.geneMutation || ''}`.trim() ||
+    `${entities.treatment || ''}`.trim()
+  );
+};
+
 /**
  * OCR 任务处理器
  */
@@ -38,6 +50,10 @@ ocrQueue.process(async (job) => {
       mimeType,
       fileKey
     });
+
+    if (!hasMeaningfulOcrResult(result)) {
+      throw new Error('OCR未识别到有效文本');
+    }
     
     // 更新数据库
     await MedicalRecord.update({
