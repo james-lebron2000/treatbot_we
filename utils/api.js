@@ -47,18 +47,34 @@ const trimTrailingSlash = (value) => {
 const ENV = resolveEnv()
 const runtimeConfig = API_CONFIG[ENV] || API_CONFIG.dev
 const mockMode = runtimeConfig.mockMode
+const ALLOWED_BASE_URLS = Array.from(new Set([DEFAULT_TEST_BASE_URL, DEFAULT_PROD_BASE_URL].map(trimTrailingSlash)))
+
+const resolveAllowedBaseUrl = (value) => {
+  const normalized = trimTrailingSlash(value)
+  if (!normalized) {
+    return ''
+  }
+  if (ALLOWED_BASE_URLS.includes(normalized)) {
+    return normalized
+  }
+  return ''
+}
 
 const getRuntimeBaseUrl = () => {
   const stored = wx.getStorageSync('apiBaseUrl')
-  if (stored) {
-    return trimTrailingSlash(stored)
+  const storedBaseUrl = resolveAllowedBaseUrl(stored)
+  if (stored && !storedBaseUrl) {
+    wx.removeStorageSync('apiBaseUrl')
+  }
+  if (storedBaseUrl) {
+    return storedBaseUrl
   }
 
   try {
     const app = typeof getApp === 'function' ? getApp() : null
-    const appBaseUrl = app && app.globalData && app.globalData.apiBaseUrl
+    const appBaseUrl = resolveAllowedBaseUrl(app && app.globalData && app.globalData.apiBaseUrl)
     if (appBaseUrl) {
-      return trimTrailingSlash(appBaseUrl)
+      return appBaseUrl
     }
   } catch (error) {
     // ignore

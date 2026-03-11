@@ -9,9 +9,16 @@ App({
   },
 
   onLaunch() {
-    wx.setStorageSync('enableLocalFallback', false)
+    this.resetRuntimeOverrides()
     this.restoreSession()
     this.collectSystemInfo()
+  },
+
+  resetRuntimeOverrides() {
+    const officialBaseUrl = this.globalData.apiBaseUrl
+    wx.setStorageSync('enableLocalFallback', false)
+    wx.setStorageSync('apiBaseUrl', officialBaseUrl)
+    wx.removeStorageSync('endpointState')
   },
 
   restoreSession() {
