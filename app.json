@@ -11,15 +11,15 @@
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#fff",
-    "navigationBarTitleText": "海马智合",
+    "navigationBarBackgroundColor": "#F7FAFE",
+    "navigationBarTitleText": "Treatbot",
     "navigationBarTextStyle": "black"
   },
   "tabBar": {
-    "color": "#999999",
-    "selectedColor": "#1890ff",
-    "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "color": "#7083A3",
+    "selectedColor": "#0F2B57",
+    "backgroundColor": "#F9FBFE",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/index/index",

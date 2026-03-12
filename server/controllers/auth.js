@@ -14,6 +14,7 @@ const JWT_REFRESH_EXPIRES_IN = parseInt(process.env.JWT_REFRESH_EXPIRES_IN) || 6
 const WEAPP_APPID = process.env.WEAPP_APPID;
 const WEAPP_SECRET = process.env.WEAPP_SECRET;
 const WEAPP_SESSION_KEY_PREFIX = 'weapp:session_key:';
+const WEAPP_ACCESS_TOKEN_STORAGE_KEY = 'weapp:access_token';
 
 const toPositiveInt = (value, fallback) => {
   const num = parseInt(value, 10);
@@ -27,6 +28,7 @@ const WEAPP_SESSION_TTL_SECONDS = toPositiveInt(process.env.WEAPP_SESSION_TTL, 7
 const H5_LOGIN_ENABLED = process.env.H5_LOGIN_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
 const H5_LOGIN_FIXED_CODE = process.env.H5_LOGIN_FIXED_CODE || '000000';
 const localSessionKeyCache = new Map();
+let localAccessTokenCache = { token: '', expiresAt: 0 };
 
 const normalizePhone = (value) => {
   const onlyDigits = `${value || ''}`.replace(/\D/g, '');
@@ -106,6 +108,91 @@ const getCachedSessionKey = async (userId) => {
     return '';
   }
   return localCached.sessionKey;
+};
+
+const cacheAccessToken = async (accessToken, expiresInSeconds) => {
+  if (!accessToken) {
+    return;
+  }
+
+  const ttl = Math.max(60, (parseInt(expiresInSeconds, 10) || 7200) - 120);
+  localAccessTokenCache = {
+    token: accessToken,
+    expiresAt: Date.now() + ttl * 1000
+  };
+
+  try {
+    await redisClient.setex(WEAPP_ACCESS_TOKEN_STORAGE_KEY, ttl, accessToken);
+  } catch (err) {
+    logger.warn('缓存 access_token 到 Redis 失败，已回退内存缓存', { error: err.message });
+  }
+};
+
+const getCachedAccessToken = async () => {
+  try {
+    const fromRedis = await redisClient.get(WEAPP_ACCESS_TOKEN_STORAGE_KEY);
+    if (fromRedis) {
+      return fromRedis;
+    }
+  } catch (err) {
+    logger.warn('从 Redis 读取 access_token 失败，尝试内存缓存', { error: err.message });
+  }
+
+  if (localAccessTokenCache.token && Date.now() < localAccessTokenCache.expiresAt) {
+    return localAccessTokenCache.token;
+  }
+
+  return '';
+};
+
+const getWeappAccessToken = async () => {
+  const cached = await getCachedAccessToken();
+  if (cached) {
+    return cached;
+  }
+
+  const tokenRes = await axios.get('https://api.weixin.qq.com/cgi-bin/token', {
+    params: {
+      grant_type: 'client_credential',
+      appid: WEAPP_APPID,
+      secret: WEAPP_SECRET
+    }
+  });
+
+  const { access_token: accessToken, expires_in: expiresIn, errcode, errmsg } = tokenRes.data || {};
+  if (errcode || !accessToken) {
+    throw new BusinessError(`获取微信 access_token 失败: ${errmsg || errcode || 'unknown error'}`, 502);
+  }
+
+  await cacheAccessToken(accessToken, expiresIn);
+  return accessToken;
+};
+
+const getWechatPhoneByCode = async (code) => {
+  if (!code) {
+    return '';
+  }
+
+  const accessToken = await getWeappAccessToken();
+  const phoneRes = await axios.post(
+    `https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${accessToken}`,
+    { code },
+    {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  const { errcode, errmsg, phone_info: phoneInfo, phoneInfo: camelPhoneInfo } = phoneRes.data || {};
+  if (errcode) {
+    throw new BusinessError(`获取微信手机号失败: ${errmsg || errcode}`, 400);
+  }
+
+  return normalizePhone(
+    (phoneInfo && (phoneInfo.phoneNumber || phoneInfo.purePhoneNumber))
+      || (camelPhoneInfo && (camelPhoneInfo.phoneNumber || camelPhoneInfo.purePhoneNumber))
+  );
 };
 
 const decodeWechatPhone = ({ sessionKey, encryptedData, iv }) => {
@@ -266,12 +353,16 @@ const h5Login = async (req, res, next) => {
 };
 
 /**
- * 绑定手机号（优先走微信 encryptedData/iv 解密）
+ * 绑定手机号（优先走微信 code 换取手机号，兼容 encryptedData/iv）
  */
 const bindPhone = async (req, res, next) => {
   try {
-    const { encryptedData, iv, phoneNumber, phone, mobile } = req.body || {};
+    const { code, encryptedData, iv, phoneNumber, phone, mobile } = req.body || {};
     let normalizedPhone = normalizePhone(phoneNumber || phone || mobile);
+
+    if (!normalizedPhone && code) {
+      normalizedPhone = await getWechatPhoneByCode(code);
+    }
 
     if (!normalizedPhone && encryptedData && iv) {
       const sessionKey = await getCachedSessionKey(req.userId);

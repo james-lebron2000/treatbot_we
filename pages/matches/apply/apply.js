@@ -63,8 +63,9 @@ Page({
     if (!`${this.data.trialId || ''}`.trim()) {
       return '试验信息缺失'
     }
-    if (!PHONE_REG.test(`${form.phone || ''}`.trim())) {
-      return '请输入11位手机号'
+    const phone = `${form.phone || ''}`.trim()
+    if (phone && !PHONE_REG.test(phone)) {
+      return '手机号格式不正确'
     }
     return ''
   },
@@ -106,7 +107,9 @@ Page({
       }
 
       const res = await api.applyTrial(payload)
-      wx.setStorageSync('patientPhone', payload.phone)
+      if (phone) {
+        wx.setStorageSync('patientPhone', phone)
+      }
 
       if (res && res.fallback) {
         const fallbackMessage =

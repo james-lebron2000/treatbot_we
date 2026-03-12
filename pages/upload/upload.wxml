@@ -81,33 +81,64 @@
   </view>
 
   <view wx:if="{{currentStep === 2}}" class="processing-section">
-    <view class="processing-animation">
-      <view class="animation-circle"></view>
-      <view class="animation-circle"></view>
-      <view class="animation-circle"></view>
-    </view>
-    <view class="processing-title">正在为您整理病历信息...</view>
-    <view class="processing-desc">{{processingStatus}}</view>
+    <view class="processing-shell">
+      <view class="processing-hero">
+        <view class="processing-animation">
+          <view class="animation-circle"></view>
+          <view class="animation-circle"></view>
+          <view class="animation-circle"></view>
+        </view>
+        <view class="processing-title">正在为您整理病历信息</view>
+        <view class="processing-desc">{{processingStatus}}</view>
+      </view>
 
-    <view class="progress-section">
-      <view class="progress-bar">
-        <view class="progress-fill" style="{{parseProgressStyle}}"></view>
+      <view class="progress-panel">
+        <view class="progress-panel-head">
+          <text class="progress-kicker">当前进度</text>
+          <text class="progress-number">{{parseProgress}}%</text>
+        </view>
+        <view class="progress-bar">
+          <view class="progress-fill" style="{{parseProgressStyle}}"></view>
+          <view class="progress-shine"></view>
+        </view>
+        <view class="progress-meta">
+          <text>上传后可切到其他页面，系统会继续后台整理</text>
+        </view>
       </view>
-      <text class="progress-text">{{parseProgress}}%</text>
-    </view>
 
-    <view class="parse-steps">
-      <view class="parse-step {{parseStep >= 1 ? 'completed' : ''}}">
-        <text class="step-icon">{{parseStep >= 1 ? '✓' : '○'}}</text>
-        <text class="step-name">OCR文字识别</text>
+      <view class="parse-steps">
+        <view
+          class="parse-step-card {{parseStep > index ? 'completed' : ''}} {{parseStep === index ? 'current' : ''}}"
+          wx:for="{{processSteps}}"
+          wx:key="key"
+          wx:for-item="step"
+          wx:for-index="index"
+        >
+          <view class="parse-step-badge">
+            <text wx:if="{{parseStep > index}}" class="parse-step-badge-text">✓</text>
+            <text wx:elif="{{parseStep === index}}" class="parse-step-badge-text">{{index + 1}}</text>
+            <text wx:else class="parse-step-badge-text">{{index + 1}}</text>
+          </view>
+          <view class="parse-step-main">
+            <view class="parse-step-top">
+              <text class="parse-step-title">{{step.title}}</text>
+              <text class="parse-step-state" wx:if="{{parseStep > index}}">已完成</text>
+              <text class="parse-step-state current" wx:elif="{{parseStep === index}}">进行中</text>
+              <text class="parse-step-state pending" wx:else>等待中</text>
+            </view>
+            <text class="parse-step-desc">{{step.desc}}</text>
+          </view>
+        </view>
       </view>
-      <view class="parse-step {{parseStep >= 2 ? 'completed' : ''}}">
-        <text class="step-icon">{{parseStep >= 2 ? '✓' : '○'}}</text>
-        <text class="step-name">医疗信息抽取</text>
+
+      <view class="background-tip">
+        <text class="background-tip-title">后台会自动继续整理</text>
+        <text class="background-tip-text">完成后会自动写入病历结果，并提前准备匹配结果。你不必停留在这个界面等待。</text>
       </view>
-      <view class="parse-step {{parseStep >= 3 ? 'completed' : ''}}">
-        <text class="step-icon">{{parseStep >= 3 ? '✓' : '○'}}</text>
-        <text class="step-name">结构化病历</text>
+
+      <view class="background-actions">
+        <button class="btn btn-default" bindtap="goToRecords">去看病历列表</button>
+        <button class="btn btn-primary" bindtap="goToMatchesPage">稍后看匹配</button>
       </view>
     </view>
   </view>

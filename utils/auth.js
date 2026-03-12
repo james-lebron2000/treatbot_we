@@ -1,5 +1,19 @@
 const api = require('./api')
 
+const TRANSIENT_STORAGE_KEYS = [
+  'currentRecordId',
+  'structuredRecordDraft',
+  'selectedMatchDetail',
+  'selectedApplyTrial',
+  'patientPhone',
+  'activeParseTask',
+  'recentCompletedRecordId',
+  'localMedicalRecords',
+  'localTrialApplications'
+]
+
+const USER_SCOPED_PREFIXES = ['matchCache:v2:', 'parseResult:']
+
 const pickPayload = (res) => {
   if (!res || typeof res !== 'object') {
     return {}
@@ -12,30 +26,71 @@ const pickPayload = (res) => {
   return res
 }
 
-const setSession = (payload) => {
-  const token = payload.token || payload.accessToken || ''
-  const userInfo = payload.userInfo || payload.profile || null
-  const phone = payload.phone || payload.mobile || ''
-
-  if (token) {
-    wx.setStorageSync('token', token)
-  }
-  if (userInfo) {
-    wx.setStorageSync('userInfo', userInfo)
-  }
-  if (phone) {
-    wx.setStorageSync('patientPhone', phone)
+const clearPrefixedStorage = (prefixes = []) => {
+  if (!wx.getStorageInfoSync) {
+    return
   }
 
-  const app = getApp()
-  app.globalData.token = token
-  app.globalData.userInfo = userInfo
+  let info = null
+  try {
+    info = wx.getStorageInfoSync()
+  } catch (error) {
+    return
+  }
+
+  const keys = Array.isArray(info && info.keys) ? info.keys : []
+  keys.forEach((key) => {
+    if (prefixes.some((prefix) => key.indexOf(prefix) === 0)) {
+      wx.removeStorageSync(key)
+    }
+  })
+}
+
+const clearTransientState = () => {
+  TRANSIENT_STORAGE_KEYS.forEach((key) => wx.removeStorageSync(key))
+  clearPrefixedStorage(USER_SCOPED_PREFIXES)
+}
+
+const normalizeSessionPayload = (payload = {}) => {
+  const token = payload.token || payload.accessToken || wx.getStorageSync('token') || ''
+  const sourceUserInfo = payload.userInfo || payload.profile || {}
 
   return {
     token,
-    userInfo,
-    phone
+    userInfo: {
+      id: sourceUserInfo.id || payload.id || '',
+      nickName: sourceUserInfo.nickName || sourceUserInfo.nickname || payload.nickName || payload.nickname || '微信用户',
+      avatarUrl: sourceUserInfo.avatarUrl || sourceUserInfo.avatar_url || payload.avatarUrl || payload.avatar_url || '',
+      phone: sourceUserInfo.phone || ''
+    }
   }
+}
+
+const setSession = (payload) => {
+  const normalized = normalizeSessionPayload(payload)
+  const previousUserInfo = wx.getStorageSync('userInfo') || {}
+  const previousUserId = `${previousUserInfo.id || wx.getStorageSync('activeUserId') || ''}`.trim()
+  const nextUserId = `${normalized.userInfo.id || previousUserId || ''}`.trim()
+
+  if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+    clearTransientState()
+  }
+
+  if (normalized.token) {
+    wx.setStorageSync('token', normalized.token)
+  }
+  if (normalized.userInfo) {
+    wx.setStorageSync('userInfo', normalized.userInfo)
+  }
+  if (nextUserId) {
+    wx.setStorageSync('activeUserId', nextUserId)
+  }
+
+  const app = getApp()
+  app.globalData.token = normalized.token
+  app.globalData.userInfo = normalized.userInfo
+
+  return normalized
 }
 
 const wechatLogin = () => {
@@ -53,49 +108,49 @@ const wechatLogin = () => {
   })
 }
 
-const ensureLogin = async () => {
-  const token = wx.getStorageSync('token')
+const refreshProfile = async () => {
+  const res = await api.getProfile()
+  const payload = pickPayload(res)
+  return setSession(payload)
+}
+
+const ensureBaseLogin = async () => {
+  const token = `${wx.getStorageSync('token') || ''}`.trim()
+  let session = null
+
   if (token) {
     try {
-      await api.getProfile()
-      return {
-        token,
-        userInfo: wx.getStorageSync('userInfo') || null,
-        phone: wx.getStorageSync('patientPhone') || ''
-      }
+      session = await refreshProfile()
     } catch (error) {
       clearSession()
     }
   }
 
-  let session = null
-
-  try {
+  if (!session) {
     const code = await wechatLogin()
     const res = await api.login(code)
     const payload = pickPayload(res)
     session = setSession(payload)
-  } catch (error) {
-    if (api.env === 'prod') {
-      throw error
+
+    try {
+      session = await refreshProfile()
+    } catch (error) {
+      session = setSession(payload)
     }
-
-    const fallbackRes = await api.loginWithTestAccount()
-    const fallbackPayload = pickPayload(fallbackRes)
-    session = setSession(fallbackPayload)
-  }
-
-  if (!session.token) {
-    throw new Error('登录失败，未获取到 token')
   }
 
   return session
 }
 
+const ensureLogin = async () => {
+  return ensureBaseLogin()
+}
+
 const clearSession = () => {
   wx.removeStorageSync('token')
   wx.removeStorageSync('userInfo')
-  wx.removeStorageSync('patientPhone')
+  wx.removeStorageSync('activeUserId')
+  clearTransientState()
 
   const app = getApp()
   app.globalData.token = null
@@ -104,6 +159,7 @@ const clearSession = () => {
 
 module.exports = {
   ensureLogin,
+  ensureBaseLogin,
   setSession,
   clearSession
 }

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authMiddleware } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/adminAuth');
 const { idempotencyMiddleware } = require('../middleware/idempotency');
 const { strictLimiter, uploadLimiter } = require('../middleware/rateLimit');
 
@@ -54,11 +55,13 @@ router.get('/applications', authMiddleware, applicationController.getList);
 router.put('/applications/:id/cancel', authMiddleware, applicationController.cancel);
 
 // ===== 管理后台 API（需要管理员权限）=====
-// TODO: 添加管理员权限检查中间件
-router.get('/admin/dashboard', authMiddleware, adminController.getDashboardStats);
-router.get('/admin/users', authMiddleware, adminController.getUserList);
-router.get('/admin/applications', authMiddleware, adminController.getApplicationList);
-router.put('/admin/applications/:id/status', authMiddleware, adminController.updateApplicationStatus);
-router.get('/admin/logs', authMiddleware, adminController.getSystemLogs);
+router.get('/admin/dashboard', authMiddleware, requireAdmin, adminController.getDashboardStats);
+router.get('/admin/users', authMiddleware, requireAdmin, adminController.getUserList);
+router.get('/admin/records', authMiddleware, requireAdmin, adminController.getRecordList);
+router.get('/admin/applications', authMiddleware, requireAdmin, adminController.getApplicationList);
+router.put('/admin/applications/:id/status', authMiddleware, requireAdmin, adminController.updateApplicationStatus);
+router.get('/admin/logs', authMiddleware, requireAdmin, adminController.getSystemLogs);
+router.get('/admin/exports/users', authMiddleware, requireAdmin, adminController.exportUsers);
+router.get('/admin/exports/records', authMiddleware, requireAdmin, adminController.exportRecords);
 
 module.exports = router;

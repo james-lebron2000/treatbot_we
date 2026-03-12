@@ -3,6 +3,7 @@ const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText } = require('../services/matchEngine');
+const { safeText, sanitizeTrial } = require('../utils/text');
 
 const MAX_SCAN_TRIALS = 300;
 
@@ -13,8 +14,6 @@ const toPositiveInt = (value, fallback) => {
   }
   return num;
 };
-
-const safeText = (value) => `${value || ''}`.trim();
 
 const parseFilters = (value) => {
   if (!value) {
@@ -103,21 +102,21 @@ const getUserCompletedRecords = async (userId) => {
 const buildDetailedMatchItem = (trial, scored) => ({
   id: trial.id,
   trialId: trial.id,
-  name: trial.name,
+  name: safeText(trial.name),
   score: scored.score,
-  phase: trial.phase || '未标注',
-  location: trial.location || '待补充',
-  type: trial.type || '未标注',
-  indication: trial.indication || '待补充',
-  institution: trial.institution || '待补充',
+  phase: safeText(trial.phase) || '未标注',
+  location: safeText(trial.location) || '待补充',
+  type: safeText(trial.type) || '未标注',
+  indication: safeText(trial.indication) || '待补充',
+  institution: safeText(trial.institution) || '待补充',
   status: trial.status,
   statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
-  reasons: scored.reasons || ['已根据病历基础信息进行规则匹配'],
+  reasons: (scored.reasons || ['已根据病历基础信息进行规则匹配']).map((item) => safeText(item)).filter(Boolean),
   inclusion: parseArrayField(trial.inclusion_criteria),
   exclusion: parseArrayField(trial.exclusion_criteria),
   contact: {
     name: '研究中心',
-    phone: trial.contact_phone || '',
+    phone: safeText(trial.contact_phone) || '',
     email: ''
   },
   updatedAt: trial.updated_at
@@ -180,6 +179,7 @@ const getMatches = async (req, res, next) => {
     }
 
     const allMatches = trials
+      .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         let best = null;
         for (const profileRecord of profileRecords) {
@@ -224,28 +224,29 @@ const getTrialDetail = async (req, res, next) => {
     }
 
     const records = await getUserCompletedRecords(req.userId);
-    const matched = records.length ? matchRecordsToTrials(records, [trial]) : [];
+    const normalizedTrial = sanitizeTrial(trial);
+    const matched = records.length ? matchRecordsToTrials(records, [normalizedTrial]) : [];
     const matchedInfo = matched[0];
 
     res.json(success({
-      id: trial.id,
-      name: trial.name,
-      phase: trial.phase || '未标注',
-      type: trial.type || '未标注',
-      indication: trial.indication || '待补充',
-      institution: trial.institution || '待补充',
-      location: trial.location || '待补充',
+      id: normalizedTrial.id,
+      name: safeText(normalizedTrial.name),
+      phase: safeText(normalizedTrial.phase) || '未标注',
+      type: safeText(normalizedTrial.type) || '未标注',
+      indication: safeText(normalizedTrial.indication) || '待补充',
+      institution: safeText(normalizedTrial.institution) || '待补充',
+      location: safeText(normalizedTrial.location) || '待补充',
       score: matchedInfo?.score || 50,
-      status: trial.status,
-      statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
-      reasons: matchedInfo?.reasons || ['已根据病历基础信息进行规则匹配'],
-      sponsor: trial.institution || '待补充',
-      description: trial.description || '暂无详细介绍',
-      inclusion: parseArrayField(trial.inclusion_criteria),
-      exclusion: parseArrayField(trial.exclusion_criteria),
+      status: normalizedTrial.status,
+      statusText: STATUS_TEXT_MAP[normalizedTrial.status] || normalizedTrial.status,
+      reasons: (matchedInfo?.reasons || ['已根据病历基础信息进行规则匹配']).map((item) => safeText(item)).filter(Boolean),
+      sponsor: safeText(normalizedTrial.institution) || '待补充',
+      description: safeText(normalizedTrial.description) || '暂无详细介绍',
+      inclusion: parseArrayField(normalizedTrial.inclusion_criteria),
+      exclusion: parseArrayField(normalizedTrial.exclusion_criteria),
       contact: {
         name: '研究中心',
-        phone: trial.contact_phone || '',
+        phone: safeText(normalizedTrial.contact_phone) || '',
         email: ''
       }
     }));
@@ -309,6 +310,7 @@ const findMatches = async (req, res, next) => {
     }
 
     const list = trials
+      .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         const scored = scoreRecordAgainstTrial(profileRecord, trial);
         return buildDetailedMatchItem(trial, scored);
@@ -371,26 +373,29 @@ const searchTrials = async (req, res, next) => {
       offset: (pageNum - 1) * pageSizeNum
     });
 
-    const list = rows.map((trial) => ({
+    const list = rows.map((item) => {
+      const trial = sanitizeTrial(item);
+      return {
       id: trial.id,
-      name: trial.name,
-      phase: trial.phase || '未标注',
-      type: trial.type || '未标注',
-      location: trial.location || '待补充',
-      institution: trial.institution || '待补充',
+      name: safeText(trial.name),
+      phase: safeText(trial.phase) || '未标注',
+      type: safeText(trial.type) || '未标注',
+      location: safeText(trial.location) || '待补充',
+      institution: safeText(trial.institution) || '待补充',
       status: trial.status,
       statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
-      indication: trial.indication || '待补充',
+      indication: safeText(trial.indication) || '待补充',
       inclusion: parseArrayField(trial.inclusion_criteria),
       exclusion: parseArrayField(trial.exclusion_criteria),
       contact: {
         name: '研究中心',
-        phone: trial.contact_phone || '',
+        phone: safeText(trial.contact_phone) || '',
         email: ''
       },
       updatedAt: trial.updated_at,
       tags: [trial.phase, trial.type, trial.status].filter(Boolean)
-    }));
+      };
+    });
 
     res.json(pagination(list, {
       page: pageNum,
@@ -417,14 +422,15 @@ const getFilterOptions = async (req, res, next) => {
     const locationSet = new Set();
     const indicationSet = new Set();
     for (const item of trials) {
-      if (item.phase) {
-        phaseSet.add(item.phase);
+      const trial = sanitizeTrial(item);
+      if (trial.phase) {
+        phaseSet.add(trial.phase);
       }
-      if (item.location) {
-        locationSet.add(item.location);
+      if (trial.location) {
+        locationSet.add(trial.location);
       }
-      if (item.indication) {
-        indicationSet.add(item.indication);
+      if (trial.indication) {
+        indicationSet.add(trial.indication);
       }
     }
 

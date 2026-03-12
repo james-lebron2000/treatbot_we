@@ -1,9 +1,10 @@
 <view class="container">
   <view class="hero-section">
     <view class="hero-content">
+      <text class="hero-eyebrow">Treatbot 智能预筛</text>
       <text class="hero-title">真心对待每一人</text>
       <text class="hero-title">多看看这个世界</text>
-      <text class="hero-subtitle">1分钟发现专属治疗方案</text>
+      <text class="hero-subtitle">把病历整理、结构化预筛和试验匹配，压缩到一次上传里完成。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
@@ -25,34 +26,50 @@
 
   <view class="feature-section">
     <view class="section-title">快速开始</view>
+    <view class="section-subtitle">从上传、病历管理到试验筛选，全部在一个流里完成。</view>
 
     <view class="feature-grid">
       <view class="feature-card primary" bindtap="goToUpload">
-        <view class="feature-icon">📷</view>
+        <view class="feature-icon">录</view>
         <view class="feature-info">
           <text class="feature-title">上传病历</text>
-          <text class="feature-desc">拍照或选择相册</text>
+          <text class="feature-desc">拍照、相册或 PDF，一次进入后台整理</text>
         </view>
-        <view class="feature-arrow">→</view>
+        <view class="feature-arrow">›</view>
       </view>
 
       <view class="feature-card" bindtap="goToRecords">
-        <view class="feature-icon">📋</view>
+        <view class="feature-icon">档</view>
         <view class="feature-info">
           <text class="feature-title">我的病历</text>
-          <text class="feature-desc">管理已上传病历</text>
+          <text class="feature-desc">查看结构化结果和补全项</text>
         </view>
-        <view class="feature-arrow">→</view>
+        <view class="feature-arrow">›</view>
       </view>
 
       <view class="feature-card" bindtap="goToMatches">
-        <view class="feature-icon">🎯</view>
+        <view class="feature-icon">筛</view>
         <view class="feature-info">
           <text class="feature-title">匹配结果</text>
-          <text class="feature-desc">查看推荐试验</text>
+          <text class="feature-desc">查看当前病历对应的试验推荐</text>
         </view>
-        <view class="feature-arrow">→</view>
+        <view class="feature-arrow">›</view>
       </view>
+    </view>
+  </view>
+
+  <view class="processing-card" wx:if="{{activeParseTask}}">
+    <view class="processing-card-head">
+      <text class="processing-card-title">病历正在后台整理</text>
+      <text class="processing-card-progress">{{activeParseTask.progress}}%</text>
+    </view>
+    <text class="processing-card-text">{{activeParseTask.text}}</text>
+    <view class="processing-card-bar">
+      <view class="processing-card-fill" style="width: {{activeParseTask.progress}}%;"></view>
+    </view>
+    <view class="processing-card-actions">
+      <text class="processing-card-link" bindtap="goToRecords">查看病历</text>
+      <text class="processing-card-link" bindtap="goToMatches">查看匹配</text>
     </view>
   </view>
 
@@ -93,6 +110,7 @@
 
   <view class="process-section">
     <view class="section-title">3步完成试验初筛</view>
+    <view class="section-subtitle">上传病历后，系统会先整理关键信息，再输出更可解释的匹配建议。</view>
     <view class="process-steps">
       <view class="step">
         <view class="step-number">1</view>

@@ -1,6 +1,9 @@
 <view class="container">
   <view class="page-header">
-    <text class="page-title">试验匹配</text>
+    <view class="page-title-group">
+      <text class="page-title">试验匹配</text>
+      <text class="page-subtitle">围绕当前病历生成更可解释的临床试验推荐。</text>
+    </view>
     <view class="filter-btn" bindtap="loadMatches">
       <text>刷新</text>
     </view>
@@ -29,6 +32,17 @@
     <text>当前暂无40分以上结果，已展示低分候选供人工预筛。</text>
   </view>
 
+  <view class="processing-banner" wx:if="{{activeParseTask}}">
+    <view class="processing-banner-head">
+      <text class="processing-banner-title">病历仍在后台整理</text>
+      <text class="processing-banner-progress">{{activeParseTask.progress}}%</text>
+    </view>
+    <text class="processing-banner-text">{{activeParseTask.text}}</text>
+    <view class="processing-banner-bar">
+      <view class="processing-banner-fill" style="width: {{activeParseTask.progress}}%;"></view>
+    </view>
+  </view>
+
   <view class="supplement-tip" wx:if="{{!loading && needSupplement > 0}}">
     <text class="supplement-text">有 {{needSupplement}} 个试验因“缺失证据”较多，建议先补全病历再评估。</text>
     <button class="supplement-btn" bindtap="goToUpload">去补全病历</button>
@@ -48,70 +62,71 @@
 
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
-      <view class="match-score-badge">
-        <text class="score">{{item.score}}%</text>
-        <text class="label">匹配度</text>
+      <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
+        <view class="match-content">
+          <text class="match-title">{{item.name}}</text>
+        </view>
+        <view class="match-header-right">
+          <view class="match-score-badge">
+            <text class="score">{{item.score}}%</text>
+            <text class="label">匹配度</text>
+          </view>
+          <text class="match-expand-indicator">{{item.expanded ? '收起' : '展开'}}</text>
+        </view>
       </view>
 
-      <view class="match-content">
-        <text class="match-title">{{item.name}}</text>
+      <view class="match-card-summary">
         <view class="match-tags">
           <text class="tag tag-level level-{{item.score >= 80 ? 'high' : (item.score >= 60 ? 'mid' : 'low')}}">{{item.matchLevel}}</text>
           <text class="tag tag-primary">{{item.phase}}</text>
-          <text class="tag tag-success">{{item.location}}</text>
           <text class="tag tag-warning">{{item.type}}</text>
         </view>
-        <text class="match-indication">癌种/适应症：{{item.indication}}</text>
-        <text class="match-institution">研究机构：{{item.institution}}</text>
-        <text class="match-meta" wx:if="{{item.nctId}}">试验编号：{{item.nctId}}</text>
-        <text class="match-meta" wx:if="{{item.status}}">招募状态：{{item.status}}</text>
-        <text class="match-summary" wx:if="{{item.inclusionSummary}}">入组摘要：{{item.inclusionSummary}}</text>
-        <text class="match-summary" wx:if="{{item.exclusionSummary}}">排除摘要：{{item.exclusionSummary}}</text>
+        <text class="match-indication">{{item.indication}}</text>
       </view>
 
-      <view class="decision-banner tone-{{item.decisionTone}}">
-        <text class="decision-label">综合建议</text>
-        <text class="decision-text">{{item.decisionHint}}</text>
-      </view>
+      <view wx:if="{{item.expanded}}" class="match-card-expanded">
+        <view class="decision-banner tone-{{item.decisionTone}}">
+          <text class="decision-label">综合建议</text>
+          <text class="decision-text">{{item.decisionHint}}</text>
+        </view>
 
-      <view class="explain-board">
-        <view class="explain-column column-hit">
-          <view class="column-title">入组命中</view>
-          <view class="column-item" wx:for="{{item.inclusionHits}}" wx:key="index" wx:for-item="hit">
-            <text class="column-icon hit">✓</text>
-            <text class="column-text">{{hit}}</text>
+        <view class="detail-panel">
+          <text class="detail-panel-title">分中心</text>
+          <view class="sub-center-list" wx:if="{{item.subCenters.length > 0}}">
+            <text class="sub-center-chip" wx:for="{{item.subCenters}}" wx:for-item="center" wx:key="index">{{center}}</text>
           </view>
-          <view class="column-empty" wx:if="{{item.inclusionHits.length === 0}}">
-            <text>暂无明确命中证据</text>
+          <view class="column-empty" wx:else>
+            <text>暂未提供分中心信息</text>
           </view>
         </view>
 
-        <view class="explain-column column-risk">
-          <view class="column-title">排除风险</view>
-          <view class="column-item" wx:for="{{item.exclusionRisks}}" wx:key="index" wx:for-item="risk">
-            <text class="column-icon risk">!</text>
-            <text class="column-text">{{risk}}</text>
-          </view>
-          <view class="column-empty safe" wx:if="{{item.exclusionRisks.length === 0}}">
-            <text>暂未识别明确排除风险</text>
+        <view class="detail-panel">
+          <text class="detail-panel-title">基础信息</text>
+          <text class="match-meta" wx:if="{{item.institution}}">研究机构：{{item.institution}}</text>
+          <text class="match-meta" wx:if="{{item.nctId}}">试验编号：{{item.nctId}}</text>
+          <text class="match-meta" wx:if="{{item.status}}">招募状态：{{item.status}}</text>
+        </view>
+
+        <view class="detail-panel" wx:if="{{item.inclusion.length > 0}}">
+          <text class="detail-panel-title">入选标准</text>
+          <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="criterion" wx:key="index">
+            <text class="criteria-icon">+</text>
+            <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
 
-        <view class="explain-column column-missing">
-          <view class="column-title">缺失证据</view>
-          <view class="column-item" wx:for="{{item.missingEvidence}}" wx:key="index" wx:for-item="missing">
-            <text class="column-icon missing">?</text>
-            <text class="column-text">{{missing}}</text>
-          </view>
-          <view class="column-empty safe" wx:if="{{item.missingEvidence.length === 0}}">
-            <text>关键证据基本齐全</text>
+        <view class="detail-panel" wx:if="{{item.exclusion.length > 0}}">
+          <text class="detail-panel-title">排除标准</text>
+          <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="criterion" wx:key="index">
+            <text class="criteria-icon">-</text>
+            <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
-      </view>
 
-      <view class="match-actions">
-        <button class="btn btn-default" bindtap="viewDetail" data-id="{{item.id}}">查看详情</button>
-        <button class="btn btn-primary" bindtap="applyTrial" data-id="{{item.id}}">立即报名</button>
+        <view class="match-actions">
+          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">查看详情</button>
+          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">立即报名</button>
+        </view>
       </view>
     </view>
   </view>

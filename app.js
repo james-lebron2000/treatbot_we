@@ -1,3 +1,19 @@
+const SESSION_SCHEMA_VERSION = 3
+const SESSION_RESET_KEYS = [
+  'token',
+  'userInfo',
+  'activeUserId',
+  'patientPhone',
+  'activeParseTask',
+  'recentCompletedRecordId',
+  'currentRecordId',
+  'structuredRecordDraft',
+  'selectedMatchDetail',
+  'selectedApplyTrial',
+  'localMedicalRecords',
+  'localTrialApplications'
+]
+
 App({
   globalData: {
     userInfo: null,
@@ -10,6 +26,7 @@ App({
 
   onLaunch() {
     this.resetRuntimeOverrides()
+    this.migrateSessionSchema()
     this.restoreSession()
     this.collectSystemInfo()
   },
@@ -19,6 +36,18 @@ App({
     wx.setStorageSync('enableLocalFallback', false)
     wx.setStorageSync('apiBaseUrl', officialBaseUrl)
     wx.removeStorageSync('endpointState')
+  },
+
+  migrateSessionSchema() {
+    const currentVersion = Number(wx.getStorageSync('sessionSchemaVersion') || 0)
+    if (currentVersion === SESSION_SCHEMA_VERSION) {
+      return
+    }
+
+    SESSION_RESET_KEYS.forEach((key) => wx.removeStorageSync(key))
+    this.globalData.token = null
+    this.globalData.userInfo = null
+    wx.setStorageSync('sessionSchemaVersion', SESSION_SCHEMA_VERSION)
   },
 
   restoreSession() {

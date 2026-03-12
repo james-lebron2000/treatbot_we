@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const auth = require('../../utils/auth')
+const parseTask = require('../../utils/parse-task')
 const schema = require('../../utils/schema')
 
 const statusMap = {
@@ -53,8 +54,19 @@ Page({
   async loadRecords() {
     this.setData({ loading: true, errorMessage: '' })
 
+    const token = `${wx.getStorageSync('token') || ''}`.trim()
+    if (!token) {
+      this.setData({
+        records: [],
+        loading: false,
+        errorMessage: ''
+      })
+      return
+    }
+
     try {
       await auth.ensureLogin()
+      await parseTask.syncActiveParseTask().catch(() => null)
       const res = await api.getMedicalRecords()
       const records = pickList(res)
         .map(normalizeRecord)

@@ -33,14 +33,45 @@ const countMatches = (text, pattern) => {
   return hit ? hit.length : 0
 }
 
+const MOJIBAKE_CHAR_PATTERN = /[ÃÂâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿŒœŠšŽžƒ]/g
+const MOJIBAKE_SIGNATURES = [
+  /ã€/,
+  /â‰/,
+  /â€”/,
+  /å…/,
+  /æœ/,
+  /çš/,
+  /å¤/,
+  /é˜/,
+  /ç™/,
+  /å±/,
+  /åˆ/,
+  /çº/,
+  /ç»/,
+  /èƒ/,
+  /ï¼/,
+  /ï¼ˆ/,
+  /ï¼‰/,
+  /ä¸/,
+  /å­/,
+  /åŒ»/,
+  /åŽŸ/,
+  /é€‚/,
+  /ç—‡/,
+  /Î¼/,
+  /Î±/,
+  /Î²/
+]
+
 const isLikelyMojibake = (text) => {
   if (!text) {
     return false
   }
-  const weirdCount = countMatches(text, /[ÃÂãâåæçðñ]/g)
+  const weirdCount = countMatches(text, MOJIBAKE_CHAR_PATTERN)
   const replacementCount = countMatches(text, /�/g)
-  const hasSignature = /ã€|â‰|â€”|å…|æœ|çš|å¤|é˜|ç™|å±|åˆ|çº/.test(text)
-  return weirdCount + replacementCount >= 3 || hasSignature
+  const cjkCount = countMatches(text, /[\u4e00-\u9fff]/g)
+  const hasSignature = MOJIBAKE_SIGNATURES.some((pattern) => pattern.test(text))
+  return weirdCount + replacementCount >= 2 || hasSignature || (weirdCount >= 1 && cjkCount === 0)
 }
 
 const toCp1252Bytes = (text) => {
@@ -58,35 +89,91 @@ const toCp1252Bytes = (text) => {
   return Uint8Array.from(bytes)
 }
 
-const readabilityScore = (text) => {
-  const cjkCount = countMatches(text, /[\u4e00-\u9fff]/g)
-  const weirdCount = countMatches(text, /[ÃÂãâåæçðñ]/g)
-  const replacementCount = countMatches(text, /�/g)
-  return cjkCount * 2 - weirdCount - replacementCount * 2
+const toLatin1Bytes = (text) => {
+  const bytes = []
+  for (let i = 0; i < text.length; i += 1) {
+    bytes.push(text.charCodeAt(i) & 0xff)
+  }
+  return Uint8Array.from(bytes)
 }
 
-const tryFixMojibake = (text) => {
-  if (!isLikelyMojibake(text)) {
-    return text
-  }
+const readabilityScore = (text) => {
+  const cjkCount = countMatches(text, /[\u4e00-\u9fff]/g)
+  const weirdCount = countMatches(text, MOJIBAKE_CHAR_PATTERN)
+  const replacementCount = countMatches(text, /�/g)
+  const controlCount = countMatches(text, /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g)
+  const punctuationBonus = countMatches(text, /[（）《》、：；，。]/g)
+  return cjkCount * 3 + punctuationBonus - weirdCount * 2 - replacementCount * 4 - controlCount * 3
+}
 
+const decodeUtf8 = (bytes) => {
   if (typeof TextDecoder === 'undefined') {
-    return text
+    return ''
   }
 
   try {
-    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(toCp1252Bytes(text))
-    if (readabilityScore(decoded) > readabilityScore(text) + 2) {
-      return decoded
-    }
-    return text
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
   } catch (error) {
-    return text
+    return ''
   }
 }
 
+const trimControlChars = (text) => `${text || ''}`.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim()
+
+const collectDecodeCandidates = (text) => {
+  const queue = [text]
+  const visited = new Set()
+  const results = []
+
+  while (queue.length > 0 && results.length < 8) {
+    const current = queue.shift()
+    const normalizedCurrent = trimControlChars(current)
+    if (!normalizedCurrent || visited.has(normalizedCurrent)) {
+      continue
+    }
+
+    visited.add(normalizedCurrent)
+    results.push(normalizedCurrent)
+
+    const decodedCandidates = [
+      decodeUtf8(toLatin1Bytes(normalizedCurrent)),
+      decodeUtf8(toCp1252Bytes(normalizedCurrent))
+    ]
+
+    decodedCandidates.forEach((candidate) => {
+      const trimmed = trimControlChars(candidate)
+      if (trimmed && !visited.has(trimmed)) {
+        queue.push(trimmed)
+      }
+    })
+  }
+
+  return results
+}
+
+const tryFixMojibake = (text) => {
+  const normalized = trimControlChars(text)
+  if (!isLikelyMojibake(normalized)) {
+    return normalized
+  }
+
+  const candidates = collectDecodeCandidates(normalized)
+  let best = normalized
+  let bestScore = readabilityScore(normalized)
+
+  candidates.forEach((candidate) => {
+    const score = readabilityScore(candidate)
+    if (score > bestScore + 1) {
+      best = candidate
+      bestScore = score
+    }
+  })
+
+  return best
+}
+
 const safeText = (value) => {
-  const raw = `${value || ''}`.trim()
+  const raw = trimControlChars(`${value || ''}`)
   return tryFixMojibake(raw)
 }
 
@@ -205,35 +292,36 @@ const normalizeMatchItem = (item = {}, index = 0) => {
 
   return {
     id: `${id}`,
-    name: item.name || item.title || item.trialName || trial.title || trial.name || '未命名临床试验',
+    name: safeText(item.name || item.title || item.trialName || trial.title || trial.name || '未命名临床试验'),
     score: Number(item.score || item.matchScore || item.match_score || 0),
     matchLevel: resolveMatchLevel(
       Number(item.score || item.matchScore || item.match_score || 0),
       item.matchLevel || item.match_level
     ),
-    phase: item.phase || item.trialPhase || trial.phase || '待补',
-    location: item.location || item.city || trial.location || trial.city || '待补',
-    type: item.type || item.studyType || item.study_type || trial.studyType || trial.study_type || '临床研究',
-    indication: item.indication || item.cancerType || trial.indication || '待补',
-    institution: item.institution || item.hospital || trial.institution || trial.hospital || '待补',
-    nctId: item.nct_id || item.nctId || trial.nct_id || trial.nctId || '',
+    phase: safeText(item.phase || item.trialPhase || trial.phase || '待补'),
+    location: safeText(item.location || item.city || trial.location || trial.city || '待补'),
+    type: safeText(item.type || item.studyType || item.study_type || trial.studyType || trial.study_type || '临床研究'),
+    indication: safeText(item.indication || item.cancerType || trial.indication || '待补'),
+    institution: safeText(item.institution || item.hospital || trial.institution || trial.hospital || '待补'),
+    nctId: safeText(item.nct_id || item.nctId || trial.nct_id || trial.nctId || ''),
     status: normalizeRecruitStatus(item.status || trial.status || ''),
-    sponsor: item.sponsor || trial.sponsor || '待补',
-    description: item.description || trial.description || '暂无描述',
+    sponsor: safeText(item.sponsor || trial.sponsor || '待补'),
+    description: safeText(item.description || trial.description || '暂无描述'),
     reasons,
     inclusion,
     exclusion,
     inclusionSummary,
     exclusionSummary,
     contact: {
-      name:
-        (item.contact && item.contact.name) || item.contact_name || (trial.contact && trial.contact.name) || trial.contact_name || '--',
+      name: safeText(
+        (item.contact && item.contact.name) || item.contact_name || (trial.contact && trial.contact.name) || trial.contact_name || '--'
+      ),
       phone:
-        (item.contact && item.contact.phone) || item.contact_phone || (trial.contact && trial.contact.phone) || trial.contact_phone || '',
+        safeText((item.contact && item.contact.phone) || item.contact_phone || (trial.contact && trial.contact.phone) || trial.contact_phone || ''),
       email:
-        (item.contact && item.contact.email) || item.contact_email || (trial.contact && trial.contact.email) || trial.contact_email || '--'
+        safeText((item.contact && item.contact.email) || item.contact_email || (trial.contact && trial.contact.email) || trial.contact_email || '--')
     },
-    updatedAt: item.updatedAt || item.updateTime || item.createdAt || trial.updatedAt || ''
+    updatedAt: safeText(item.updatedAt || item.updateTime || item.createdAt || trial.updatedAt || '')
   }
 }
 

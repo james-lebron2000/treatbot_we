@@ -31,18 +31,18 @@
     </view>
 
     <view class="form-item">
-      <text class="label">手机号</text>
+      <text class="label">手机号（选填）</text>
       <input
         class="input"
         type="number"
         maxlength="11"
-        placeholder="请输入11位手机号"
+        placeholder="如需后续联系，可填写手机号"
         value="{{form.phone}}"
         bindinput="onPhoneInput"
       />
     </view>
 
-    <view class="tips">提交后会有人工与您联系确认入组意向。</view>
+    <view class="tips">手机号仅在你主动报名时用于后续联系，不影响病历识别和匹配。</view>
   </view>
 
   <view class="action-bar">

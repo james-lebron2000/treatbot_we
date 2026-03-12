@@ -1,6 +1,9 @@
 <view class="container">
   <view class="page-header">
-    <text class="page-title">我的病历</text>
+    <view class="page-title-group">
+      <text class="page-title">我的病历</text>
+      <text class="page-subtitle">查看结构化结果、缺失项和对应试验入口。</text>
+    </view>
     <view class="add-btn" bindtap="goToUpload">
       <text class="add-icon">+</text>
       <text>上传新病历</text>

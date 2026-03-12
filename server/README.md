@@ -90,6 +90,45 @@ treatbot/
 - 匹配原因解释
 - 支持筛选和排序
 
+#### 匹配评分设计
+
+当前推荐按“粗召回 + 结构化评分 + 解释输出”三层实现：
+
+1. 粗召回
+- 只扫描 `recruiting`
+- 优先按病种标签召回，如 `肝癌 / HCC / 原发性肝癌`
+- 再叠加城市和状态过滤
+
+2. 结构化评分
+- 疾病方向：主权重
+- 基因/分子分型：高权重
+- 分期：中高权重
+- ECOG、RECIST、治疗线数：中权重
+- 实验室/感染/妊娠/禁忌：用于排除风险与补证据提示
+
+3. 解释输出
+- `reasons`：为什么命中
+- `inclusionHits`：入组命中点
+- `exclusionRisks`：潜在排除风险
+- `missingEvidence`：缺失证据
+
+#### 分数等级建议
+
+| 分数段 | 等级 | 含义 |
+|:---|:---|:---|
+| 90-99 | 高优先 | 建议优先人工联系 |
+| 80-89 | 高匹配 | 核心条件大多命中 |
+| 60-79 | 中匹配 | 方向正确，但仍需人工核对 |
+| 40-59 | 低匹配 | 可预筛，但证据不足或部分条件存疑 |
+| 0-39 | 不推荐 | 默认不展示 |
+
+#### 性能策略
+- 控制候选扫描上限，避免全库重算
+- 预先标准化试验文本与病种别名
+- 解析完成后预热 `recordId` 级别匹配缓存
+- 列表页优先读缓存，再异步刷新
+- 匹配解释在排序后生成，避免对低相关试验做过多计算
+
 ### 3. 试验报名
 - 在线提交报名申请
 - 报名状态跟踪
@@ -141,6 +180,53 @@ cd server
 - 腾讯云 OCR / 阿里云 OCR（文字识别）
 - Sentry（错误追踪）
 - Prometheus + Grafana（监控）
+
+## 管理员导出
+
+### 权限模型
+- 管理员接口统一走 `Bearer Token + 管理员白名单`
+- 通过以下环境变量声明管理员身份：
+  - `ADMIN_USER_IDS=user_xxx,user_yyy`
+  - `ADMIN_OPENIDS=oAbc123,oDef456`
+  - `ADMIN_PHONES=13800138000,13900139000`
+- 三组选项任意命中一组即可访问 `/api/admin/*`
+
+### 管理接口
+- `GET /api/admin/records`
+  - 用途：后台分页查看病历原件、结构化病历、手机号、匹配结果、报名情况
+  - 支持参数：`page/pageSize/status/date/startDate/endDate/keyword`
+- `GET /api/admin/exports/records`
+  - 用途：导出病历级明细
+  - 支持参数：`format=json|csv`、`date=YYYY-MM-DD` 或 `startDate/endDate`
+- `GET /api/admin/exports/users`
+  - 用途：导出用户级汇总
+  - 支持参数：`format=json|csv`、`date=YYYY-MM-DD` 或 `startDate/endDate`
+
+### 导出字段
+- 用户信息：`userId`、`nickname`、`phone`
+- 病历原件：`fileKey`、`fileUrl`、`fileType`、`fileSize`
+- 结构化病历：`diagnosis`、`stage`、`geneMutation`、`treatment`、`structured`
+- 最终匹配：`matches`（Top 5，含分数、机构、地区、入排标准）
+- 报名结果：`applications`
+
+### 服务器导出脚本
+```bash
+cd server
+
+# 导出当天病历数据
+ADMIN_TOKEN=你的管理员token npm run admin:export -- records day
+
+# 导出全量用户汇总
+ADMIN_TOKEN=你的管理员token npm run admin:export -- users all
+
+# 指定格式和输出目录
+ADMIN_TOKEN=你的管理员token EXPORT_FORMAT=csv OUTPUT_DIR=./exports npm run admin:export -- records day
+```
+
+### 使用建议
+- 运营回访：优先用 `records day` 导出，字段最完整
+- 每日审计：固定导出 `records day` 和 `users day`
+- 月度分析：导出 `users all` 做用户规模与转化统计
 
 ### 成本估算（月度）
 

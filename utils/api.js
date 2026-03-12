@@ -607,29 +607,6 @@ const loginWithTestAccount = async (params = {}) => {
   })
 }
 
-const bindPhone = async (params) => {
-  const endpoints = ['/api/auth/bind-phone', '/api/user/bind-phone']
-
-  let lastError = null
-  for (let i = 0; i < endpoints.length; i += 1) {
-    try {
-      return await request({
-        url: endpoints[i],
-        method: 'POST',
-        data: params
-      })
-    } catch (error) {
-      lastError = error
-      if (error.statusCode === 404 || error.statusCode === 0) {
-        continue
-      }
-      throw error
-    }
-  }
-
-  throw lastError || new Error('手机号绑定失败')
-}
-
 const getProfile = async () => {
   const endpoints = ['/api/auth/profile', '/api/user/profile']
 
@@ -1052,7 +1029,7 @@ const validateApplicationPayload = (payload) => {
   if (!payload.trialId) {
     return '试验ID缺失'
   }
-  if (!payload.phone || !/^1\d{10}$/.test(payload.phone)) {
+  if (payload.phone && !/^1\d{10}$/.test(payload.phone)) {
     return '请填写正确的手机号'
   }
   return ''
@@ -1248,7 +1225,6 @@ module.exports = {
   uploadFile,
   login,
   loginWithTestAccount,
-  bindPhone,
   getProfile,
   uploadMedicalRecord,
   getParseStatus,

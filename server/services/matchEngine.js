@@ -1,3 +1,5 @@
+const { safeText } = require('../utils/text');
+
 const SCORE_MIN = 42;
 
 const STATUS_TEXT_MAP = {
@@ -6,7 +8,7 @@ const STATUS_TEXT_MAP = {
   completed: '已结束'
 };
 
-const safeLower = (value) => (value || '').toString().toLowerCase();
+const safeLower = (value) => safeText(value).toLowerCase();
 const normalizeText = (value) => safeLower(value).replace(/[\s\-_/\\.,，。；;:：()（）[\]【】]/g, '');
 
 const DISEASE_PROFILES = [
@@ -44,14 +46,14 @@ const parseArrayField = (value) => {
     return [];
   }
   if (Array.isArray(value)) {
-    return value;
+    return value.map((item) => safeText(item)).filter(Boolean);
   }
   if (typeof value === 'string') {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.map((item) => safeText(item)).filter(Boolean) : [];
     } catch (error) {
-      return [];
+      return safeText(value) ? [safeText(value)] : [];
     }
   }
   return [];
@@ -152,9 +154,9 @@ const matchDiseaseText = (queryText, targetText) => {
 
 const getTrialText = (trial) => {
   return [
-    trial.name,
-    trial.indication,
-    trial.description,
+    safeText(trial.name),
+    safeText(trial.indication),
+    safeText(trial.description),
     ...(parseArrayField(trial.inclusion_criteria)),
     ...(parseArrayField(trial.exclusion_criteria))
   ].join(' ');
@@ -206,13 +208,13 @@ const scoreRecordAgainstTrial = (record, trial) => {
 const buildMatchItem = (trial, scored) => ({
   id: trial.id,
   trialId: trial.id,
-  name: trial.name,
+  name: safeText(trial.name),
   score: scored.score,
-  phase: trial.phase || '未标注',
-  location: trial.location || '待补充',
-  type: trial.type || '未标注',
-  indication: trial.indication || '待补充',
-  institution: trial.institution || '待补充',
+  phase: safeText(trial.phase) || '未标注',
+  location: safeText(trial.location) || '待补充',
+  type: safeText(trial.type) || '未标注',
+  indication: safeText(trial.indication) || '待补充',
+  institution: safeText(trial.institution) || '待补充',
   status: trial.status,
   statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
   reasons: scored.reasons

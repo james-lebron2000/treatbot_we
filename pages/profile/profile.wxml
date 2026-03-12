@@ -1,98 +1,86 @@
 <view class="container">
   <view class="user-card">
-    <image class="avatar" src="{{userInfo.avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill"></image>
-    <view class="user-info">
-      <text class="user-name">{{userInfo.nickName || '微信用户'}}</text>
-      <text class="user-phone">{{userPhone || '未绑定手机号'}}</text>
+    <view class="user-card-top">
+      <view class="identity-badge">ACCOUNT</view>
     </view>
-    <button class="edit-btn" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">绑定手机</button>
+    <view class="user-card-main">
+      <image class="avatar" src="{{userInfo.avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill"></image>
+      <view class="user-info">
+        <text class="user-name">{{userInfo.nickName || '微信用户'}}</text>
+        <text class="user-note">病历和匹配结果按当前微信账号隔离；手机号仅在报名时按需填写。</text>
+      </view>
+    </view>
   </view>
 
   <view class="stats-grid">
     <view class="stats-item" bindtap="goToRecords">
+      <text class="stats-kicker">Records</text>
       <text class="stats-num">{{stats.records}}</text>
       <text class="stats-label">病历</text>
     </view>
     <view class="stats-item" bindtap="goToMatches">
+      <text class="stats-kicker">Matches</text>
       <text class="stats-num">{{stats.matches}}</text>
       <text class="stats-label">匹配</text>
     </view>
     <view class="stats-item" bindtap="goToApplications">
+      <text class="stats-kicker">Applies</text>
       <text class="stats-num">{{stats.applications}}</text>
       <text class="stats-label">报名</text>
     </view>
   </view>
 
-  <view class="service-status">
-    <view class="menu-title">服务状态</view>
-    <view class="menu-list">
-      <view class="menu-item">
-        <text class="menu-icon">🟢</text>
-        <text class="menu-text">服务健康检查</text>
-        <text class="status-text {{backendStatus.health ? 'ok' : 'warn'}}">{{backendStatus.health ? '正常' : '异常'}}</text>
-      </view>
-      <view class="menu-item">
-        <text class="menu-icon">🧠</text>
-        <text class="menu-text">临床试验匹配接口</text>
-        <text class="status-text {{backendStatus.capabilities.matchFind ? 'ok' : 'warn'}}">{{backendStatus.capabilities.matchFind ? '可用' : '兜底中'}}</text>
-      </view>
-      <view class="menu-item">
-        <text class="menu-icon">📄</text>
-        <text class="menu-text">病历解析接口</text>
-        <text class="status-text {{backendStatus.capabilities.parseStatus ? 'ok' : 'warn'}}">{{backendStatus.capabilities.parseStatus ? '可用' : '兜底中'}}</text>
-      </view>
-      <view class="menu-item">
-        <text class="menu-icon">🗂️</text>
-        <text class="menu-text">病历列表接口</text>
-        <text class="status-text {{backendStatus.capabilities.medicalRecords ? 'ok' : 'warn'}}">{{backendStatus.capabilities.medicalRecords ? '可用' : '兜底中'}}</text>
-      </view>
-    </view>
-    <view class="status-time">更新时间：{{backendStatus.updatedAt || '--'}}</view>
-  </view>
-
   <view class="menu-section">
     <view class="menu-title">我的服务</view>
+    <view class="menu-subtitle">查看病历、匹配结果和报名进度。</view>
     <view class="menu-list">
       <view class="menu-item" bindtap="goToRecords">
-        <text class="menu-icon">📋</text>
+        <view class="menu-icon">档</view>
         <text class="menu-text">我的病历</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">结构化记录</text>
+        <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" bindtap="goToMatches">
-        <text class="menu-icon">🎯</text>
+        <view class="menu-icon">筛</view>
         <text class="menu-text">匹配记录</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">试验建议</text>
+        <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" bindtap="goToApplications">
-        <text class="menu-icon">📝</text>
+        <view class="menu-icon">报</view>
         <text class="menu-text">报名记录</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">跟进状态</text>
+        <text class="menu-arrow">›</text>
       </view>
     </view>
   </view>
 
   <view class="menu-section">
     <view class="menu-title">设置</view>
+    <view class="menu-subtitle">联系支持、查看机构信息与隐私说明。</view>
     <view class="menu-list">
       <view class="menu-item" bindtap="contactSupport">
-        <text class="menu-icon">💬</text>
+        <view class="menu-icon">联</view>
         <text class="menu-text">联系客服</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">工作时间</text>
+        <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" bindtap="aboutUs">
-        <text class="menu-icon">ℹ️</text>
+        <view class="menu-icon">介</view>
         <text class="menu-text">关于我们</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">项目介绍</text>
+        <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" bindtap="showPrivacyPolicy">
-        <text class="menu-icon">🔒</text>
+        <view class="menu-icon">隐</view>
         <text class="menu-text">隐私政策</text>
-        <text class="menu-arrow">></text>
+        <text class="menu-meta">数据说明</text>
+        <text class="menu-arrow">›</text>
       </view>
     </view>
   </view>
 
   <view class="version-info">
-    <text>海马智合 v1.1.0</text>
+    <text>Treatbot Clinical Matching · v1.1.0</text>
   </view>
 </view>
