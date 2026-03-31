@@ -2,7 +2,8 @@ const { Op } = require('sequelize');
 const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
-const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText } = require('../services/matchEngine');
+const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText, getDiseaseProfile, containsAlias, hasGenericCancerSignal, getTrialText, SCORE_MIN } = require('../services/matchEngine');
+const logger = require('../utils/logger');
 const { safeText, sanitizeTrial } = require('../utils/text');
 
 const MAX_SCAN_TRIALS = 300;
@@ -94,8 +95,25 @@ const getUserCompletedRecords = async (userId) => {
       user_id: userId,
       status: 'completed'
     },
-    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'created_at'],
+    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'structured', 'created_at'],
     order: [['created_at', 'DESC']]
+  });
+};
+
+// Narrows the trial list to those sharing a disease profile with at least one patient record
+// before the O(records × trials) scoring loop. Falls back to the full list when no profiles
+// can be resolved (e.g. uncommon diagnosis not in DISEASE_PROFILES).
+const preFilterTrialsByDisease = (trials, profileRecords) => {
+  const profiles = profileRecords
+    .map((r) => getDiseaseProfile(r.diagnosis || ''))
+    .filter(Boolean);
+  if (!profiles.length) return trials;
+  return trials.filter((trial) => {
+    const text = getTrialText(trial);
+    return (
+      profiles.some((p) => containsAlias(text, p.aliases)) ||
+      hasGenericCancerSignal(text)
+    );
   });
 };
 
@@ -140,7 +158,7 @@ const getMatches = async (req, res, next) => {
           id: recordId,
           user_id: req.userId
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'structured', 'status']
       });
       if (!record) {
         throw new BusinessError('病历不存在或无权限访问', 404);
@@ -164,6 +182,10 @@ const getMatches = async (req, res, next) => {
       limit: MAX_SCAN_TRIALS
     });
 
+    if (trials.length === MAX_SCAN_TRIALS) {
+      logger.warn(`getMatches: hit MAX_SCAN_TRIALS cap of ${MAX_SCAN_TRIALS}; some trials may be excluded from scoring`);
+    }
+
     if (!profileRecords.length || !trials.length) {
       return res.json({
         code: 0,
@@ -178,7 +200,7 @@ const getMatches = async (req, res, next) => {
       });
     }
 
-    const allMatches = trials
+    const allMatches = preFilterTrialsByDisease(trials, profileRecords)
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         let best = null;
@@ -236,7 +258,8 @@ const getTrialDetail = async (req, res, next) => {
       indication: safeText(normalizedTrial.indication) || '待补充',
       institution: safeText(normalizedTrial.institution) || '待补充',
       location: safeText(normalizedTrial.location) || '待补充',
-      score: matchedInfo?.score || 50,
+      score: matchedInfo?.score ?? null,
+      matched: Boolean(matchedInfo),
       status: normalizedTrial.status,
       statusText: STATUS_TEXT_MAP[normalizedTrial.status] || normalizedTrial.status,
       reasons: (matchedInfo?.reasons || ['已根据病历基础信息进行规则匹配']).map((item) => safeText(item)).filter(Boolean),
@@ -283,7 +306,7 @@ const findMatches = async (req, res, next) => {
           id: recordId,
           user_id: req.userId
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'structured', 'status']
       });
 
       if (!profileRecord) {
@@ -305,17 +328,21 @@ const findMatches = async (req, res, next) => {
       limit: MAX_SCAN_TRIALS
     });
 
+    if (trials.length === MAX_SCAN_TRIALS) {
+      logger.warn(`findMatches: hit MAX_SCAN_TRIALS cap of ${MAX_SCAN_TRIALS}; some trials may be excluded from scoring`);
+    }
+
     if (!trials.length) {
       return res.json(success([]));
     }
 
-    const list = trials
+    const list = preFilterTrialsByDisease(trials, [profileRecord])
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         const scored = scoreRecordAgainstTrial(profileRecord, trial);
         return buildDetailedMatchItem(trial, scored);
       })
-      .filter((item) => trialMatchesFilters(item, filters))
+      .filter((item) => item.score >= SCORE_MIN && trialMatchesFilters(item, filters))
       .sort((a, b) => b.score - a.score);
 
     res.json(success(list));
