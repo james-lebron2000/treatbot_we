@@ -9,18 +9,25 @@
       <p><strong>病历数：</strong>{{ stats.records }}</p>
       <p><strong>匹配数：</strong>{{ stats.matches }}</p>
     </div>
+    <router-link v-if="isAdmin" to="/cro" class="btn primary" style="display:block;text-align:center;">
+      CRO 入组看板
+    </router-link>
+    <router-link v-if="isAdmin" to="/admin" class="btn ghost" style="display:block;text-align:center;">
+      管理后台
+    </router-link>
     <button class="btn ghost" @click="logout">退出登录</button>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../services/api'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const isAdmin = ref(false)
 
 const profile = reactive<Record<string, string>>({
   phone: '',
@@ -53,6 +60,14 @@ const load = async () => {
 
   stats.records = countList(recordsRes)
   stats.matches = countList(matchesRes)
+
+  // 检测管理员权限
+  try {
+    await api.getAdminDashboard()
+    isAdmin.value = true
+  } catch {
+    isAdmin.value = false
+  }
 }
 
 const logout = () => {

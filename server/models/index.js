@@ -44,6 +44,14 @@ const MedicalRecord = sequelize.define('MedicalRecord', {
   treatment: {
     type: require('sequelize').DataTypes.TEXT
   },
+  treatment_line: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: true
+  },
+  pdl1: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
+  },
   structured: {
     type: require('sequelize').DataTypes.JSON
   },
@@ -98,9 +106,59 @@ const TrialApplication = sequelize.define('TrialApplication', {
   idempotency_key: {
     type: require('sequelize').DataTypes.STRING(64),
     unique: true
+  },
+  notes: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+    comment: '沟通记录 [{content, operator, createdAt}]'
   }
 }, {
   tableName: 'trial_applications',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
+
+// CRO 公司账号
+const CroCompany = sequelize.define('CroCompany', {
+  id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    primaryKey: true,
+    defaultValue: () => `cro_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  },
+  name: {
+    type: require('sequelize').DataTypes.STRING(128),
+    allowNull: false,
+    comment: '公司名称'
+  },
+  contact_name: {
+    type: require('sequelize').DataTypes.STRING(64),
+    comment: '联系人姓名'
+  },
+  email: {
+    type: require('sequelize').DataTypes.STRING(128),
+    allowNull: false,
+    unique: true,
+    comment: '登录邮箱'
+  },
+  password_hash: {
+    type: require('sequelize').DataTypes.STRING(256),
+    allowNull: false,
+    comment: 'bcrypt 密码哈希'
+  },
+  trial_ids: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+    comment: '负责的试验 ID 列表'
+  },
+  status: {
+    type: require('sequelize').DataTypes.ENUM('active', 'disabled'),
+    defaultValue: 'active'
+  }
+}, {
+  tableName: 'cro_companies',
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at'
@@ -121,5 +179,6 @@ module.exports = {
   User,
   Trial,
   MedicalRecord,
-  TrialApplication
+  TrialApplication,
+  CroCompany
 };

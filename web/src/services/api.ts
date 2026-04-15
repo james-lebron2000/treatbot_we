@@ -24,6 +24,9 @@ http.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
+      if (window.location.pathname !== '/treatbot/login') {
+        window.location.href = '/treatbot/login'
+      }
     }
     return Promise.reject(error)
   }
@@ -43,10 +46,7 @@ const buildMatchPayload = (params: Record<string, unknown>) => {
   const draft = draftRaw ? (JSON.parse(draftRaw) as Record<string, unknown>) : {}
 
   let disease = `${params.disease || params.diagnosis || draft.disease || draft.diagnosis || ''}`
-  if (!isPresent(disease)) {
-    disease = '肺癌'
-  }
-  if (disease.includes('肺癌')) {
+  if (disease.includes('肺癌') && !disease.includes('非小细胞') && !disease.includes('小细胞')) {
     disease = '肺癌'
   }
 
@@ -74,6 +74,10 @@ const buildIdempotencyKey = (payload: { trialId: string; recordId?: string }) =>
 }
 
 export const api = {
+  async sendCode(phone: string) {
+    const { data } = await http.post<ApiResponse<any>>('/api/auth/send-code', { phone })
+    return unwrap<any>(data)
+  },
   async login(payload: { phone: string; code: string }) {
     const { data } = await http.post<ApiResponse<{ token: string }>>('/api/auth/h5-login', payload)
     return unwrap<{ token: string }>(data)
@@ -147,6 +151,45 @@ export const api = {
     })
     return unwrap<any>(data)
   },
+  async getFilterOptions() {
+    const { data } = await http.get<ApiResponse<any>>('/api/matches/filters')
+    return unwrap<any>(data)
+  },
+  async getApplications(page = 1, pageSize = 20) {
+    const { data } = await http.get<ApiResponse<any>>(`/api/applications?page=${page}&pageSize=${pageSize}`)
+    return unwrap<any>(data)
+  },
+  async cancelApplication(id: string, reason?: string) {
+    const { data } = await http.put<ApiResponse<any>>(`/api/applications/${id}/cancel`, { reason })
+    return unwrap<any>(data)
+  },
+  async getAdminDashboard() {
+    const { data } = await http.get<ApiResponse<any>>('/api/admin/dashboard')
+    return unwrap<any>(data)
+  },
+  async getAdminApplications(page = 1, pageSize = 20, trialId?: string, groupByStatus = false) {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    if (trialId) params.set('trialId', trialId)
+    if (groupByStatus) params.set('groupByStatus', 'true')
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/applications?${params}`)
+    return unwrap<any>(data)
+  },
+  async updateApplicationStatus(id: string, status: string) {
+    const { data } = await http.put<ApiResponse<any>>(`/api/admin/applications/${id}/status`, { status })
+    return unwrap<any>(data)
+  },
+  async getAdminTrials() {
+    const { data } = await http.get<ApiResponse<any>>('/api/admin/trials')
+    return unwrap<any>(data)
+  },
+  async addApplicationNote(id: string, content: string) {
+    const { data } = await http.post<ApiResponse<any>>(`/api/admin/applications/${id}/notes`, { content })
+    return unwrap<any>(data)
+  },
+  async getAdminUsers(page = 1, pageSize = 20) {
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/users?page=${page}&pageSize=${pageSize}`)
+    return unwrap<any>(data)
+  },
   async getProfile() {
     try {
       const { data } = await http.get<ApiResponse<any>>('/api/auth/profile')
@@ -156,5 +199,74 @@ export const api = {
       const { data } = await http.get<ApiResponse<any>>('/api/user/profile')
       return unwrap<any>(data)
     }
+  },
+
+  // ===== CRO API =====
+  async croLogin(email: string, password: string) {
+    const { data } = await http.post<ApiResponse<any>>('/api/cro/login', { email, password })
+    return unwrap<any>(data)
+  },
+  async getCroProfile() {
+    const { data } = await croHttp.get<ApiResponse<any>>('/api/cro/profile')
+    return unwrap<any>(data)
+  },
+  async getCroTrials() {
+    const { data } = await croHttp.get<ApiResponse<any>>('/api/cro/trials')
+    return unwrap<any>(data)
+  },
+  async getCroApplications(trialId: string) {
+    const { data } = await croHttp.get<ApiResponse<any>>(`/api/cro/applications?trialId=${encodeURIComponent(trialId)}`)
+    return unwrap<any>(data)
+  },
+  async updateCroApplicationStatus(id: string, status: string) {
+    const { data } = await croHttp.put<ApiResponse<any>>(`/api/cro/applications/${id}/status`, { status })
+    return unwrap<any>(data)
+  },
+  async addCroNote(id: string, content: string) {
+    const { data } = await croHttp.post<ApiResponse<any>>(`/api/cro/applications/${id}/notes`, { content })
+    return unwrap<any>(data)
+  },
+  // Admin CRO management
+  async getAdminCroList() {
+    const { data } = await http.get<ApiResponse<any>>('/api/admin/cro')
+    return unwrap<any>(data)
+  },
+  async createAdminCro(payload: Record<string, any>) {
+    const { data } = await http.post<ApiResponse<any>>('/api/admin/cro', payload)
+    return unwrap<any>(data)
+  },
+  async updateAdminCro(id: string, payload: Record<string, any>) {
+    const { data } = await http.put<ApiResponse<any>>(`/api/admin/cro/${id}`, payload)
+    return unwrap<any>(data)
   }
 }
+
+// CRO 专用 HTTP 客户端（使用 cro_token）
+const croHttp = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://inseq.top',
+  timeout: 15000
+})
+
+croHttp.interceptors.request.use((config) => {
+  const token = localStorage.getItem('cro_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+croHttp.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('cro_token')
+      localStorage.removeItem('cro_company')
+      if (!window.location.pathname.includes('/cro/login')) {
+        window.location.href = '/treatbot/cro/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
+export { croHttp }
