@@ -30,7 +30,7 @@
 | A6 | PD-L1 阈值匹配（CPS/TPS 数值对比） | 🟠 P1 | ✅ | 正则提取 + 阈值对比 |
 | A7 | 基因突变上下文匹配（阳性/野生型/待检） | 🟠 P1 | ✅ | gene_context 正向/负向评分 |
 | A8 | 结构化入排全量生效（436 条剩余试验解析完成） | 🔴 P0 | ⬜ | 运行 `parseInclusionLocal.py` 后执行 loadStructuredInclusion |
-| A9 | 先验疗法硬排除（excluded_prior_therapies 匹配） | 🟠 P1 | ⬜ | 患者用过 PD-1 则排除"排除既往 PD-1"的试验 |
+| A9 | 先验疗法硬排除（excluded_prior_therapies 匹配） | 🟠 P1 | ✅ | 392 种疗法精确匹配，智能跳过笼统/时间限定描述 |
 | A10 | 癌种语义扩展（"胃癌"包含"胃腺癌"/"幽门癌"等子类型） | 🟡 P2 | ⬜ | 需要疾病本体词典或 LLM 同义词扩展 |
 | A11 | 多病历综合匹配（多份检查报告合并患者 profile） | 🟡 P2 | ✅ | mergeRecords 前端已实现 |
 | A12 | 试验状态实时同步（定期爬虫更新 status 字段） | 🟡 P2 | ⬜ | 当前依赖手动 import |

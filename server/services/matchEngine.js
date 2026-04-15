@@ -382,6 +382,31 @@ const scoreRecordAgainstTrial = (record, trial) => {
     if (ecog != null && si.ecog_max != null && Number(ecog) > si.ecog_max) {
       return { score: 0, reasons: [`ECOG评分（${ecog}）超过试验要求（≤${si.ecog_max}）`], excluded: true };
     }
+
+    // A9: 先验疗法硬排除 —— 若患者既往用过被试验排除的疗法，直接排除
+    // 仅匹配具体疗法/靶点名称，跳过过于笼统或带时间限定的描述
+    if (Array.isArray(si.excluded_prior_therapies) && si.excluded_prior_therapies.length > 0) {
+      const patientTx = normalizeText(record.treatment || '');
+      if (patientTx) {
+        for (const therapy of si.excluded_prior_therapies) {
+          const normTherapy = normalizeText(therapy);
+          if (!normTherapy) continue;
+          // 跳过过长描述（>20字符去标点后通常是复杂条件句而非药名）
+          if (normTherapy.length > 20) continue;
+          // 跳过含时间限定的条件（如"4周内""3个月内"），这些需要时间维度判断
+          if (/\d+[周月天日]内/.test(therapy)) continue;
+          // 跳过过于笼统的系统治疗描述
+          if (/全身(性)?(抗肿瘤|系统)?治疗|系统(性)?(抗肿瘤)?治疗|系统性抗癌|全身化疗/.test(therapy) && !/靶向|抑制剂|单抗|抗体/.test(therapy)) continue;
+          if (patientTx.includes(normTherapy)) {
+            return {
+              score: 0,
+              reasons: [`患者既往治疗包含「${therapy}」，被该试验排除`],
+              excluded: true
+            };
+          }
+        }
+      }
+    }
   }
 
   const trialText = safeLower(getTrialText(trial));

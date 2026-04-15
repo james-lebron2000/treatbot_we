@@ -173,7 +173,7 @@ const getMatches = async (req, res, next) => {
       city: filters.city || ''
     });
 
-    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion'];
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion'];
 
     let trials = await Trial.findAll({
       where: coarseWhere,
@@ -333,7 +333,7 @@ const findMatches = async (req, res, next) => {
       city: filters.city || ''
     });
 
-    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion'];
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion'];
 
     let trials = await Trial.findAll({
       where: coarseWhere,
