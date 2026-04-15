@@ -1,6 +1,13 @@
 <template>
   <section class="grid">
     <h2>为您匹配的临床试验</h2>
+
+    <!-- 患者诊断摘要（可折叠） -->
+    <details v-if="hasRecord" class="record-summary-toggle" open>
+      <summary class="summary-trigger">我的诊断信息 <span class="toggle-hint">{{ summaryOpen ? '收起' : '展开' }}</span></summary>
+      <RecordSummaryCard :record="patientStore.structuredRecord" />
+    </details>
+
     <p class="muted" v-if="total > 0">共找到 {{ total }} 个可能适合的试验，按匹配度排列</p>
 
     <!-- 筛选栏 -->
@@ -77,9 +84,13 @@ import { useRouter } from 'vue-router'
 import { api } from '../services/api'
 import { sortMatches } from '../utils/schema'
 import { usePatientStore } from '../stores/patient'
+import RecordSummaryCard from '../components/RecordSummaryCard.vue'
 
 const router = useRouter()
 const patientStore = usePatientStore()
+
+const hasRecord = computed(() => Object.keys(patientStore.structuredRecord || {}).length > 0)
+const summaryOpen = ref(true)
 
 const loading = ref(false)
 const error = ref('')
@@ -197,3 +208,40 @@ const apply = async (match: any) => {
 
 onMounted(() => { loadMatches(); loadFilterOptions() })
 </script>
+
+<style scoped>
+.record-summary-toggle {
+  margin-bottom: 4px;
+}
+
+.summary-trigger {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #2563eb;
+  font-weight: 500;
+  padding: 6px 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.summary-trigger::before {
+  content: '▸';
+  transition: transform 0.2s;
+}
+
+details[open] > .summary-trigger::before {
+  transform: rotate(90deg);
+}
+
+.toggle-hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  font-weight: 400;
+}
+</style>

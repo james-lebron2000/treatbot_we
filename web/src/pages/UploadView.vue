@@ -90,12 +90,7 @@
         <p style="font-size:0.85rem;color:#374151;margin:0;">以下是 AI 从您的病历中提取的关键信息，请核对：</p>
       </div>
 
-      <div class="card grid">
-        <div v-for="field in previewRows" :key="field.label" style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f3f4f6;">
-          <span style="color:#6b7280;">{{ field.label }}</span>
-          <span :style="{ color: field.value === '未识别到' ? '#dc2626' : '#374151', fontWeight: '500' }">{{ field.value }}</span>
-        </div>
-      </div>
+      <RecordSummaryCard :record="parsedRecord" />
 
       <div v-if="missingFields.length" class="card" style="border-color:#fcd34d;background:#fffbeb;">
         <h3 style="margin:0 0 8px;color:#92400e;">需要补充以下信息</h3>
@@ -130,6 +125,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../services/api'
 import { FIELD_SCHEMAS, getMissingFields, normalizeRecord } from '../utils/schema'
 import { usePatientStore } from '../stores/patient'
+import RecordSummaryCard from '../components/RecordSummaryCard.vue'
 
 const router = useRouter()
 const patientStore = usePatientStore()

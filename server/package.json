@@ -16,6 +16,7 @@
     "db:seed": "node scripts/seed.js",
     "db:seed:clean": "node scripts/seed.js clean",
     "backup": "./scripts/backup.sh",
+    "backup:db": "node scripts/backupDb.js",
     "cleanup": "./scripts/cleanup-logs.sh",
     "docker:build": "docker build -t treatbot-api .",
     "docker:up": "docker-compose up -d",

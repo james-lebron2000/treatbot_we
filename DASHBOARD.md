@@ -1,6 +1,6 @@
 # TreatBot 迭代进度 Dashboard
 
-> 最后更新: 2026-04-01
+> 最后更新: 2026-04-15
 > 当前版本: v14（已部署） | 下一目标: v15（结构化匹配全量生效）
 
 ---
@@ -44,7 +44,7 @@
 | B3 | pdl1 字段抽取（数值+类型）存 MedicalRecord | 🟠 P1 | ✅ | queue.js 已写入 |
 | B4 | ECOG 评分抽取 | 🟠 P1 | ✅ | structured.entities.ecog |
 | B5 | 年龄抽取（生日→年龄换算） | 🟠 P1 | ✅ | getPatientAge() |
-| B6 | 结构化病历展示（前端诊断摘要卡片） | 🟡 P2 | ⬜ | 目前仅展示原始字段，缺病历摘要 UI |
+| B6 | 结构化病历展示（前端诊断摘要卡片） | 🟡 P2 | ✅ | RecordSummaryCard 组件，上传后+匹配页均展示 |
 | B7 | 手动补录字段（ECOG/治疗线数输入框） | 🟡 P2 | ⬜ | schema.ts 已定义，UI 待实现 |
 
 ---
@@ -61,9 +61,9 @@
 | C2 | 多文件合并（多张检查单合并一份病历） | 🟠 P1 | ✅ | mergeRecords 已实现 |
 | C3 | 试验详情页（入排标准/医院/联系方式） | 🟠 P1 | ✅ | TrialDetailView 已实现 |
 | C4 | 试验申请按钮 → 申请记录保存 | 🟠 P1 | ✅ | POST /api/applications 已实现 |
-| C5 | **申请管理页**（查看/取消我的申请） | 🟠 P1 | ⬜ | API 已有，前端页面 `/applications` 未实现 |
-| C6 | **报名资料清单**（试验详情页展示所需文件） | 🟠 P1 | ⬜ | required_documents 字段已存，UI 未展示 |
-| C7 | **患者补助展示**（详情页展示 patient_subsidy） | 🟡 P2 | ⬜ | 数据已有，UI 未展示 |
+| C5 | **申请管理页**（查看/取消我的申请） | 🟠 P1 | ✅ | 状态筛选+进度条+场景提示+分页，已增强 |
+| C6 | **报名资料清单**（试验详情页展示所需文件） | 🟠 P1 | ✅ | 蓝色边框卡片 + 智能拆分列表 + 温馨提示 |
+| C7 | **患者补助展示**（详情页展示 patient_subsidy） | 🟡 P2 | ✅ | 绿色高亮卡片展示补助信息 |
 | C8 | **申请状态跟踪**（pending→contacted→screened→enrolled） | 🟠 P1 | ⬜ | 数据模型已有，前端状态流程未实现 |
 | C9 | 申请超时提醒（>3天未跟进自动提醒） | 🟡 P2 | ⬜ | 需 cron job + 通知（微信/短信） |
 | C10 | 收藏/对比试验 | 🟡 P2 | ⬜ | 用户高频需求，收藏列表 + 两两对比 |
@@ -148,7 +148,7 @@
 | J3 | 旧试验数据清理（496 条干净数据导入）| 🔴 P0 | ✅ | 已完成 |
 | J4 | 上传文件大小限制（Nginx 50MB）| 🟠 P1 | ✅ | 已配置 |
 | J5 | OCR 超时/重试 UI 反馈 | 🟠 P1 | ✅ | 前端 retry 按钮已实现 |
-| J6 | 数据库备份（每日 mysqldump + COS 存储）| 🔴 P0 | ⬜ | 生产必须 |
+| J6 | 数据库备份（每日 mysqldump + COS 存储）| 🔴 P0 | ✅ | backupDb.js: mysqldump→gzip→COS，支持 Docker exec 模式 |
 | J7 | 日志聚合（ELK 或 CloudWatch）| 🟡 P2 | ⬜ | 排障依赖 |
 | J8 | 监控告警（服务宕机 + 错误率告警）| 🟠 P1 | ⬜ | 需 uptime 监控 |
 | J9 | CI/CD pipeline（push → build → deploy）| 🟡 P2 | ⬜ | 目前手动 rsync+docker build |
@@ -163,10 +163,10 @@
 | 优先级 | 任务 | 文件/说明 |
 |--------|------|-----------|
 | 1️⃣ | **A8** 结构化入排全量生效 | `python3 scripts/parseInclusionLocal.py` → loadStructuredInclusion |
-| 2️⃣ | **C5/D4** 申请管理页面 | 前端 `/applications` 路由 + 状态展示 |
+| 2️⃣ | ~~**C5/D4** 申请管理页面~~ | ✅ 状态筛选标签 + 进度条 + 场景化提示 |
 | 3️⃣ | **H1/H3/H4** 管理后台（申请列表 + 导出） | admin 路由 + CRO export API |
-| 4️⃣ | **C6** 报名资料清单展示 | TrialDetailView 新增 required_documents 展示 |
-| 5️⃣ | **J6** 数据库每日备份 | cron + mysqldump → COS |
+| 4️⃣ | ~~**C6/C7** 报名资料清单 + 患者补助~~ | ✅ 蓝色清单卡片 + 绿色补助高亮 |
+| 5️⃣ | ~~**J6** 数据库每日备份~~ | ✅ backupDb.js: mysqldump→gzip→COS |
 
 ---
 
