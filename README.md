@@ -1,254 +1,223 @@
-# Treatbot 微信小程序版
+# Treatbot — AI 临床试验速配平台
 
-## 项目简介
+为肿瘤患者自动解析病历、匹配最适合的在招临床试验。
 
-Treatbot 微信小程序是原 Treatbot 临床试验匹配平台的移动端版本，为患者提供便捷的病历上传、AI解析和临床试验匹配服务。
+---
 
-## 核心功能
+## 产品定位
 
-### 患者端功能
-1. **病历上传** - 支持拍照/相册选择，多图片上传
-2. **AI智能解析** - OCR识别 + 医疗NLP抽取关键信息
-3. **病历管理** - 查看历史病历，更新病历状态
-4. **试验匹配** - 基于结构化病历匹配适合的临床试验
-5. **匹配报告** - 详细的匹配度评分和推荐理由
+患者或家属上传一份病历图片或 PDF，平台完成：
 
-## 临床试验匹配方案
+1. **病历结构化** — OCR + AI 抽取诊断、分期、基因突变、治疗史、ECOG、PD-L1 等关键字段
+2. **两阶段精准匹配** — SQL 级粗筛（病种/城市）→ 内存多维评分（基因/分期/治疗线/PD-L1）
+3. **可解释排序** — 每条结果附带评分理由，帮助患者和医生快速判断
 
-### 设计目标
-- **快**：上传病历后，先完成结构化，再在后台自动预取匹配结果。
-- **准**：优先按病种方向召回，再叠加分期、基因、治疗史等结构化条件评分。
-- **可解释**：每条结果都能说明为什么匹配、哪里有风险、还缺什么证据。
-- **可扩展**：先用规则和结构化字段跑通，再逐步演进到标签索引和向量召回。
+目前覆盖 **496 条** 在招临床试验，涵盖 30+ 癌种。
 
-### 推荐匹配链路
-1. **病历结构化**
-- OCR 抽取正文
-- 解析出诊断、分期、病理类型、基因突变、ECOG、既往治疗、关键实验室指标
+---
 
-2. **候选试验粗召回**
-- 仅扫描 `招募中` 试验
-- 先按病种标签召回：如 `肝癌 / HCC / 原发性肝癌`
-- 再按城市、中心、试验状态做轻过滤
-- 默认只扫描有限候选集，避免全库逐条重算
+## 平台形态
 
-3. **结构化评分**
-- 对每个候选试验按字段打分
-- 优先级建议：
-  - 疾病方向：最高权重
-  - 基因/分子分型：高权重
-  - 分期：中高权重
-  - ECOG / 可测量病灶 / 治疗线数：中权重
-  - 肝肾功能、血象、感染、妊娠等排除条件：风险项
-  - 地理可及性、中心状态：辅助项
+| 端 | 入口 | 状态 |
+|---|---|---|
+| H5 患者端 | `https://your-domain/treatbot/` | 已部署 |
+| 微信小程序 | 微信扫码 | 已部署 |
+| 管理后台 | `/api/admin/*` | API 可用 |
 
-4. **解释与排序**
-- 输出：
-  - 匹配分数
-  - 匹配等级
-  - 入组命中点
-  - 排除风险
-  - 缺失证据
-- 默认只展示 `>= 40` 分试验；若都低于 40，则进入低分候选模式
+---
 
-5. **结果缓存**
-- 解析完成后立即预取匹配结果
-- 以 `recordId` 为主键缓存，页面切走后返回可秒开
-- 病历补全后重新计算并刷新缓存
+## 核心技术
 
-### 匹配评分等级
+### OCR 识别链路
 
-| 分数段 | 等级 | 展示策略 | 业务含义 |
-|:---|:---|:---|:---|
-| 90-99 | 高优先 | 默认置顶 | 病种方向明确，关键条件高度吻合，可优先人工联系 |
-| 80-89 | 高匹配 | 默认展示 | 入组方向较清晰，主要条件基本命中 |
-| 60-79 | 中匹配 | 默认展示 | 核心方向较接近，但仍需核对部分条件 |
-| 40-59 | 低匹配 | 默认展示 | 可作为人工预筛候选，需要更多证据 |
-| 0-39 | 不推荐 | 默认隐藏 | 方向偏差较大，或信息不足以支持推荐 |
+支持图片（JPG/PNG/WEBP）和 PDF（包括扫描件）：
 
-### 推荐权重模型
+```
+PDF 扫描件  →  Kimi File API（上传 → 视觉识别 → 结构化）
+PDF 文本层  →  pdf-parse 提取文本  →  Kimi 文本模式结构化
+图片        →  Kimi Vision / 腾讯云 OCR → 规则兜底
+```
 
-| 维度 | 建议分值 | 说明 |
-|:---|:---|:---|
-| 疾病方向精确命中 | 30-35 | 如 `肝细胞癌` 对应 `HCC` |
-| 疾病方向泛匹配 | 8-15 | 如 `实体瘤` 级别，只能加低分 |
-| 基因/分子分型 | 15-25 | 如 `EGFR / ROS1 / NTRK / PD-L1` |
-| 分期 | 5-10 | 如 `III期 / IV期 / 转移性` |
-| ECOG / 体能状态 | 5-8 | 属于常见入组门槛 |
-| RECIST 可测量病灶 | 4-8 | 很多实体瘤试验要求 |
-| 既往治疗线数 | 4-8 | 一线、二线、多线对试验影响明显 |
-| 实验室和器官功能 | 5-12 | 主要用于排除风险和补证据提示 |
-| 地理可及性 | 3-6 | 城市/分中心是否可达 |
-| 招募状态 | 5-8 | 招募中试验默认加分 |
+提取字段：`diagnosis` / `stage` / `geneMutation` / `pdl1` / `treatment` / `treatmentLine` / `ecog`
 
-### 当前前端展示策略
-- 列表默认只显示：标题、匹配分、试验阶段、适应症
-- 点击展开后再显示：
-  - 分中心
-  - 研究机构
-  - 具体入选标准
-  - 具体排除标准
-- 这样能兼顾“扫一眼快”和“深入看细节”
+### 两阶段匹配引擎
 
-### 高效实现建议
-- 使用病种别名归一化：`肝癌 = 肝细胞癌 = HCC`
-- 预先清洗试验文本，修复编码问题并标准化标签
-- 将 `试验全文检索` 与 `结构化字段评分` 分开
-- 后台只对候选集做精算，不对全量库做全字段比对
-- 在病历完成解析后异步预热匹配缓存
-- 对重复打开同一病历的匹配页优先读缓存，再后台刷新
+**Stage 1 — SQL 粗筛**
 
-### 后续演进路线
-1. 当前阶段：规则匹配 + 结构化加权评分
-2. 下一阶段：试验标签索引 + 候选集召回优化
-3. 再下一阶段：引入向量召回，仅作为粗召回补充，不直接替代结构化评分
-4. 最终阶段：规则、结构化、向量、多中心可及性联合排序
+基于试验 `disease_tags`（JSON 数组）和 `study_cities` 做数据库级过滤，将 496 条压缩到 100–150 条候选集，避免全表比对。
 
-## 技术栈
+```sql
+WHERE JSON_SEARCH(disease_tags, 'one', '%胰腺癌%') IS NOT NULL
+   OR JSON_SEARCH(disease_tags, 'one', '%全部实体瘤%') IS NOT NULL
+```
 
-- **框架**: 微信小程序原生框架
-- **样式**: WXSS + 自定义CSS变量
-- **图表**: 微信原生组件 + 自定义组件
-- **后端**: 复用原 Treatbot Node.js API
+**Stage 2 — 内存精排**
+
+对候选集做多维加权评分（满分 99）：
+
+| 维度 | 分值 | 说明 |
+|---|---|---|
+| 疾病精确匹配（disease_tags） | +34 / +26 | 精确命中 vs 方向匹配 |
+| 基因突变匹配 | +20 | 每个命中基因最多累加 |
+| 分期匹配 | +10 | AJCC 期别 / 晚期描述 |
+| 治疗线数匹配 | +10 | treatment_lines 数组命中 |
+| ECOG 评分符合 | +6 | 入组体能要求 |
+| PD-L1 相关 | +6 | 有表达值且试验提及 |
+| 疾病标签精确加分 | +5 | disease_tags 直接命中 |
+| 城市匹配 | +3 | study_cities 命中 |
+| 基础分 | 10 | 所有候选试验起步分 |
+
+### 试验数据结构
+
+每条试验记录包含以下结构化字段（导入时从原始数据解析）：
+
+| 字段 | 类型 | 用途 |
+|---|---|---|
+| `disease_tags` | JSON 数组 | 粗筛 + 精排疾病加分 |
+| `treatment_lines` | JSON 整数数组 | 治疗线数匹配 |
+| `study_cities` | JSON 字符串数组 | 城市粗筛 + 加分 |
+| `brief_inclusion` | TEXT | 增强评分文本 |
+| `treatment_approach` | STRING | 展示用 |
+
+---
 
 ## 项目结构
 
 ```
-treatbot-weapp/
-├── app.js                 # 小程序入口
-├── app.json               # 全局配置
-├── app.wxss               # 全局样式
-├── pages/                 # 页面目录
-│   ├── index/            # 首页
-│   ├── upload/           # 上传病历
-│   ├── records/          # 病历管理
-│   ├── matches/          # 匹配结果
-│   └── profile/          # 个人中心
-├── components/           # 公共组件
-├── utils/               # 工具函数
-├── images/              # 图片资源
-└── docs/                # 项目文档
+treatbot_we/
+├── server/                    # Node.js 后端 (Express)
+│   ├── controllers/
+│   │   ├── medical.js         # 病历上传、解析状态
+│   │   └── match.js           # 匹配查询、试验详情
+│   ├── services/
+│   │   ├── ocr.js             # OCR 核心（Kimi / 腾讯云 / 规则）
+│   │   ├── matchEngine.js     # 两阶段匹配引擎
+│   │   └── queue.js           # Bull 队列处理器
+│   ├── models/
+│   │   ├── index.js           # MedicalRecord 模型
+│   │   └── trial.js           # Trial 模型
+│   ├── scripts/
+│   │   ├── migrate.js         # 数据库迁移
+│   │   └── importTrials.js    # 试验数据导入 (496 条)
+│   ├── utils/
+│   │   └── text.js            # safeText / sanitizeTrial / 编码修复
+│   └── config/
+│       └── database.js        # Sequelize 连接配置
+│
+├── web/                       # H5 前端 (Vue 3 + Vite + TypeScript)
+│   └── src/
+│       ├── pages/
+│       │   └── UploadView.vue # 上传 + 解析 + 匹配主流程
+│       └── utils/
+│           └── schema.ts      # 字段 schema / normalizeRecord
+│
+└── pages/                     # 微信小程序页面
+    ├── upload/
+    ├── records/
+    └── matches/
 ```
 
-## 页面说明
+---
 
-### 首页 (pages/index)
-- 展示核心数据统计
-- 功能快捷入口
-- 最近匹配记录
-- 使用流程说明
+## 快速开始
 
-### 上传病历 (pages/upload)
-- 三步上传流程：选择 → 解析 → 完成
-- 支持多图片上传
-- 病历类型选择
-- AI解析进度展示
-- 解析结果预览
+### 后端
 
-### 病历管理 (pages/records)
-- 病历列表展示
-- 病历详情查看
-- 病历状态管理
-- 重新解析功能
+```bash
+cd server
+cp .env.example .env          # 填写 KIMI_API_KEY / DB_* / COS_* 等
 
-### 匹配结果 (pages/matches)
-- 匹配试验列表
-- 匹配度评分
-- 试验详情
-- 一键报名
+# 本地开发
+npm install
+npm run dev
 
-### 个人中心 (pages/profile)
-- 用户信息
-- 我的病历
-- 我的匹配
-- 设置
-
-## 管理员导出
-
-- 管理员可通过后端聚合接口查看用户手机号、上传病历、结构化病历、最终匹配结果和报名记录
-- 支持病历级导出和用户级导出
-- 支持全量导出或按天导出
-- 支持 `JSON/CSV` 两种格式
-
-接口与脚本说明见 [server/README.md](/Users/lijinming/treatbot-weapp/server/README.md) 的“管理员导出”章节。
-
-## 开发指南
-
-### 1. 环境准备
-- 微信开发者工具
-- Node.js (用于后端联调)
-- MongoDB (数据存储)
-
-### 2. 配置修改
-修改 `app.js` 中的 API 地址：
-```javascript
-globalData: {
-  apiBaseUrl: 'https://your-api-domain.com', // 生产环境
-  mockMode: false // 关闭模拟模式
-}
+# Docker 生产
+docker build -t treatbot-api .
+docker run -d --env-file .env -p 3000:3000 treatbot-api
 ```
 
-### 3. 编译运行
-1. 使用微信开发者工具打开项目
-2. 填写 AppID（测试可使用测试号）
-3. 点击编译运行
+### 数据库迁移 + 试验导入
 
-### 4. H5 患者端（新增）
-项目新增 `web/` 子工程（Vue3 + Vite + TypeScript）：
+```bash
+node scripts/migrate.js        # 建表 / 补列（幂等）
+node scripts/importTrials.js   # 导入 496 条试验
+```
+
+### H5 前端
 
 ```bash
 cd web
 npm install
-npm run dev
+npm run dev          # 开发
+npm run build        # 构建到 dist/，部署到 nginx /treatbot/
 ```
-
-生产构建：
-
-```bash
-cd web
-npm run build
-```
-
-### 5. 真机调试
-1. 点击预览获取二维码
-2. 使用微信扫描二维码
-3. 在真机上测试功能
-
-## 后端接口对接
-
-复用原 Treatbot 后端 API：
-
-| 功能 | 接口 | 方法 |
-|:---|:---|:---|
-| 微信登录 | /api/auth/weapp-login | POST |
-| 文件上传 | /api/medical/upload | POST |
-| 解析状态 | /api/medical/parse-status | GET |
-| 获取病历 | /api/medical/records | GET |
-| 试验匹配 | /api/medical/match | POST |
-| 匹配结果 | /api/matches | GET |
-
-## 上线 checklist
-
-- [ ] 配置合法域名（request、uploadFile、downloadFile）
-- [ ] 配置服务器域名和业务域名
-- [ ] 用户隐私保护指引设置
-- [ ] 小程序备案（如需要）
-- [ ] 提交审核并发布
-
-## 与原 Web 版的区别
-
-| 特性 | Web版 | 小程序版 |
-|:---|:---|:---|
-| 入口 | 浏览器/URL | 微信内 |
-| 拍照上传 | 调用摄像头 | 微信原生API |
-| 消息通知 | 邮件/短信 | 微信订阅消息 |
-| 分享传播 | 链接分享 | 微信好友/朋友圈 |
-| 开发成本 | 较高 | 较低 |
-
-## 联系方式
-
-如有问题，请参考原 Treatbot 项目文档或联系开发团队。
 
 ---
 
-*基于 Treatbot 项目改造，保留原有业务逻辑，适配微信小程序生态。*
+## 环境变量
+
+| 变量 | 必须 | 说明 |
+|---|---|---|
+| `KIMI_API_KEY` | 是 | Kimi (Moonshot) API Key |
+| `KIMI_MODEL` | 否 | 默认 `kimi-k2.5` |
+| `DB_HOST / DB_USER / DB_PASSWORD / DB_NAME` | 是 | MySQL 连接 |
+| `REDIS_HOST / REDIS_PORT` | 是 | Bull 队列 |
+| `COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET` | 否 | 腾讯云 COS 文件存储 |
+| `OCR_SECRET_ID / OCR_SECRET_KEY` | 否 | 腾讯云 OCR 备用 |
+| `H5_LOGIN_ENABLED` | 否 | `true` 开启 H5 手机号登录 |
+| `ADMIN_PHONES` | 否 | 逗号分隔的管理员手机号 |
+
+---
+
+## 主要 API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/auth/h5-login` | H5 手机号登录（验证码 000000）|
+| POST | `/api/auth/weapp-login` | 微信小程序登录 |
+| POST | `/api/medical/upload` | 上传病历（图片/PDF，最大 30MB）|
+| GET | `/api/medical/records` | 病历列表 |
+| GET | `/api/medical/records/:id` | 病历详情 + 结构化字段 |
+| GET | `/api/matches` | 匹配试验列表（支持 `recordId` / `filters`）|
+| GET | `/api/matches/trials/:id` | 试验详情 |
+| GET | `/api/admin/records` | 管理员查看所有病历（需管理员权限）|
+| GET | `/api/admin/exports/records` | 导出病历数据（JSON/CSV）|
+
+---
+
+## 匹配评分说明
+
+| 分数段 | 含义 |
+|---|---|
+| 90–99 | 病种精确命中 + 多维度高度吻合，建议优先联系 |
+| 80–89 | 病种方向正确，主要条件基本命中 |
+| 60–79 | 方向接近，部分条件待核实 |
+| 40–59 | 可作预筛候选，缺少关键证据 |
+| < 40 | 方向偏差较大，默认不展示 |
+
+---
+
+## 管理员导出
+
+```bash
+# 导出当天病历（含结构化字段 + 匹配 Top5 + 报名记录）
+ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh records day
+
+# 导出全量用户汇总
+ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
+```
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 后端框架 | Node.js 18 + Express 4 |
+| ORM | Sequelize 6 + MySQL 8 |
+| 队列 | Bull 4 + Redis 7 |
+| AI / OCR | Kimi (Moonshot) Vision + File API |
+| 文件存储 | 腾讯云 COS（可降级为本地 uploads/）|
+| 容器化 | Docker + alpine 镜像 |
+| H5 前端 | Vue 3 + Vite + TypeScript |
+| 小程序 | 微信原生 WXML/WXSS |
