@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const { success, error } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const { redisClient } = require('../middleware/rateLimit');
+const smsService = require('../services/sms');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN) || 1800;  // 30 分钟
@@ -325,8 +326,13 @@ const h5Login = async (req, res, next) => {
     if (!code) {
       return res.status(400).json(error('缺少验证码', 400));
     }
-    if (H5_LOGIN_FIXED_CODE && `${code}` !== `${H5_LOGIN_FIXED_CODE}`) {
-      return res.status(400).json(error('验证码错误', 400));
+    // 优先检查固定验证码（开发/演示），其次检查 Redis 动态验证码
+    const fixedMatch = H5_LOGIN_FIXED_CODE && `${code}` === `${H5_LOGIN_FIXED_CODE}`;
+    if (!fixedMatch) {
+      const verify = await smsService.verifyCode(normalizedPhone, code);
+      if (!verify.valid) {
+        return res.status(400).json(error(verify.message, 400));
+      }
     }
 
     let user = await User.findOne({ where: { phone: normalizedPhone } });
@@ -392,9 +398,32 @@ const bindPhone = async (req, res, next) => {
   }
 };
 
+/**
+ * 发送短信验证码
+ */
+const sendVerificationCode = async (req, res, next) => {
+  try {
+    const { phone } = req.body || {};
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json(error('请输入有效手机号', 400));
+    }
+
+    const result = await smsService.sendCode(normalizedPhone);
+    if (!result.success) {
+      return res.status(429).json(error(result.message, 429));
+    }
+
+    res.json(success({ message: result.message }));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   weappLogin,
   h5Login,
   refreshToken,
-  bindPhone
+  bindPhone,
+  sendVerificationCode
 };

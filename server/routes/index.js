@@ -13,9 +13,12 @@ const medicalController = require('../controllers/medical');
 const matchController = require('../controllers/match');
 const applicationController = require('../controllers/application');
 const adminController = require('../controllers/admin');
+const croController = require('../controllers/cro');
+const { croAuthMiddleware } = require('../middleware/croAuth');
 
 // ===== 认证相关 =====
 router.post('/auth/weapp-login', strictLimiter, authController.weappLogin);
+router.post('/auth/send-code', strictLimiter, authController.sendVerificationCode);
 router.post('/auth/h5-login', strictLimiter, authController.h5Login);
 router.post('/auth/refresh', authController.refreshToken);
 router.post('/auth/bind-phone', authMiddleware, strictLimiter, authController.bindPhone);
@@ -61,7 +64,22 @@ router.get('/admin/records', authMiddleware, requireAdmin, adminController.getRe
 router.get('/admin/applications', authMiddleware, requireAdmin, adminController.getApplicationList);
 router.put('/admin/applications/:id/status', authMiddleware, requireAdmin, adminController.updateApplicationStatus);
 router.get('/admin/logs', authMiddleware, requireAdmin, adminController.getSystemLogs);
+router.get('/admin/trials', authMiddleware, requireAdmin, adminController.getAdminTrials);
+router.post('/admin/applications/:id/notes', authMiddleware, requireAdmin, adminController.addApplicationNote);
 router.get('/admin/exports/users', authMiddleware, requireAdmin, adminController.exportUsers);
 router.get('/admin/exports/records', authMiddleware, requireAdmin, adminController.exportRecords);
+router.get('/admin/exports/applications', authMiddleware, requireAdmin, adminController.exportApplications);
+router.get('/admin/cro', authMiddleware, requireAdmin, adminController.getCroList);
+router.post('/admin/cro', authMiddleware, requireAdmin, adminController.createCro);
+router.put('/admin/cro/:id', authMiddleware, requireAdmin, adminController.updateCro);
+
+// ===== CRO API（CRO 账号认证）=====
+router.post('/cro/login', strictLimiter, croController.croLogin);
+router.get('/cro/profile', croAuthMiddleware, croController.getCroProfile);
+router.get('/cro/trials', croAuthMiddleware, croController.getCroTrials);
+router.get('/cro/applications', croAuthMiddleware, croController.getCroApplications);
+router.put('/cro/applications/:id/status', croAuthMiddleware, croController.updateCroApplicationStatus);
+router.post('/cro/applications/:id/notes', croAuthMiddleware, croController.addCroNote);
+router.get('/cro/exports/applications', croAuthMiddleware, croController.exportCroApplications);
 
 module.exports = router;

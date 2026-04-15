@@ -16,13 +16,34 @@ const PORT = process.env.PORT || 3000;
 
 // 安全中间件
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", process.env.PUBLIC_BASE_URL || 'https://inseq.top'].filter(Boolean),
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"]
+    }
+  },
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
 // CORS 配置
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : ['https://inseq.top', 'https://www.inseq.top'];
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  },
   credentials: true
 }));
 
