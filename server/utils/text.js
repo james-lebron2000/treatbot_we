@@ -180,12 +180,32 @@ const sanitizeTrial = (trial) => {
     description: safeText(source.description),
     contact_phone: safeText(source.contact_phone),
     inclusion_criteria: normalizeStringArray(source.inclusion_criteria),
-    exclusion_criteria: normalizeStringArray(source.exclusion_criteria)
+    exclusion_criteria: normalizeStringArray(source.exclusion_criteria),
+    disease_tags: source.disease_tags || [],
+    treatment_lines: source.treatment_lines || [],
+    study_cities: source.study_cities || [],
+    treatment_approach: safeText(source.treatment_approach),
+    brief_inclusion: safeText(source.brief_inclusion),
+    structured_inclusion: source.structured_inclusion || null,
+    gene_requirement: safeText(source.gene_requirement),
+    sponsor: safeText(source.sponsor),
+    hospitals: source.hospitals || [],
+    patient_subsidy: safeText(source.patient_subsidy),
+    required_documents: safeText(source.required_documents)
   };
+};
+
+/**
+ * 转义 SQL LIKE 通配符，防止 LIKE 注入
+ */
+const escapeLike = (str) => {
+  if (!str || typeof str !== 'string') return '';
+  return str.replace(/[%_\\]/g, '\\$&');
 };
 
 module.exports = {
   safeText,
   normalizeStringArray,
-  sanitizeTrial
+  sanitizeTrial,
+  escapeLike
 };

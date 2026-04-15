@@ -11,14 +11,17 @@ const { scoreRecordAgainstTrial } = require('../services/matchEngine');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024  // 10MB
+    fileSize: 30 * 1024 * 1024  // 30MB（PDF 扫描件通常较大）
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/bmp',
+      'application/pdf'
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new BusinessError('仅支持 JPG/PNG/PDF 文件格式', 400));
+      cb(new BusinessError('仅支持 JPG/PNG/WebP/BMP/PDF 文件格式', 400));
     }
   }
 });
@@ -117,15 +120,25 @@ const handleUpload = async (req, res, next) => {
         });
 
         const imageUrl = await ossService.getInternalUrl(existingRecord.file_key);
-        await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
-          mimeType: file.mimetype,
-          fileKey: existingRecord.file_key
-        });
+        let reparseQueued = true;
+        try {
+          await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
+            mimeType: file.mimetype,
+            fileKey: existingRecord.file_key
+          });
+        } catch (queueErr) {
+          reparseQueued = false;
+          logger.warn('OCR队列不可用，重新解析任务将稍后重试:', {
+            recordId: existingRecord.id,
+            error: queueErr.message
+          });
+        }
 
         logger.info('重复文件触发重新解析:', {
           userId,
           recordId: existingRecord.id,
-          forceReparse
+          forceReparse,
+          reparseQueued
         });
 
         return res.json(success({
@@ -134,8 +147,11 @@ const handleUpload = async (req, res, next) => {
           status: 'pending',
           uploadedAt: existingRecord.created_at,
           isDuplicate: true,
-          reparseTriggered: true
-        }, forceReparse ? '检测到重复文件，已强制重新解析' : '检测到历史识别结果缺失，已自动重新解析'));
+          reparseTriggered: true,
+          ocrQueued: reparseQueued
+        }, reparseQueued
+          ? (forceReparse ? '检测到重复文件，已强制重新解析' : '检测到历史识别结果缺失，已自动重新解析')
+          : '上传成功，解析服务暂时繁忙，将自动重试'));
       }
 
       return res.json(success({
@@ -173,25 +189,36 @@ const handleUpload = async (req, res, next) => {
     // OCR 优先走服务内网回源，避免依赖对外 HTTPS 域名
     const imageUrl = await ossService.getInternalUrl(fileKey);
 
-    // 添加 OCR 异步任务
-    await queueService.addOCRTask(record.id, imageUrl, userId, {
-      mimeType: file.mimetype,
-      fileKey
-    });
+    // 添加 OCR 异步任务（队列失败不影响上传成功响应）
+    let ocrQueued = true;
+    try {
+      await queueService.addOCRTask(record.id, imageUrl, userId, {
+        mimeType: file.mimetype,
+        fileKey
+      });
+    } catch (queueErr) {
+      ocrQueued = false;
+      logger.warn('OCR队列不可用，任务将稍后重试:', {
+        recordId: record.id,
+        error: queueErr.message
+      });
+    }
 
-    logger.info('病历上传成功:', { 
-      recordId: record.id, 
-      userId, 
+    logger.info('病历上传成功:', {
+      recordId: record.id,
+      userId,
       fileKey,
-      fileSize: file.size 
+      fileSize: file.size,
+      ocrQueued
     });
 
     res.json(success({
       fileId: record.id,
       recordId: record.id,
       status: 'pending',
+      ocrQueued,
       uploadedAt: record.created_at
-    }, '上传成功，正在解析中'));
+    }, ocrQueued ? '上传成功，正在解析中' : '上传成功，解析服务暂时繁忙，将自动重试'));
 
   } catch (err) {
     next(err);

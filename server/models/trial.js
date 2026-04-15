@@ -57,6 +57,56 @@ const Trial = sequelize.define('Trial', {
   enrolled_count: {
     type: DataTypes.INTEGER.UNSIGNED,
     defaultValue: 0
+  },
+  disease_tags: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  treatment_lines: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  study_cities: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  treatment_approach: {
+    type: DataTypes.STRING(128),
+    allowNull: true
+  },
+  brief_inclusion: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  structured_inclusion: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'LLM解析的结构化入组条件: {age_min, age_max, ecog_max, survival_months, required_genes, ...}'
+  },
+  gene_requirement: {
+    type: DataTypes.STRING(256),
+    allowNull: true,
+    comment: '基因要求（来自源数据）'
+  },
+  sponsor: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
+    comment: '申办方简称'
+  },
+  hospitals: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: '所有研究医院列表'
+  },
+  patient_subsidy: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: '患者补助说明'
+  },
+  required_documents: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: '报名所需资料'
   }
 }, {
   tableName: 'trials',

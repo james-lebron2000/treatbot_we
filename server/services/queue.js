@@ -14,6 +14,13 @@ const redisConfig = {
 const ocrQueue = new Queue('ocr processing', { redis: redisConfig });
 const notificationQueue = new Queue('notifications', { redis: redisConfig });
 
+ocrQueue.on('error', (err) => {
+  logger.error('OCR队列连接错误:', { error: err.message });
+});
+notificationQueue.on('error', (err) => {
+  logger.error('通知队列连接错误:', { error: err.message });
+});
+
 const hasMeaningfulOcrResult = (result = {}) => {
   const text = `${result.text || ''}`.trim();
   const entities = result.entities || {};
@@ -62,6 +69,8 @@ ocrQueue.process(async (job) => {
       stage: result.entities.stage,
       gene_mutation: result.entities.geneMutation,
       treatment: result.entities.treatment,
+      treatment_line: result.entities.treatmentLine || null,
+      pdl1: result.entities.pdl1 || null,
       structured: {
         text: result.text,
         entities: result.entities,

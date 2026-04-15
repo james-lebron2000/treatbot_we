@@ -2,10 +2,8 @@ const { Op } = require('sequelize');
 const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
-const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText } = require('../services/matchEngine');
-const { safeText, sanitizeTrial } = require('../utils/text');
-
-const MAX_SCAN_TRIALS = 300;
+const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter } = require('../services/matchEngine');
+const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
 
 const toPositiveInt = (value, fallback) => {
   const num = parseInt(value, 10);
@@ -94,7 +92,7 @@ const getUserCompletedRecords = async (userId) => {
       user_id: userId,
       status: 'completed'
     },
-    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'created_at'],
+    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'created_at'],
     order: [['created_at', 'DESC']]
   });
 };
@@ -140,7 +138,7 @@ const getMatches = async (req, res, next) => {
           id: recordId,
           user_id: req.userId
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
       });
       if (!record) {
         throw new BusinessError('病历不存在或无权限访问', 404);
@@ -152,38 +150,68 @@ const getMatches = async (req, res, next) => {
       profileRecords = await getUserCompletedRecords(req.userId);
     }
 
-    const where = { status: 'recruiting' };
-    if (filters.city) {
-      where.location = { [Op.like]: `%${filters.city}%` };
-    }
-
-    const trials = await Trial.findAll({
-      where,
-      attributes: ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at'],
-      order: [['updated_at', 'DESC']],
-      limit: MAX_SCAN_TRIALS
-    });
-
-    if (!profileRecords.length || !trials.length) {
+    if (!profileRecords.length) {
       return res.json({
         code: 0,
         message: 'success',
         data: [],
-        pagination: {
-          page,
-          pageSize,
-          total: 0,
-          hasMore: false
-        }
+        pagination: { page, pageSize, total: 0, hasMore: false }
       });
     }
 
+    // 为记录注入城市信息供评分使用
+    if (filters.city) {
+      for (const r of profileRecords) {
+        r._city = filters.city;
+      }
+    }
+
+    // Stage 1: 粗筛 — 基于疾病标签+城市做 SQL 级过滤
+    const primaryRecord = profileRecords[0] || {};
+    const coarseWhere = buildCoarseFilter({
+      diagnosis: primaryRecord.diagnosis || filters.disease || '',
+      city: filters.city || ''
+    });
+
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion'];
+
+    let trials = await Trial.findAll({
+      where: coarseWhere,
+      attributes: trialAttrs,
+      order: [['updated_at', 'DESC']]
+    });
+
+    // 安全回退：粗筛无结果时取全量（兼容 disease_tags 未填充的情况）
+    if (trials.length === 0) {
+      const fallbackWhere = { status: 'recruiting' };
+      if (filters.city) {
+        fallbackWhere.location = { [Op.like]: `%${escapeLike(filters.city)}%` };
+      }
+      trials = await Trial.findAll({
+        where: fallbackWhere,
+        attributes: trialAttrs,
+        order: [['updated_at', 'DESC']]
+      });
+    }
+
+    if (!trials.length) {
+      return res.json({
+        code: 0,
+        message: 'success',
+        data: [],
+        pagination: { page, pageSize, total: 0, hasMore: false }
+      });
+    }
+
+    // Stage 2: 精排 — 多维评分（结构化硬过滤 + 多维加权）
     const allMatches = trials
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         let best = null;
         for (const profileRecord of profileRecords) {
           const scored = scoreRecordAgainstTrial(profileRecord, trial);
+          // 硬排除的试验（如年龄/ECOG不符合）直接跳过
+          if (scored.excluded) continue;
           if (!best || scored.score > best.score) {
             best = scored;
           }
@@ -240,10 +268,13 @@ const getTrialDetail = async (req, res, next) => {
       status: normalizedTrial.status,
       statusText: STATUS_TEXT_MAP[normalizedTrial.status] || normalizedTrial.status,
       reasons: (matchedInfo?.reasons || ['已根据病历基础信息进行规则匹配']).map((item) => safeText(item)).filter(Boolean),
-      sponsor: safeText(normalizedTrial.institution) || '待补充',
+      sponsor: safeText(normalizedTrial.sponsor) || safeText(normalizedTrial.institution) || '待补充',
       description: safeText(normalizedTrial.description) || '暂无详细介绍',
       inclusion: parseArrayField(normalizedTrial.inclusion_criteria),
       exclusion: parseArrayField(normalizedTrial.exclusion_criteria),
+      required_documents: safeText(normalizedTrial.required_documents) || '',
+      patient_subsidy: safeText(normalizedTrial.patient_subsidy) || '',
+      hospitals: normalizedTrial.hospitals || [],
       contact: {
         name: '研究中心',
         phone: safeText(normalizedTrial.contact_phone) || '',
@@ -283,7 +314,7 @@ const findMatches = async (req, res, next) => {
           id: recordId,
           user_id: req.userId
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
       });
 
       if (!profileRecord) {
@@ -293,17 +324,34 @@ const findMatches = async (req, res, next) => {
       profileRecord = getProfileRecordFromFilters(filters);
     }
 
-    const where = { status: 'recruiting' };
     if (filters.city) {
-      where.location = { [Op.like]: `%${filters.city}%` };
+      profileRecord._city = filters.city;
     }
 
-    const trials = await Trial.findAll({
-      where,
-      attributes: ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at'],
-      order: [['updated_at', 'DESC']],
-      limit: MAX_SCAN_TRIALS
+    const coarseWhere = buildCoarseFilter({
+      diagnosis: profileRecord.diagnosis || filters.disease || '',
+      city: filters.city || ''
     });
+
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion'];
+
+    let trials = await Trial.findAll({
+      where: coarseWhere,
+      attributes: trialAttrs,
+      order: [['updated_at', 'DESC']]
+    });
+
+    if (trials.length === 0) {
+      const fallbackWhere = { status: 'recruiting' };
+      if (filters.city) {
+        fallbackWhere.location = { [Op.like]: `%${escapeLike(filters.city)}%` };
+      }
+      trials = await Trial.findAll({
+        where: fallbackWhere,
+        attributes: trialAttrs,
+        order: [['updated_at', 'DESC']]
+      });
+    }
 
     if (!trials.length) {
       return res.json(success([]));
@@ -348,9 +396,9 @@ const searchTrials = async (req, res, next) => {
 
     if (keyword) {
       where[Op.or] = [
-        { name: { [Op.like]: `%${keyword}%` } },
-        { indication: { [Op.like]: `%${keyword}%` } },
-        { institution: { [Op.like]: `%${keyword}%` } }
+        { name: { [Op.like]: `%${escapeLike(keyword)}%` } },
+        { indication: { [Op.like]: `%${escapeLike(keyword)}%` } },
+        { institution: { [Op.like]: `%${escapeLike(keyword)}%` } }
       ];
     }
 
@@ -359,7 +407,7 @@ const searchTrials = async (req, res, next) => {
     }
 
     if (location) {
-      where.location = { [Op.like]: `%${location}%` };
+      where.location = { [Op.like]: `%${escapeLike(location)}%` };
     }
 
     if (status) {
