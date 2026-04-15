@@ -14,12 +14,12 @@ services:
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_USER=treatbot
-      - DB_PASSWORD=${DB_PASSWORD:-treatbot123}
+      - DB_PASSWORD=${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
       - DB_NAME=treatbot
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - JWT_SECRET=${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
       - WEAPP_APPID=${WEAPP_APPID}
       - WEAPP_SECRET=${WEAPP_SECRET}
       - WEAPP_SESSION_TTL=${WEAPP_SESSION_TTL:-7200}
@@ -61,10 +61,10 @@ services:
     container_name: treatbot-mysql
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root123}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
       - MYSQL_DATABASE=treatbot
       - MYSQL_USER=treatbot
-      - MYSQL_PASSWORD=${DB_PASSWORD:-treatbot123}
+      - MYSQL_PASSWORD=${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
