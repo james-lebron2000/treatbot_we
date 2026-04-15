@@ -34,14 +34,18 @@
         <p v-for="h in trial.hospitals" :key="h" style="font-size:0.9rem;">{{ h }}</p>
       </div>
 
-      <div class="card" v-if="trial.required_documents">
-        <h4>报名所需资料</h4>
-        <p style="white-space:pre-wrap;">{{ trial.required_documents }}</p>
+      <div class="card" v-if="trial.required_documents" style="border-left:3px solid #2563eb;">
+        <h4 style="margin:0 0 8px;color:#1e40af;">报名所需资料</h4>
+        <ul v-if="docList.length" style="margin:0;padding-left:18px;font-size:0.9rem;line-height:1.8;color:#374151;">
+          <li v-for="doc in docList" :key="doc">{{ doc }}</li>
+        </ul>
+        <p v-else style="white-space:pre-wrap;font-size:0.9rem;color:#374151;">{{ trial.required_documents }}</p>
+        <p style="font-size:0.8rem;color:#9ca3af;margin:8px 0 0;">请向主治医生或医院病案室索取以上资料</p>
       </div>
 
-      <div class="card" v-if="trial.patient_subsidy">
-        <h4>患者补助</h4>
-        <p>{{ trial.patient_subsidy }}</p>
+      <div class="card" v-if="trial.patient_subsidy" style="border-left:3px solid #16a34a;background:#f0fdf4;">
+        <h4 style="margin:0 0 6px;color:#166534;">患者补助</h4>
+        <p style="font-size:0.95rem;color:#166534;margin:0;">{{ trial.patient_subsidy }}</p>
       </div>
 
       <div class="card" v-if="trial.contact && trial.contact.phone">
@@ -68,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../services/api'
 
@@ -78,6 +82,13 @@ const error = ref('')
 const trial = ref<Record<string, any> | null>(null)
 const applying = ref(false)
 const applied = ref(false)
+
+const docList = computed(() => {
+  const raw = trial.value?.required_documents || ''
+  if (!raw) return []
+  // 按换行、顿号、分号拆分
+  return raw.split(/[;\n；、\r]+/).map((s: string) => s.trim()).filter(Boolean)
+})
 
 const loadDetail = async () => {
   loading.value = true
