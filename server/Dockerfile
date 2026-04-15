@@ -4,8 +4,11 @@ FROM node:18-alpine
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖（如需编译原生模块）
-RUN apk add --no-cache python3 make g++
+# 安装系统依赖（如需编译原生模块 + markitdown 文档转换）
+RUN apk add --no-cache python3 py3-pip make g++
+
+# 安装 markitdown（Microsoft 文档转 Markdown 工具）
+RUN pip3 install --no-cache-dir --break-system-packages markitdown
 
 # 复制 package 文件
 COPY package*.json ./
