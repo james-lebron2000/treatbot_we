@@ -213,7 +213,7 @@ def main():
     print(f"\n完成: 成功 {success_count}, 失败 {failed[0]}")
     print(f"结果保存至: {OUTPUT_PATH}")
     print("\n下一步: 运行以下命令将结果写入数据库")
-    print("  ssh ubuntu@49.235.162.129 'docker exec treatbot-api node scripts/loadStructuredInclusion.js'")
+    print("  ssh <USER>@<SERVER_IP> 'docker exec treatbot-api node scripts/loadStructuredInclusion.js'")
 
 
 if __name__ == "__main__":
