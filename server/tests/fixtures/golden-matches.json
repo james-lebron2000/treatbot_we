@@ -1,0 +1,563 @@
+{
+  "_meta": {
+    "description": "Gold-standard evaluation dataset for TreatBot matching engine",
+    "version": "1.0",
+    "created": "2026-04-15",
+    "cancer_types": ["lung_nsclc", "lung_sclc", "liver", "breast", "colorectal", "gastric"],
+    "labels": {
+      "eligible": "Patient clearly meets all key inclusion criteria and no exclusion criteria",
+      "ineligible": "Patient fails one or more hard criteria (age, ECOG, cancer type mismatch, etc.)",
+      "uncertain": "Patient may qualify but missing key information or borderline on criteria"
+    }
+  },
+  "patients": [
+    {
+      "id": "P01",
+      "description": "55岁男性，IV期非小细胞肺腺癌，EGFR L858R突变，一线TKI治疗后进展",
+      "record": {
+        "diagnosis": "非小细胞肺癌（肺腺癌）",
+        "stage": "IV期",
+        "gene_mutation": "EGFR L858R突变阳性",
+        "treatment": "一线吉非替尼靶向治疗后进展",
+        "treatment_line": 2,
+        "pdl1": null,
+        "age": 55,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 2,
+            "age": 55
+          }
+        }
+      }
+    },
+    {
+      "id": "P02",
+      "description": "68岁女性，IIIB期非鳞NSCLC，ALK融合阳性，ECOG 0",
+      "record": {
+        "diagnosis": "非鳞状非小细胞肺癌",
+        "stage": "IIIB期",
+        "gene_mutation": "ALK融合阳性",
+        "treatment": null,
+        "treatment_line": 1,
+        "pdl1": "TPS 60%",
+        "age": 68,
+        "structured": {
+          "entities": {
+            "ecog": 0,
+            "treatmentLine": 1,
+            "pdl1": "TPS 60%",
+            "age": 68
+          }
+        }
+      }
+    },
+    {
+      "id": "P03",
+      "description": "42岁男性，广泛期小细胞肺癌，一线含铂化疗+免疫后进展",
+      "record": {
+        "diagnosis": "小细胞肺癌",
+        "stage": "广泛期",
+        "gene_mutation": null,
+        "treatment": "一线依托泊苷+卡铂+阿替利珠单抗治疗后进展",
+        "treatment_line": 2,
+        "pdl1": null,
+        "age": 42,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 2,
+            "age": 42
+          }
+        }
+      }
+    },
+    {
+      "id": "P04",
+      "description": "80岁男性，IV期肺腺癌，EGFR野生型，ECOG 3",
+      "record": {
+        "diagnosis": "肺腺癌",
+        "stage": "IV期",
+        "gene_mutation": "EGFR野生型, ALK阴性, ROS1阴性",
+        "treatment": "一线培美曲塞+卡铂化疗，二线多西他赛",
+        "treatment_line": 3,
+        "pdl1": "TPS 5%",
+        "age": 80,
+        "structured": {
+          "entities": {
+            "ecog": 3,
+            "treatmentLine": 3,
+            "pdl1": "TPS 5%",
+            "age": 80
+          }
+        }
+      }
+    },
+    {
+      "id": "P05",
+      "description": "60岁女性，晚期肝细胞癌，一线仑伐替尼+PD-1治疗后进展",
+      "record": {
+        "diagnosis": "肝细胞癌",
+        "stage": "晚期",
+        "gene_mutation": null,
+        "treatment": "一线仑伐替尼联合信迪利单抗治疗后进展",
+        "treatment_line": 2,
+        "pdl1": null,
+        "age": 60,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 2,
+            "age": 60
+          }
+        }
+      }
+    },
+    {
+      "id": "P06",
+      "description": "48岁男性，肝细胞癌BCLC-C期，Child-Pugh A级，未治疗",
+      "record": {
+        "diagnosis": "肝细胞癌",
+        "stage": "晚期",
+        "gene_mutation": null,
+        "treatment": null,
+        "treatment_line": 1,
+        "pdl1": null,
+        "age": 48,
+        "structured": {
+          "entities": {
+            "ecog": 0,
+            "treatmentLine": 1,
+            "age": 48
+          }
+        }
+      }
+    },
+    {
+      "id": "P07",
+      "description": "52岁女性，HER2阳性转移性乳腺癌，三线治疗后",
+      "record": {
+        "diagnosis": "乳腺癌（HER2阳性）",
+        "stage": "IV期",
+        "gene_mutation": "HER2阳性（IHC3+）",
+        "treatment": "一线曲妥珠单抗+多西他赛，二线T-DM1，三线拉帕替尼+卡培他滨后进展",
+        "treatment_line": 4,
+        "pdl1": null,
+        "age": 52,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 4,
+            "age": 52
+          }
+        }
+      }
+    },
+    {
+      "id": "P08",
+      "description": "35岁女性，三阴性乳腺癌，一线化疗后进展，PD-L1 CPS 15",
+      "record": {
+        "diagnosis": "三阴性乳腺癌",
+        "stage": "转移性",
+        "gene_mutation": "BRCA1突变",
+        "treatment": "一线白蛋白紫杉醇+阿替利珠单抗后进展",
+        "treatment_line": 2,
+        "pdl1": "CPS 15",
+        "age": 35,
+        "structured": {
+          "entities": {
+            "ecog": 0,
+            "treatmentLine": 2,
+            "pdl1": "CPS 15",
+            "age": 35
+          }
+        }
+      }
+    },
+    {
+      "id": "P09",
+      "description": "70岁男性，转移性结直肠癌，RAS野生型，二线治疗后",
+      "record": {
+        "diagnosis": "结直肠癌（结肠腺癌）",
+        "stage": "IV期",
+        "gene_mutation": "KRAS野生型, NRAS野生型, BRAF野生型, MSS",
+        "treatment": "一线FOLFOX+西妥昔单抗，二线FOLFIRI后进展",
+        "treatment_line": 3,
+        "pdl1": null,
+        "age": 70,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 3,
+            "age": 70
+          }
+        }
+      }
+    },
+    {
+      "id": "P10",
+      "description": "58岁女性，MSI-H转移性结直肠癌，一线免疫治疗后进展",
+      "record": {
+        "diagnosis": "结直肠腺癌",
+        "stage": "转移性",
+        "gene_mutation": "MSI-H, BRAF V600E突变",
+        "treatment": "一线帕博利珠单抗后进展",
+        "treatment_line": 2,
+        "pdl1": "CPS 40",
+        "age": 58,
+        "structured": {
+          "entities": {
+            "ecog": 0,
+            "treatmentLine": 2,
+            "pdl1": "CPS 40",
+            "age": 58
+          }
+        }
+      }
+    },
+    {
+      "id": "P11",
+      "description": "63岁男性，晚期胃腺癌，HER2阴性，CLDN18.2阳性，二线化疗后",
+      "record": {
+        "diagnosis": "胃腺癌",
+        "stage": "IV期",
+        "gene_mutation": "HER2阴性, CLDN18.2阳性(IHC2+/3+ ≥75%)",
+        "treatment": "一线XELOX，二线紫杉醇后进展",
+        "treatment_line": 3,
+        "pdl1": "CPS 5",
+        "age": 63,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 3,
+            "pdl1": "CPS 5",
+            "age": 63
+          }
+        }
+      }
+    },
+    {
+      "id": "P12",
+      "description": "45岁女性，晚期胃癌，HER2阳性，一线治疗后",
+      "record": {
+        "diagnosis": "胃癌",
+        "stage": "晚期",
+        "gene_mutation": "HER2阳性(IHC3+)",
+        "treatment": "一线曲妥珠单抗+XELOX后进展",
+        "treatment_line": 2,
+        "pdl1": "CPS 10",
+        "age": 45,
+        "structured": {
+          "entities": {
+            "ecog": 1,
+            "treatmentLine": 2,
+            "pdl1": "CPS 10",
+            "age": 45
+          }
+        }
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "patient_id": "P01",
+      "trial_id": "22615",
+      "label": "ineligible",
+      "reason": "Trial requires HER2 TKD activating mutation; patient has EGFR L858R mutation, not HER2"
+    },
+    {
+      "patient_id": "P01",
+      "trial_id": "WS2202",
+      "label": "uncertain",
+      "reason": "NSCLC trial, patient is NSCLC with EGFR mutation; depends on specific trial gene requirements"
+    },
+    {
+      "patient_id": "P01",
+      "trial_id": "LM299-01-102",
+      "label": "uncertain",
+      "reason": "NSCLC trial for post-TKI patients; depends on specific EGFR mutation and prior treatment criteria"
+    },
+    {
+      "patient_id": "P02",
+      "trial_id": "22615",
+      "label": "ineligible",
+      "reason": "Trial requires HER2 TKD mutation; patient has ALK fusion, wrong molecular target"
+    },
+    {
+      "patient_id": "P02",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad solid tumor trial accepting NSCLC, age 68 within range, ECOG 0 meets requirement"
+    },
+    {
+      "patient_id": "P03",
+      "trial_id": "F0041-101",
+      "label": "eligible",
+      "reason": "SCLC trial, patient has SCLC with prior platinum chemo, age 42 and ECOG 1 meet criteria"
+    },
+    {
+      "patient_id": "P03",
+      "trial_id": "GS-US-600-6165",
+      "label": "uncertain",
+      "reason": "SCLC trial requiring prior platinum, patient qualifies; but excludes prior irinotecan/topotecan — need to verify patient hasn't received these"
+    },
+    {
+      "patient_id": "P03",
+      "trial_id": "22615",
+      "label": "ineligible",
+      "reason": "Trial is for non-squamous NSCLC with HER2 mutation; patient has SCLC, completely different cancer type"
+    },
+    {
+      "patient_id": "P04",
+      "trial_id": "22615",
+      "label": "ineligible",
+      "reason": "ECOG 3 exceeds typical trial requirements; age 80 likely exceeds age limits"
+    },
+    {
+      "patient_id": "P04",
+      "trial_id": "F0041-101",
+      "label": "ineligible",
+      "reason": "Age 80 exceeds trial max of 75; ECOG 3 exceeds max of 1; lung adenocarcinoma is not SCLC"
+    },
+    {
+      "patient_id": "P04",
+      "trial_id": "SCTB39G-X201",
+      "label": "ineligible",
+      "reason": "ECOG 3 far exceeds trial requirement of ECOG ≤1; age 80 exceeds max of 70"
+    },
+    {
+      "patient_id": "P05",
+      "trial_id": "YST-02-105",
+      "label": "eligible",
+      "reason": "HCC trial for post-standard-treatment patients; patient is HCC post-lenvatinib+PD-1, age 60, ECOG 1 meets criteria"
+    },
+    {
+      "patient_id": "P05",
+      "trial_id": "RG001",
+      "label": "uncertain",
+      "reason": "HCC trial with no excluded therapies listed but requires histology and measurable lesion — depends on imaging availability"
+    },
+    {
+      "patient_id": "P05",
+      "trial_id": "22615",
+      "label": "ineligible",
+      "reason": "Trial is for NSCLC with HER2 mutation; patient has liver cancer"
+    },
+    {
+      "patient_id": "P06",
+      "trial_id": "RG001",
+      "label": "eligible",
+      "reason": "HCC trial, patient is HCC with ECOG 0, age 48, no prior excluded therapies"
+    },
+    {
+      "patient_id": "P06",
+      "trial_id": "YST-02-105",
+      "label": "uncertain",
+      "reason": "Trial requires prior standard treatment including immunotherapy; patient is treatment-naive"
+    },
+    {
+      "patient_id": "P06",
+      "trial_id": "AK112-312",
+      "label": "ineligible",
+      "reason": "Trial is for colorectal cancer; patient has liver cancer"
+    },
+    {
+      "patient_id": "P07",
+      "trial_id": "BAT-8010+1006-001-CR",
+      "label": "eligible",
+      "reason": "HER2+ breast cancer trial, patient is HER2+ IHC3+, age 52 ECOG 1 meet criteria"
+    },
+    {
+      "patient_id": "P07",
+      "trial_id": "TQB2930-III-01",
+      "label": "eligible",
+      "reason": "HER2+ breast cancer trial requiring ≥2 prior anti-HER2 lines; patient has had 3 lines including trastuzumab"
+    },
+    {
+      "patient_id": "P07",
+      "trial_id": "F0041-101",
+      "label": "ineligible",
+      "reason": "Trial is for SCLC; patient has breast cancer"
+    },
+    {
+      "patient_id": "P08",
+      "trial_id": "BAT-8010+1006-001-CR",
+      "label": "ineligible",
+      "reason": "Trial requires HER2-positive; patient has triple-negative breast cancer (HER2-negative by definition)"
+    },
+    {
+      "patient_id": "P08",
+      "trial_id": "SYS6005-001",
+      "label": "uncertain",
+      "reason": "Broad solid tumor trial including breast cancer if ROR1+; TNBC status and BRCA1 mutation noted but ROR1 status unknown"
+    },
+    {
+      "patient_id": "P08",
+      "trial_id": "SCTB39G-X201",
+      "label": "uncertain",
+      "reason": "Broad trial not listing breast cancer explicitly in allowed types; TNBC may fit under '其他实体瘤'"
+    },
+    {
+      "patient_id": "P09",
+      "trial_id": "AK112-312",
+      "label": "ineligible",
+      "reason": "Trial requires treatment-naive (prior_lines_max=0, excludes prior immunotherapy); patient is 3rd line"
+    },
+    {
+      "patient_id": "P09",
+      "trial_id": "XNW27011-III-01",
+      "label": "ineligible",
+      "reason": "Trial is for gastric cancer with CLDN18.2; patient has colorectal cancer"
+    },
+    {
+      "patient_id": "P09",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad solid tumor trial including CRC, age 70 within 18-70 range, ECOG 1 meets ≤1 requirement, post-standard-treatment"
+    },
+    {
+      "patient_id": "P10",
+      "trial_id": "AK112-312",
+      "label": "ineligible",
+      "reason": "Trial excludes prior immunotherapy; patient received prior pembrolizumab (immune checkpoint inhibitor)"
+    },
+    {
+      "patient_id": "P10",
+      "trial_id": "22752",
+      "label": "uncertain",
+      "reason": "Trial accepts CRC with HER2 mutation but patient has BRAF V600E; HER2 status not assessed"
+    },
+    {
+      "patient_id": "P10",
+      "trial_id": "SCTB39G-X201",
+      "label": "uncertain",
+      "reason": "Broad trial including CRC; excludes prior PD-L1+CTLA4 combo but patient only had PD-1 mono — may qualify"
+    },
+    {
+      "patient_id": "P11",
+      "trial_id": "XNW27011-III-01",
+      "label": "eligible",
+      "reason": "Gastric cancer trial requiring CLDN18.2 expression and 2-4 prior lines; patient is gastric with CLDN18.2+ at line 3"
+    },
+    {
+      "patient_id": "P11",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad trial including gastric cancer, age 63 within range, ECOG 1, post-standard treatment"
+    },
+    {
+      "patient_id": "P11",
+      "trial_id": "BAT-8010+1006-001-CR",
+      "label": "ineligible",
+      "reason": "Trial is for HER2+ breast cancer; patient has gastric cancer with HER2-negative"
+    },
+    {
+      "patient_id": "P12",
+      "trial_id": "XNW27011-III-01",
+      "label": "ineligible",
+      "reason": "Trial requires CLDN18.2 expression; patient's CLDN18.2 status not documented, and only 2nd line (trial needs 2-4 prior lines)"
+    },
+    {
+      "patient_id": "P12",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad trial including gastric cancer, age 45 within 18-70, ECOG 1, post-standard treatment"
+    },
+    {
+      "patient_id": "P12",
+      "trial_id": "RG001",
+      "label": "ineligible",
+      "reason": "Trial is for hepatocellular carcinoma; patient has gastric cancer"
+    },
+    {
+      "patient_id": "P01",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad trial including NSCLC, age 55 within 18-70, ECOG 1, post-standard TKI treatment"
+    },
+    {
+      "patient_id": "P02",
+      "trial_id": "F0041-101",
+      "label": "ineligible",
+      "reason": "Trial is for SCLC; patient has NSCLC. Different cancer type."
+    },
+    {
+      "patient_id": "P03",
+      "trial_id": "SCTB39G-X201",
+      "label": "ineligible",
+      "reason": "Trial explicitly excludes SCLC in other_key_criteria ('暂不接收小细胞肺癌')"
+    },
+    {
+      "patient_id": "P05",
+      "trial_id": "SCTB39G-X201",
+      "label": "eligible",
+      "reason": "Broad trial including HCC, age 60 within 18-70, ECOG 1, post-standard treatment"
+    },
+    {
+      "patient_id": "P06",
+      "trial_id": "SCTB39G-X201",
+      "label": "uncertain",
+      "reason": "Trial accepts HCC but requires prior standard treatment failure; patient is treatment-naive"
+    },
+    {
+      "patient_id": "P07",
+      "trial_id": "SYS6005-001",
+      "label": "uncertain",
+      "reason": "Broad trial including breast cancer if ROR1+; patient's ROR1 status unknown"
+    },
+    {
+      "patient_id": "P08",
+      "trial_id": "TQB2930-III-01",
+      "label": "ineligible",
+      "reason": "Trial requires HER2-positive; TNBC is HER2-negative by definition"
+    },
+    {
+      "patient_id": "P09",
+      "trial_id": "22752",
+      "label": "ineligible",
+      "reason": "Trial requires HER2 activating mutation; patient is all-wild-type (KRAS/NRAS/BRAF wild, no HER2 mutation)"
+    },
+    {
+      "patient_id": "P10",
+      "trial_id": "XP-001-V2-01",
+      "label": "uncertain",
+      "reason": "Need to check trial specifics for CRC with MSI-H/BRAF V600E post-immunotherapy"
+    },
+    {
+      "patient_id": "P11",
+      "trial_id": "YKSW202402",
+      "label": "uncertain",
+      "reason": "Gastric cancer trial but need to check specific inclusion criteria match for HER2-negative patient"
+    },
+    {
+      "patient_id": "P12",
+      "trial_id": "YKSW202402",
+      "label": "uncertain",
+      "reason": "Gastric cancer trial; patient is HER2+, depends on trial's HER2 requirement"
+    },
+    {
+      "patient_id": "P04",
+      "trial_id": "HS-20124-101",
+      "label": "ineligible",
+      "reason": "ECOG 3 far exceeds typical ≤1 requirement; age 80 may exceed limits"
+    },
+    {
+      "patient_id": "P06",
+      "trial_id": "BAT-8010+1006-001-CR",
+      "label": "ineligible",
+      "reason": "Trial is for HER2+ breast cancer; patient has liver cancer"
+    },
+    {
+      "patient_id": "P09",
+      "trial_id": "TQB2930-III-01",
+      "label": "ineligible",
+      "reason": "Trial is for HER2+ breast cancer; patient has colorectal cancer"
+    },
+    {
+      "patient_id": "P07",
+      "trial_id": "22752",
+      "label": "eligible",
+      "reason": "Trial accepts multiple solid tumors with HER2 mutation; patient is HER2+ IHC3+, heavily pretreated"
+    }
+  ]
+}

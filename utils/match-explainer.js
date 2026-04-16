@@ -563,6 +563,140 @@ const sortMatchesByScoreAndTime = (list) => {
   })
 }
 
+// ---- Criterion-Level Explanation (Phase 1.4) ----
+
+const CRITERION_ICONS = {
+  met: '✅',
+  not_met: '❌',
+  uncertain: '⚠️',
+  not_applicable: '➖'
+}
+
+const CRITERION_LABELS = {
+  met: '符合',
+  not_met: '不符',
+  uncertain: '信息不足',
+  not_applicable: '不适用'
+}
+
+/**
+ * Format a single criterion result into a display-friendly object
+ * @param {Object} result - Criterion evaluation result from criterionMatcher
+ * @returns {Object} Formatted criterion display object
+ */
+const formatCriterionResult = (result) => {
+  const icon = CRITERION_ICONS[result.status] || '❓'
+  const label = CRITERION_LABELS[result.status] || '未知'
+  const typeLabel = result.is_exclusion ? '排除' : '入选'
+
+  return {
+    id: result.criterion_id,
+    icon,
+    label,
+    type: typeLabel,
+    category: result.category || 'other',
+    subcategory: result.subcategory || '',
+    text: safeText(result.original_text) || '',
+    evidence: safeText(result.evidence) || '',
+    status: result.status,
+    confidence: result.confidence || 0,
+    is_exclusion: result.is_exclusion || false
+  }
+}
+
+/**
+ * Build criterion-level explanation from evaluateAllCriteria results
+ * Groups criteria by status and generates structured explanation
+ * @param {Object} criterionResults - Output from evaluateAllCriteria
+ * @returns {Object} Structured explanation with groups, summary text, and action items
+ */
+const buildCriterionExplanation = (criterionResults) => {
+  if (!criterionResults || !criterionResults.results || criterionResults.results.length === 0) {
+    return {
+      criteria: [],
+      groups: { met: [], not_met: [], uncertain: [] },
+      summaryText: '暂无条目级匹配信息',
+      actionItems: [],
+      matchRate: 0,
+      totalCriteria: 0
+    }
+  }
+
+  const formatted = criterionResults.results.map(formatCriterionResult)
+  const summary = criterionResults.summary || {}
+
+  // Group by status
+  const groups = {
+    met: formatted.filter((c) => c.status === 'met'),
+    not_met: formatted.filter((c) => c.status === 'not_met'),
+    uncertain: formatted.filter((c) => c.status === 'uncertain')
+  }
+
+  // Build summary text
+  const parts = []
+  if (groups.met.length > 0) {
+    parts.push(`${groups.met.length}项符合`)
+  }
+  if (groups.not_met.length > 0) {
+    parts.push(`${groups.not_met.length}项不符`)
+  }
+  if (groups.uncertain.length > 0) {
+    parts.push(`${groups.uncertain.length}项待确认`)
+  }
+  const summaryText = parts.length > 0 ? `共${formatted.length}项标准：${parts.join('、')}` : '无匹配标准'
+
+  // Build action items for uncertain criteria (suggest what info to upload)
+  const UPLOAD_HINTS = {
+    age_range: '请上传含年龄信息的病历',
+    ecog: '请上传含ECOG评分的检查报告',
+    stage: '请上传含分期信息的病理报告',
+    cancer_type: '请上传含诊断信息的病历',
+    gene_requirement: '请上传基因检测报告',
+    pdl1: '请上传PD-L1检测报告',
+    required_prior_therapy: '请上传既往治疗记录',
+    excluded_therapy: '请上传完整用药记录',
+    treatment_line: '请上传治疗经过说明',
+    lab_values: '请上传最近的检验报告',
+    blood_counts: '请上传最近的血常规报告'
+  }
+
+  const actionItems = groups.uncertain
+    .map((c) => ({
+      criterion: c.text.length > 40 ? `${c.text.slice(0, 40)}...` : c.text,
+      hint: UPLOAD_HINTS[c.subcategory] || '请补充相关检查报告以提高匹配精度'
+    }))
+    .slice(0, 5)
+
+  return {
+    criteria: formatted,
+    groups,
+    summaryText,
+    actionItems,
+    matchRate: summary.matchRate || 0,
+    totalCriteria: formatted.length,
+    excluded: summary.excluded || false
+  }
+}
+
+/**
+ * Enrich a match item with criterion-level explanation (augments enrichMatchExplanation)
+ * @param {Object} match - Normalized match item
+ * @param {Object} profile - Patient profile
+ * @param {Object} criterionResults - Output from evaluateAllCriteria (optional)
+ * @returns {Object} Enriched match item with both legacy and criterion-level explanations
+ */
+const enrichMatchWithCriteria = (match, profile, criterionResults) => {
+  // Start with the legacy explanation
+  const enriched = enrichMatchExplanation(match, profile)
+
+  // Add criterion-level explanation if available
+  if (criterionResults) {
+    enriched.criterionExplanation = buildCriterionExplanation(criterionResults)
+  }
+
+  return enriched
+}
+
 module.exports = {
   safeText,
   isPresent,
@@ -572,5 +706,8 @@ module.exports = {
   normalizeMatchItem,
   getPatientProfile,
   enrichMatchExplanation,
+  enrichMatchWithCriteria,
+  buildCriterionExplanation,
+  formatCriterionResult,
   sortMatchesByScoreAndTime
 }

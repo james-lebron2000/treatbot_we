@@ -1,0 +1,12 @@
+# git-filter-repo replacements file
+# Format: literal:FIND==>REPLACE
+# Each line replaces one sensitive string across all commits.
+
+# Server IP address
+literal:49.235.162.129==><SERVER_IP>
+
+# Database password (used in docker-compose.yml as DB_PASSWORD and MYSQL_PASSWORD defaults)
+literal:treatbot123==><DB_PASSWORD>
+
+# MySQL root password (used in docker-compose.yml as MYSQL_ROOT_PASSWORD default)
+literal:root123==><MYSQL_ROOT_PASSWORD>
