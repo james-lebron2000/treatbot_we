@@ -221,3 +221,99 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | 容器化 | Docker + alpine 镜像 |
 | H5 前端 | Vue 3 + Vite + TypeScript |
 | 小程序 | 微信原生 WXML/WXSS |
+
+---
+
+## 优化路线图
+
+> 基于代码审计（2026-04-16）与 [DASHBOARD.md](./DASHBOARD.md) 任务梳理。
+> 面向 2 人团队的渐进式计划，每阶段 2–4 周，前一阶段完成后再启动下一阶段。
+
+### Phase 1：质量护栏 & 数据补全
+
+> 目标：CI 绿色 = 可部署；核心逻辑有测试覆盖；496 条试验全部结构化。
+
+| # | 项目 | 关联任务 | 说明 |
+|---|------|---------|------|
+| Q1 | 配置 ESLint + Prettier | 新增 | 已安装 eslint 但无 `.eslintrc`，新增配置 + `eslint-plugin-security` |
+| Q2 | 添加 husky + lint-staged | 新增 | commit 时自动 lint，防止低质量代码入库 |
+| Q3 | CI 去掉 `\|\| true` | J9 | `deploy.yml` 中 lint/test 失败必须阻断部署 |
+| Q4 | matchEngine 单元测试 | 新增 | 647 行评分逻辑零测试；覆盖 `scoreRecordAgainstTrial` / `buildCoarseFilter` |
+| Q5 | API 集成测试补全 | 新增 | 现有 `api.test.js` 多个用例为空函数体，补全认证 + 匹配流程 |
+| Q6 | **结构化入排全量生效** | A8 🔴 | 运行 `parseInclusionLocal.py` 完成 436 条剩余试验解析 |
+| Q7 | 移除 JWT 硬编码 fallback | 新增 | `auth.js` / `croAuth.js` / `cro.js` / `auth controller` 共 4 处 `\|\| 'your-secret-key'`，改为启动校验 |
+
+**里程碑**：CI 全绿才允许合并；matchEngine 测试覆盖率 > 60%；496 条试验全量结构化。
+
+---
+
+### Phase 2：商业化基础设施
+
+> 目标：CRO 客户可登录、查看线索、导出数据，实现首单收入。
+
+| # | 项目 | 关联任务 | 说明 |
+|---|------|---------|------|
+| B1 | **管理后台框架**（登录 / 权限 / 导航） | H1 🔴 | 所有商业化功能的前置依赖 |
+| B2 | **申请管理后台**（状态流转 + 筛选） | H3 🔴 | CRO 日常操作入口 |
+| B3 | **CRO 结构化线索导出** | H4 🔴 | 核心商业价值：按试验 ID 导出申请人 + 诊断信息 |
+| B4 | **CPA 计费模型** | I1 🔴 | 按合格线索收费，依赖 B2/B3 |
+| B5 | **ICP 备案 / 医疗信息服务资质** | I4 🔴 | 商业合作前置合规 |
+| B6 | 申请状态跟踪（前端完整状态流） | C8 🟠 | pending → contacted → enrolled 全链路 |
+| B7 | 用户列表 + 试验 CRUD | H2/H5 🟠 | 运营人员数据维护入口 |
+
+**里程碑**：CRO 可登录 → 筛选线索 → 导出 CSV → 按 CPA 结算。
+
+---
+
+### Phase 3：性能 & 可观测性
+
+> 目标：匹配 P95 < 500ms；线上问题 5 分钟内定位。
+
+| # | 项目 | 关联任务 | 说明 |
+|---|------|---------|------|
+| P1 | 数据库索引补全 | 新增 | `trials` 表缺 `indication` 索引；`disease_tags` JSON 字段需 generated column + 索引 |
+| P2 | `normalizeText` 结果缓存 | 新增 | 评分循环中同一文本被反复归一化，加 Map 缓存 |
+| P3 | Prometheus `/metrics` 端点 | J8 🟠 | `prometheus.yml` 已配置但应用无端点；接入 `prom-client` |
+| P4 | 请求耗时 + 错误率指标 | J8 🟠 | Express 中间件记录 `http_request_duration_seconds` |
+| P5 | Vite 路由懒加载 + 代码分割 | 新增 | `router/index.ts` 9 个页面全部静态 import，改为动态 `() => import()` |
+| P6 | Docker 多阶段构建 | 新增 | 当前 Dockerfile 最终镜像包含 python3/make/g++，拆分 build stage |
+| P7 | CSP 移除 `unsafe-inline` | 新增 | `app.js` 中 `scriptSrc` 含 `'unsafe-inline'`，改用 nonce |
+| P8 | 日志聚合（Loki / CloudWatch） | J7 🟡 | Winston JSON 日志已就绪，接入集中式日志平台 |
+
+**里程碑**：Grafana 大盘可观测延迟/错误率/QPS；Docker 镜像体积减半；首屏 < 2s。
+
+---
+
+### Phase 4：增长闭环
+
+> 目标：患者自传播 + 数据自更新 = 增长飞轮。
+
+| # | 项目 | 关联任务 | 说明 |
+|---|------|---------|------|
+| G1 | 可分享匹配报告 | E1 🟠 | 带二维码的公开报告页，核心传播载体 |
+| G2 | 新用户引导 + 样本病历 | F1 🟠 | 降低首次使用门槛，提升激活率 |
+| G3 | 试验数据定期更新 | G1 🟠 | 接入 ClinicalTrials.gov API，当前数据截至 2025-09 |
+| G4 | 小程序申请管理 | D4 🟠 | 微信端申请查看/取消，与 H5 对齐 |
+| G5 | 癌种语义扩展 | A10 🟡 | 疾病本体词典："胃癌" 自动包含 "胃腺癌" 等子类型 |
+| G6 | 用户行为埋点 | F4 🟡 | 上传 → 匹配 → 报名转化漏斗 |
+| G7 | 手动补录字段 | B7 🟡 | ECOG / 治疗线数输入框，`schema.ts` 已定义 |
+
+**里程碑**：分享报告带来 > 10% 新用户；试验数据月度自动更新；转化漏斗可量化。
+
+---
+
+### Phase 5：规模化准备
+
+> 目标：支撑 10x 用户量 + 多人团队协作。
+
+| # | 项目 | 关联任务 | 说明 |
+|---|------|---------|------|
+| S1 | Staging 环境搭建 | J10 🟡 | 当前只有 production，新功能直接上线 |
+| S2 | CI/CD 全自动部署 | J9 🟡 | 手动 rsync → push 触发自动 build + deploy |
+| S3 | 数据库迁移工具正规化 | 新增 | `migrate.js` 只能 addColumn 无法 rollback，迁移到 sequelize-cli |
+| S4 | 前端测试覆盖 | 新增 | 接入 Vitest + Vue Test Utils，覆盖核心组件 |
+| S5 | 新试验提醒推送 | F2 🟡 | 诊断匹配新试验时微信消息通知 |
+| S6 | 运营数据大盘 | H6 🟡 | DAU / 申请量 / 转化率看板 |
+| S7 | 收藏 / 对比试验 | C10 🟡 | 收藏列表 + 两两对比 |
+
+**里程碑**：staging 与 production 隔离；PR 合并自动部署；迁移支持 up/down。
