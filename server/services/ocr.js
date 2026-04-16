@@ -159,22 +159,20 @@ const resolveImageDataUrl = async ({ imageUrl, fileKey, mimeType }) => {
 };
 
 const estimateConfidence = (entities) => {
-  let score = 0.55;
-  if (entities.diagnosis) {
-    score += 0.2;
-  }
-  if (entities.stage) {
-    score += 0.08;
-  }
-  if (entities.geneMutation) {
-    score += 0.1;
-  }
-  if (entities.treatment) {
-    score += 0.07;
-  }
-  if (entities.ecog != null) {
-    score += 0.03;
-  }
+  let score = 0.45;
+  if (entities.diagnosis) score += 0.18;
+  if (entities.stage) score += 0.06;
+  if (entities.geneMutation) score += 0.08;
+  if (entities.treatment) score += 0.05;
+  if (entities.ecog != null) score += 0.03;
+  if (entities.pdl1) score += 0.03;
+  if (entities.treatmentLine != null) score += 0.03;
+  // Extended entities (Phase 0.3)
+  if (entities.age != null) score += 0.02;
+  if (entities.comorbidities && entities.comorbidities.length > 0) score += 0.02;
+  if (entities.priorTherapies && entities.priorTherapies.length > 0) score += 0.03;
+  if (entities.labValues && Object.keys(entities.labValues).length > 0) score += 0.04;
+  if (entities.bloodCounts && Object.keys(entities.bloodCounts).length > 0) score += 0.03;
   return Math.min(0.98, Number(score.toFixed(2)));
 };
 
@@ -384,12 +382,23 @@ const extractMedicalEntities = (text) => {
     treatment: null,
     ecog: null,
     pdl1: null,
-    treatmentLine: null
+    treatmentLine: null,
+    // Extended fields (Phase 0.3)
+    age: null,
+    weight: null,
+    height: null,
+    comorbidities: [],
+    priorTherapies: [],
+    labValues: {},
+    bloodCounts: {},
+    fertilityStatus: null
   };
 
   if (!text) {
     return entities;
   }
+
+  // ---- Original 7 fields ----
 
   const diagnosisPatterns = [
     /诊断[：:]\s*([^\n]+)/,
@@ -405,12 +414,12 @@ const extractMedicalEntities = (text) => {
     }
   }
 
-  const stageMatch = text.match(/((?:[IVX]+|[0-4]|第[一二三四])期[A-Da-d]?)\b/);
+  const stageMatch = text.match(/((?:[IVX]+|[0-4]|第[一二三四])(?:期|A期|B期|C期)[A-Da-d]?)/);
   if (stageMatch) {
     entities.stage = stageMatch[1];
   }
 
-  const geneMatch = text.match(/(EGFR[^\n，,。；;]{0,20}|ALK[^\n，,。；;]{0,20}|ROS1[^\n，,。；;]{0,20}|KRAS[^\n，,。；;]{0,20}|BRAF[^\n，,。；;]{0,20})/i);
+  const geneMatch = text.match(/(EGFR[^\n，,。；;]{0,20}|ALK[^\n，,。；;]{0,20}|ROS1[^\n，,。；;]{0,20}|KRAS[^\n，,。；;]{0,20}|BRAF[^\n，,。；;]{0,20}|HER2[^\n，,。；;]{0,20}|NTRK[^\n，,。；;]{0,20}|RET[^\n，,。；;]{0,20}|MET[^\n，,。；;]{0,20}|FGFR[^\n，,。；;]{0,20}|PIK3CA[^\n，,。；;]{0,20}|MSI[^\n，,。；;]{0,10}|TMB[^\n，,。；;]{0,10})/i);
   if (geneMatch) {
     entities.geneMutation = geneMatch[1].trim();
   }
@@ -429,7 +438,6 @@ const extractMedicalEntities = (text) => {
   if (pdl1Match) {
     entities.pdl1 = `TPS ${pdl1Match[1]}%`;
   }
-  // 同时尝试匹配 CPS 格式
   if (!entities.pdl1) {
     const cpsMatch = text.match(/CPS[^\d]*(\d{1,3})/i);
     if (cpsMatch) {
@@ -449,12 +457,11 @@ const extractMedicalEntities = (text) => {
       const raw = lineMatch[1];
       const num = lineMap[raw] || parseInt(raw, 10);
       if (num >= 1 && num <= 6) {
-        entities.treatmentLine = num + 1; // 第N线失败，需要N+1线
+        entities.treatmentLine = num + 1;
       }
       break;
     }
   }
-  // 若未匹配到失败模式，直接匹配最高线数
   if (!entities.treatmentLine) {
     const allLines = text.match(/([一二三四五六1-6])\s*线/g);
     if (allLines && allLines.length > 0) {
@@ -469,7 +476,152 @@ const extractMedicalEntities = (text) => {
     }
   }
 
+  // ---- Extended fields (Phase 0.3) ----
+
+  // Age
+  const ageMatch = text.match(/(?:年龄|Age)[：:\s]*(\d{1,3})\s*(?:岁|years)?/i)
+    || text.match(/(\d{2,3})\s*岁/);
+  if (ageMatch) {
+    const age = Number(ageMatch[1]);
+    if (age >= 1 && age <= 120) entities.age = age;
+  }
+
+  // Weight (kg)
+  const weightMatch = text.match(/(?:体重|Weight)[：:\s]*(\d{2,3}(?:\.\d)?)\s*(?:kg|公斤)/i);
+  if (weightMatch) entities.weight = Number(weightMatch[1]);
+
+  // Height (cm)
+  const heightMatch = text.match(/(?:身高|Height)[：:\s]*(\d{2,3}(?:\.\d)?)\s*(?:cm|厘米)/i);
+  if (heightMatch) entities.height = Number(heightMatch[1]);
+
+  // Comorbidities
+  const comorbidityKeywords = [
+    { pattern: /脑转移/g, label: '脑转移' },
+    { pattern: /软脑膜[^\n]{0,4}转移/g, label: '软脑膜转移' },
+    { pattern: /骨转移/g, label: '骨转移' },
+    { pattern: /肝转移/g, label: '肝转移' },
+    { pattern: /自身免疫[^\n]{0,6}(?:病|疾病)/g, label: '自身免疫病' },
+    { pattern: /间质性肺[^\n]{0,4}(?:病|炎)/g, label: '间质性肺病' },
+    { pattern: /器官移植/g, label: '器官移植史' },
+    { pattern: /乙型?肝炎|HBV/gi, label: '乙型肝炎' },
+    { pattern: /丙型?肝炎|HCV/gi, label: '丙型肝炎' },
+    { pattern: /HIV|艾滋/gi, label: 'HIV' },
+    { pattern: /糖尿病/g, label: '糖尿病' },
+    { pattern: /高血压/g, label: '高血压' },
+    { pattern: /心功能不全|心力衰竭|心衰/g, label: '心功能不全' },
+    { pattern: /肾功能不全|肾衰/g, label: '肾功能不全' },
+    { pattern: /活动性感染/g, label: '活动性感染' }
+  ];
+  for (const { pattern, label } of comorbidityKeywords) {
+    if (pattern.test(text)) {
+      entities.comorbidities.push(label);
+    }
+  }
+
+  // Prior therapies (specific regimen names)
+  const therapyPatterns = [
+    /(?:曲妥珠单抗|赫赛汀|trastuzumab)/gi,
+    /(?:帕博利珠单抗|可瑞达|keytruda|pembrolizumab)/gi,
+    /(?:纳武利尤单抗|欧狄沃|opdivo|nivolumab)/gi,
+    /(?:阿替利珠单抗|泰圣奇|tecentriq|atezolizumab)/gi,
+    /(?:信迪利单抗|达伯舒|sintilimab)/gi,
+    /(?:卡瑞利珠单抗|艾瑞卡|camrelizumab)/gi,
+    /(?:仑伐替尼|乐卫玛|lenvatinib)/gi,
+    /(?:索拉非尼|多吉美|sorafenib)/gi,
+    /(?:奥希替尼|泰瑞沙|osimertinib)/gi,
+    /(?:吉非替尼|易瑞沙|gefitinib)/gi,
+    /(?:培美曲塞|力比泰|pemetrexed)/gi,
+    /(?:多西他赛|泰索帝|docetaxel)/gi,
+    /(?:紫杉醇|taxol|paclitaxel)/gi,
+    /FOLFOX/gi,
+    /FOLFIRI/gi,
+    /XELOX|CapeOX/gi,
+    /(?:西妥昔单抗|爱必妥|cetuximab)/gi,
+    /(?:贝伐珠单抗|安维汀|bevacizumab)/gi,
+    /T-?DM1|(?:恩美曲妥珠单抗|kadcyla)/gi,
+    /(?:拉帕替尼|泰立沙|lapatinib)/gi,
+    /(?:卡培他滨|希罗达|capecitabine)/gi
+  ];
+  const foundTherapies = new Set();
+  for (const pattern of therapyPatterns) {
+    const matches = text.match(pattern);
+    if (matches) {
+      for (const m of matches) foundTherapies.add(m);
+    }
+  }
+  entities.priorTherapies = [...foundTherapies];
+
+  // Lab values (liver/kidney function)
+  const labPatterns = [
+    { pattern: /ALT[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:U\/L|IU\/L)?/i, key: 'ALT', unit: 'U/L' },
+    { pattern: /AST[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:U\/L|IU\/L)?/i, key: 'AST', unit: 'U/L' },
+    { pattern: /(?:总胆红素|TBIL)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:μmol\/L|umol\/L)?/i, key: 'TBIL', unit: 'μmol/L' },
+    { pattern: /(?:肌酐|Cr|CRE)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:μmol\/L|umol\/L)?/i, key: 'creatinine', unit: 'μmol/L' },
+    { pattern: /(?:肌酐清除率|CrCl|CCr)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:ml\/min)?/i, key: 'CrCl', unit: 'ml/min' },
+    { pattern: /(?:白蛋白|ALB)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:g\/L)?/i, key: 'albumin', unit: 'g/L' },
+    { pattern: /LVEF[^\d]{0,10}(\d+(?:\.\d+)?)\s*%?/i, key: 'LVEF', unit: '%' }
+  ];
+  for (const { pattern, key, unit } of labPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      entities.labValues[key] = { value: Number(match[1]), unit };
+    }
+  }
+
+  // Blood counts
+  const bloodPatterns = [
+    { pattern: /(?:白细胞|WBC)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:×?\s*10[⁹^9]?\/L)?/i, key: 'WBC', unit: '×10⁹/L' },
+    { pattern: /(?:中性粒细胞|ANC|NEU)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:×?\s*10[⁹^9]?\/L)?/i, key: 'ANC', unit: '×10⁹/L' },
+    { pattern: /(?:血小板|PLT)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:×?\s*10[⁹^9]?\/L)?/i, key: 'PLT', unit: '×10⁹/L' },
+    { pattern: /(?:血红蛋白|Hb|HGB)[^\d]{0,10}(\d+(?:\.\d+)?)\s*(?:g\/L)?/i, key: 'Hb', unit: 'g/L' }
+  ];
+  for (const { pattern, key, unit } of bloodPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      entities.bloodCounts[key] = { value: Number(match[1]), unit };
+    }
+  }
+
+  // Fertility status
+  const fertilityMatch = text.match(/(?:妊娠试验|HCG|β-?hCG)[^\n]{0,20}(阴性|阳性|negative|positive)/i)
+    || text.match(/(绝经|未绝经|围绝经)/);
+  if (fertilityMatch) {
+    entities.fertilityStatus = fertilityMatch[1] || fertilityMatch[0];
+  }
+
   return entities;
+};
+
+/**
+ * Parse Kimi LLM response into normalized entities object.
+ * Shared by requestKimi (vision) and requestKimiText (text mode).
+ */
+const parseKimiEntities = (parsed) => {
+  const ecogRaw = parsed.ecog;
+  const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
+  const lineRaw = parsed.treatmentLine;
+  const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
+  const ageRaw = parsed.age;
+  const ageValue = ageRaw != null && ageRaw !== '' ? Number(ageRaw) : null;
+
+  return {
+    diagnosis: parsed.diagnosis || null,
+    stage: parsed.stage || null,
+    geneMutation: parsed.geneMutation || null,
+    treatment: parsed.treatment || null,
+    ecog: Number.isFinite(ecogValue) && ecogValue >= 0 && ecogValue <= 4 ? ecogValue : null,
+    pdl1: parsed.pdl1 || null,
+    treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null,
+    // Extended fields (Phase 0.3)
+    age: Number.isFinite(ageValue) && ageValue >= 1 && ageValue <= 120 ? ageValue : null,
+    weight: Number.isFinite(Number(parsed.weight)) ? Number(parsed.weight) : null,
+    height: Number.isFinite(Number(parsed.height)) ? Number(parsed.height) : null,
+    comorbidities: Array.isArray(parsed.comorbidities) ? parsed.comorbidities.filter(Boolean) : [],
+    priorTherapies: Array.isArray(parsed.priorTherapies) ? parsed.priorTherapies.filter(Boolean) : [],
+    labValues: (parsed.labValues && typeof parsed.labValues === 'object' && !Array.isArray(parsed.labValues)) ? parsed.labValues : {},
+    bloodCounts: (parsed.bloodCounts && typeof parsed.bloodCounts === 'object' && !Array.isArray(parsed.bloodCounts)) ? parsed.bloodCounts : {},
+    fertilityStatus: parsed.fertilityStatus || null
+  };
 };
 
 const requestKimi = async (imageRef) => {
@@ -485,7 +637,7 @@ const requestKimi = async (imageRef) => {
           type: 'text',
           text: [
             '请从图片中识别病历文本并提取以下字段，返回 JSON：',
-            '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "confidence": 0.0 }',
+            '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "age": null, "weight": null, "height": null, "comorbidities": [], "priorTherapies": [], "labValues": {}, "bloodCounts": {}, "fertilityStatus": null, "confidence": 0.0 }',
             '字段说明：',
             '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"/"肺腺癌"/"肝细胞癌"，不存在填null',
             '2) stage：AJCC分期（如"IVA期"）或临床描述（如"晚期"/"局部晚期"/"转移性"），不存在填null',
@@ -494,8 +646,16 @@ const requestKimi = async (imageRef) => {
             '5) treatment：既往治疗史（如"铂类化疗2周期+培美曲塞"），不存在填null',
             '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
             '7) ecog：体能状态评分，0~4整数，不存在填null',
-            '8) confidence：识别整体置信度，0~1',
-            '9) rawText：保留核心原文，不超过2000字符'
+            '8) age：患者年龄（整数），不存在填null',
+            '9) weight：体重(kg)，不存在填null',
+            '10) height：身高(cm)，不存在填null',
+            '11) comorbidities：合并症数组，如["脑转移","高血压","糖尿病"]，无则填[]',
+            '12) priorTherapies：既往具体治疗方案数组，如["曲妥珠单抗","卡铂+培美曲塞"]，无则填[]',
+            '13) labValues：肝肾功能指标对象，如{"ALT":{"value":35,"unit":"U/L"},"creatinine":{"value":68,"unit":"μmol/L"}}，无则填{}',
+            '14) bloodCounts：血常规对象，如{"WBC":{"value":5.2,"unit":"×10⁹/L"},"PLT":{"value":180,"unit":"×10⁹/L"}}，无则填{}',
+            '15) fertilityStatus：生育状态（如"绝经"/"妊娠试验阴性"），不存在填null',
+            '16) confidence：识别整体置信度，0~1',
+            '17) rawText：保留核心原文，不超过2000字符'
           ].join('\n')
         },
         {
@@ -529,20 +689,7 @@ const requestKimi = async (imageRef) => {
     throw new Error('Kimi 返回内容无法解析为 JSON');
   }
 
-  const ecogRaw = parsed.ecog;
-  const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
-  const lineRaw = parsed.treatmentLine;
-  const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
-
-  const entities = {
-    diagnosis: parsed.diagnosis || null,
-    stage: parsed.stage || null,
-    geneMutation: parsed.geneMutation || null,
-    treatment: parsed.treatment || null,
-    ecog: Number.isFinite(ecogValue) && ecogValue >= 0 && ecogValue <= 4 ? ecogValue : null,
-    pdl1: parsed.pdl1 || null,
-    treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null
-  };
+  const entities = parseKimiEntities(parsed);
 
   const normalizedConfidence = Number(parsed.confidence);
 
@@ -576,7 +723,7 @@ const requestKimiText = async (text) => {
       role: 'user',
       content: [
         '请从以下病历文本中提取字段，返回 JSON：',
-        '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "confidence": 0.0 }',
+        '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "age": null, "weight": null, "height": null, "comorbidities": [], "priorTherapies": [], "labValues": {}, "bloodCounts": {}, "fertilityStatus": null, "confidence": 0.0 }',
         '要求：',
         '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"或"肺腺癌"',
         '2) stage：AJCC分期，如"IVA期"，或临床描述"晚期"/"局部晚期"',
@@ -585,9 +732,17 @@ const requestKimiText = async (text) => {
         '5) treatment：既往治疗史，如"铂类化疗2周期"',
         '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
         '7) ecog：0~4整数或null',
-        '8) confidence：0~1置信度',
-        '9) rawText：保留核心原文，不超过2000字符',
-        '10) 所有字段不存在则填null',
+        '8) age：患者年龄（整数），不存在填null',
+        '9) weight：体重(kg)，不存在填null',
+        '10) height：身高(cm)，不存在填null',
+        '11) comorbidities：合并症数组，如["脑转移","高血压"]，无则填[]',
+        '12) priorTherapies：既往具体治疗方案数组，如["曲妥珠单抗","FOLFOX"]，无则填[]',
+        '13) labValues：肝肾功能对象，如{"ALT":{"value":35,"unit":"U/L"}}，无则填{}',
+        '14) bloodCounts：血常规对象，如{"WBC":{"value":5.2,"unit":"×10⁹/L"}}，无则填{}',
+        '15) fertilityStatus：生育状态，不存在填null',
+        '16) confidence：0~1置信度',
+        '17) rawText：保留核心原文，不超过2000字符',
+        '所有字段不存在则填null/[]/{} 对应类型',
         '',
         '病历文本：',
         text.substring(0, 4000)
@@ -618,20 +773,7 @@ const requestKimiText = async (text) => {
     throw new Error('Kimi 文本模式返回内容无法解析为 JSON');
   }
 
-  const ecogRaw = parsed.ecog;
-  const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
-  const lineRaw = parsed.treatmentLine;
-  const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
-
-  const entities = {
-    diagnosis: parsed.diagnosis || null,
-    stage: parsed.stage || null,
-    geneMutation: parsed.geneMutation || null,
-    treatment: parsed.treatment || null,
-    ecog: Number.isFinite(ecogValue) && ecogValue >= 0 && ecogValue <= 4 ? ecogValue : null,
-    pdl1: parsed.pdl1 || null,
-    treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null
-  };
+  const entities = parseKimiEntities(parsed);
 
   const normalizedConfidence = Number(parsed.confidence);
 

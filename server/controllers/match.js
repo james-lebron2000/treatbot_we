@@ -2,7 +2,9 @@ const { Op } = require('sequelize');
 const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
-const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter } = require('../services/matchEngine');
+const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter } = require('../services/matchEngine');
+const { buildProfile } = require('../services/patientProfile');
+const { buildCriterionExplanation } = require('../../utils/match-explainer');
 const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
 
 const toPositiveInt = (value, fallback) => {
@@ -97,28 +99,37 @@ const getUserCompletedRecords = async (userId) => {
   });
 };
 
-const buildDetailedMatchItem = (trial, scored) => ({
-  id: trial.id,
-  trialId: trial.id,
-  name: safeText(trial.name),
-  score: scored.score,
-  phase: safeText(trial.phase) || '未标注',
-  location: safeText(trial.location) || '待补充',
-  type: safeText(trial.type) || '未标注',
-  indication: safeText(trial.indication) || '待补充',
-  institution: safeText(trial.institution) || '待补充',
-  status: trial.status,
-  statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
-  reasons: (scored.reasons || ['已根据病历基础信息进行规则匹配']).map((item) => safeText(item)).filter(Boolean),
-  inclusion: parseArrayField(trial.inclusion_criteria),
-  exclusion: parseArrayField(trial.exclusion_criteria),
-  contact: {
-    name: '研究中心',
-    phone: safeText(trial.contact_phone) || '',
-    email: ''
-  },
-  updatedAt: trial.updated_at
-});
+const buildDetailedMatchItem = (trial, scored) => {
+  const item = {
+    id: trial.id,
+    trialId: trial.id,
+    name: safeText(trial.name),
+    score: scored.score,
+    phase: safeText(trial.phase) || '未标注',
+    location: safeText(trial.location) || '待补充',
+    type: safeText(trial.type) || '未标注',
+    indication: safeText(trial.indication) || '待补充',
+    institution: safeText(trial.institution) || '待补充',
+    status: trial.status,
+    statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
+    reasons: (scored.reasons || ['已根据病历基础信息进行规则匹配']).map((r) => safeText(r)).filter(Boolean),
+    inclusion: parseArrayField(trial.inclusion_criteria),
+    exclusion: parseArrayField(trial.exclusion_criteria),
+    contact: {
+      name: '研究中心',
+      phone: safeText(trial.contact_phone) || '',
+      email: ''
+    },
+    updatedAt: trial.updated_at
+  };
+
+  // Add criterion-level explanation if available
+  if (scored.criterionResults) {
+    item.criterionExplanation = buildCriterionExplanation(scored.criterionResults);
+  }
+
+  return item;
+};
 
 /**
  * 获取匹配列表
@@ -203,13 +214,18 @@ const getMatches = async (req, res, next) => {
       });
     }
 
-    // Stage 2: 精排 — 多维评分（结构化硬过滤 + 多维加权）
+    // Build consolidated patient profile for criterion-level matching
+    const { structuredProfile } = buildProfile(profileRecords, {
+      city: filters.city || null
+    });
+
+    // Stage 2: 精排 — 混合评分（原始启发式 + 条目级匹配）
     const allMatches = trials
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         let best = null;
         for (const profileRecord of profileRecords) {
-          const scored = scoreRecordAgainstTrial(profileRecord, trial);
+          const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
           // 硬排除的试验（如年龄/ECOG不符合）直接跳过
           if (scored.excluded) continue;
           if (!best || scored.score > best.score) {
@@ -253,10 +269,21 @@ const getTrialDetail = async (req, res, next) => {
 
     const records = await getUserCompletedRecords(req.userId);
     const normalizedTrial = sanitizeTrial(trial);
-    const matched = records.length ? matchRecordsToTrials(records, [normalizedTrial]) : [];
-    const matchedInfo = matched[0];
 
-    res.json(success({
+    // Build consolidated profile + hybrid scoring for the trial detail
+    let matchedInfo = null;
+    let criterionExplanation = null;
+    if (records.length) {
+      const { structuredProfile } = buildProfile(records);
+      // Use hybrid scoring for richer detail
+      const scored = scoreRecordHybrid(records[0], normalizedTrial, structuredProfile);
+      matchedInfo = scored;
+      if (scored.criterionResults) {
+        criterionExplanation = buildCriterionExplanation(scored.criterionResults);
+      }
+    }
+
+    const result = {
       id: normalizedTrial.id,
       name: safeText(normalizedTrial.name),
       phase: safeText(normalizedTrial.phase) || '未标注',
@@ -280,7 +307,14 @@ const getTrialDetail = async (req, res, next) => {
         phone: safeText(normalizedTrial.contact_phone) || '',
         email: ''
       }
-    }));
+    };
+
+    // Add criterion-level explanation when available
+    if (criterionExplanation) {
+      result.criterionExplanation = criterionExplanation;
+    }
+
+    res.json(success(result));
   } catch (err) {
     next(err);
   }
@@ -357,10 +391,15 @@ const findMatches = async (req, res, next) => {
       return res.json(success([]));
     }
 
+    // Build structured profile for criterion-level matching
+    const { structuredProfile } = buildProfile([profileRecord], {
+      city: filters.city || null
+    });
+
     const list = trials
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
-        const scored = scoreRecordAgainstTrial(profileRecord, trial);
+        const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
         return buildDetailedMatchItem(trial, scored);
       })
       .filter((item) => trialMatchesFilters(item, filters))

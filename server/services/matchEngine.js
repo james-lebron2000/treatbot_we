@@ -605,6 +605,80 @@ const matchRecordsToTrials = (records, trials, minScore = SCORE_MIN) => {
   return matches;
 };
 
+// ---- Hybrid Scoring with Criterion-Level Matching (Phase 1.3/1.4) ----
+
+let _decomposedCriteria = null;
+
+/**
+ * Load decomposed criteria (lazy, cached)
+ */
+const getDecomposedCriteria = () => {
+  if (!_decomposedCriteria) {
+    try {
+      _decomposedCriteria = require('../data/decomposed_criteria.json');
+    } catch (e) {
+      _decomposedCriteria = {};
+    }
+  }
+  return _decomposedCriteria;
+};
+
+/**
+ * Hybrid scoring: combines original heuristic with criterion-level matching
+ * Uses criterion-level matching when decomposed criteria are available,
+ * falls back to the original scoreRecordAgainstTrial when not.
+ *
+ * @param {Object} record - Patient medical record
+ * @param {Object} trial - Trial object
+ * @param {Object} [structuredProfile] - Optional pre-built structuredProfile from patientProfile.buildProfile
+ * @returns {{ score: number, reasons: string[], excluded: boolean, criterionResults: Object|null }}
+ */
+const scoreRecordHybrid = (record, trial, structuredProfile = null) => {
+  // Always compute the original heuristic score
+  const heuristic = scoreRecordAgainstTrial(record, trial);
+
+  // Try criterion-level matching if decomposed criteria exist for this trial
+  const decomposed = getDecomposedCriteria();
+  const criteria = decomposed[trial.id];
+
+  if (!criteria || criteria.length === 0 || !structuredProfile) {
+    // No criterion data or no structured profile — fall back to heuristic only
+    return { ...heuristic, criterionResults: null };
+  }
+
+  // Lazy-load criterionMatcher to avoid circular deps
+  const { evaluateAllCriteria } = require('./criterionMatcher');
+  const criterionResults = evaluateAllCriteria(criteria, structuredProfile);
+  const cs = criterionResults.summary;
+
+  // If criterion-level evaluation found a hard exclusion, trust it
+  if (cs.excluded) {
+    return {
+      score: 0,
+      reasons: heuristic.reasons,
+      excluded: true,
+      criterionResults
+    };
+  }
+
+  // Hybrid score: blend heuristic (40%) + criterion match rate (60%)
+  const criterionScore = cs.score; // 0-99
+  const heuristicScore = heuristic.score;
+  const blendedScore = Math.round(heuristicScore * 0.4 + criterionScore * 0.6);
+  const finalScore = Math.min(99, Math.max(0, blendedScore));
+
+  // Merge reasons: keep heuristic reasons, prepend criterion summary
+  const criterionSummary = `条目级匹配率 ${cs.matchRate}%（${cs.met}项符合，${cs.not_met}项不符，${cs.uncertain}项待确认）`;
+  const mergedReasons = [criterionSummary, ...heuristic.reasons];
+
+  return {
+    score: finalScore,
+    reasons: mergedReasons,
+    excluded: heuristic.excluded || false,
+    criterionResults
+  };
+};
+
 module.exports = {
   SCORE_MIN,
   STATUS_TEXT_MAP,
@@ -614,6 +688,7 @@ module.exports = {
   normalizeText,
   parseArrayField,
   scoreRecordAgainstTrial,
+  scoreRecordHybrid,
   matchRecordsToTrials,
   buildCoarseFilter,
   extractDiseaseKeywords,
