@@ -83,12 +83,13 @@ const GENERIC_CANCER_ALIASES = ['实体瘤', '实体性肿瘤', '恶性肿瘤', 
 
 // 已知基因列表，用于精确基因名匹配（避免子串假阳性）
 const KNOWN_GENES = [
-  'egfr', 'alk', 'ros1', 'kras', 'braf', 'her2', 'erbb2',
+  'egfr', 'alk', 'ros1', 'kras', 'nras', 'braf', 'her2', 'erbb2',
   'met', 'ret', 'ntrk', 'ntrk1', 'ntrk2', 'ntrk3',
   'fgfr', 'fgfr1', 'fgfr2', 'fgfr3',
   'pik3ca', 'pten', 'tp53',
   'pdl1', 'pd-l1',
-  'tmb', 'msih', 'msi-h', 'mmr', 'dmmr'
+  'tmb', 'msih', 'msi-h', 'mmr', 'dmmr',
+  'cldn18', 'ror1', 'brca1', 'brca2', 'atm', 'palb2'
 ];
 
 /**
@@ -121,6 +122,26 @@ const parseArrayField = (value) => {
   return [];
 };
 
+// 语义排斥对：若 alias 属于左列，target 包含右列任一词，则拒绝匹配
+// 用于避免 "小细胞肺癌" 被 "非小细胞肺癌" 误吞
+const ALIAS_EXCLUSION_PAIRS = [
+  { when: ['小细胞肺癌', 'sclc', 'smallcelllungcancer', '小细胞癌'], excludeIfTextContains: ['非小细胞肺癌', 'nsclc', '肺腺癌', '肺鳞癌'] },
+  { when: ['非小细胞肺癌', 'nsclc', '肺腺癌', '肺鳞癌'], excludeIfTextContains: [] } // NSCLC 本身不含 SCLC 子串冲突
+];
+
+const aliasConflictsWithText = (alias, text) => {
+  const aliasNorm = normalizeText(alias);
+  const textNorm = normalizeText(text);
+  for (const pair of ALIAS_EXCLUSION_PAIRS) {
+    const whenSet = pair.when.map(normalizeText);
+    if (!whenSet.includes(aliasNorm)) continue;
+    if (pair.excludeIfTextContains.some((bad) => textNorm.includes(normalizeText(bad)))) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const containsAlias = (text, aliases = []) => {
   const normalizedText = normalizeText(text);
   if (!normalizedText) {
@@ -128,6 +149,9 @@ const containsAlias = (text, aliases = []) => {
   }
   return aliases.some((alias) => {
     const normalizedAlias = normalizeText(alias);
+    if (!normalizedAlias) return false;
+    // 检查语义排斥：若 alias 是 "小细胞肺癌" 而 text 包含 "非小细胞肺癌"，视为不匹配
+    if (aliasConflictsWithText(alias, text)) return false;
     // 双向匹配：text 包含 alias，或 alias 包含 text（如 "胰腺癌" ⊂ "胰腺导管腺癌"）
     return normalizedText.includes(normalizedAlias) || normalizedAlias.includes(normalizedText);
   });
@@ -360,6 +384,359 @@ const getPatientAge = (record) => {
   return Number.isFinite(Number(age)) ? Number(age) : null;
 };
 
+// ---------------------------------------------------------------------------
+// Hard-filter helpers (P1: 准确率优先) — 将 structured_inclusion 里的显式约束
+// 转化为硬排除，避免把明显不符合的试验高分推荐给患者
+// ---------------------------------------------------------------------------
+
+/**
+ * 治疗类→关键词映射，用于 excluded_prior_therapies 的类别级匹配。
+ * 例如试验排除 "免疫治疗"，患者用过 "帕博利珠单抗" → 触发排除。
+ */
+const THERAPY_CLASS_KEYWORDS = {
+  '免疫治疗': ['pd1', 'pdl1', 'pd-1', 'pd-l1', 'pembrolizumab', 'nivolumab', 'atezolizumab', 'durvalumab', 'sintilimab', 'tislelizumab', 'camrelizumab', 'toripalimab', '帕博利珠', '纳武利尤', '阿替利珠', '度伐利尤', '信迪利', '替雷利珠', '卡瑞利珠', '特瑞普利', '免疫', '单抗', '检查点'],
+  '免疫检查点抑制剂': ['pd1', 'pdl1', 'pd-1', 'pd-l1', 'pembrolizumab', 'nivolumab', 'atezolizumab', 'durvalumab', 'sintilimab', 'tislelizumab', 'camrelizumab', 'toripalimab', '帕博利珠', '纳武利尤', '阿替利珠', '度伐利尤', '信迪利', '替雷利珠', '卡瑞利珠', '特瑞普利', '检查点抑制', 'ipilimumab', '伊匹木'],
+  '铂类化疗': ['铂', 'cisplatin', 'carboplatin', 'oxaliplatin', '顺铂', '卡铂', '奥沙利铂', 'folfox', 'xelox', 'capeox', 'folfirinox'],
+  '蒽环类': ['阿霉素', '多柔比星', 'doxorubicin', 'epirubicin', '表柔比星', '蒽环'],
+  '抗her2': ['曲妥珠', 'trastuzumab', '赫赛汀', '帕妥珠', 'pertuzumab', 't-dm1', 't-dxd', 'lapatinib', '拉帕替尼', '吡咯替尼', 'pyrotinib', '伊尼妥', 'tucatinib', '图卡替尼'],
+  'her2靶向': ['曲妥珠', 'trastuzumab', '赫赛汀', '帕妥珠', 'pertuzumab', 't-dm1', 't-dxd', 'lapatinib', '拉帕替尼', '吡咯替尼', 'pyrotinib', '伊尼妥', 'tucatinib', '图卡替尼'],
+  'her2tki': ['lapatinib', '拉帕替尼', '吡咯替尼', 'pyrotinib', 'tucatinib', '图卡替尼', 'neratinib', '奈拉替尼'],
+  '靶向治疗': ['替尼', 'tinib', '替布', '替西', '单抗', 'mab', '拉帕', '吡咯', '奥希', '吉非', '厄洛', '阿法', 'lapatinib', 'pyrotinib', 'gefitinib', 'erlotinib', 'osimertinib', 'afatinib', 'alectinib', 'crizotinib', 'ceritinib', 'lorlatinib', 'selpercatinib', 'pralsetinib', 'entrectinib', 'larotrectinib', 'sorafenib', '索拉非尼', '仑伐替尼', 'lenvatinib', 'regorafenib', '瑞戈非尼', 'cabozantinib', '卡博替尼', 'apatinib', '阿帕替尼', 'anlotinib', '安罗替尼', 'sunitinib', '舒尼替尼', 'bevacizumab', '贝伐珠', 'cetuximab', '西妥昔', 'panitumumab', '帕尼单抗'],
+  '化疗': ['化疗', 'chemotherapy', '培美', '紫杉', '多西他赛', '吉西他滨', 'gemcitabine', '依托泊苷', 'etoposide', '伊立替康', 'irinotecan', '卡培他滨', 'capecitabine', 'folfox', 'folfiri', 'folfirinox', '顺铂', '卡铂', '奥沙利铂', '阿霉素', '多柔比星', '5-fu', '氟尿嘧啶']
+};
+
+const resolveTherapyKeywords = (therapyName) => {
+  const norm = normalizeText(therapyName);
+  if (!norm) return [];
+  const out = new Set([norm]);
+  for (const [className, kws] of Object.entries(THERAPY_CLASS_KEYWORDS)) {
+    if (norm.includes(normalizeText(className))) {
+      for (const kw of kws) out.add(normalizeText(kw));
+    }
+  }
+  return [...out].filter(Boolean);
+};
+
+/**
+ * 判断试验是否被限定为特定乳腺癌亚型（HER2+ / TNBC / HR+）且与患者冲突
+ * 返回冲突原因字符串，或 null 表示无冲突
+ */
+const breastSubtypeConflict = (patientText, trialSignals) => {
+  const patientTNBC = /三阴|tnbc|triplenegative/.test(patientText);
+  const patientHER2pos = /her2阳性|her2positive|her23\+|her2ihc3|her2\+|erbb2阳性/.test(patientText);
+  const patientHER2neg = /her2阴性|her2negative|her2-/.test(patientText) && !patientHER2pos;
+
+  const trialHER2pos = /her2阳性|her2positive|her23\+/.test(trialSignals);
+  const trialHER2neg = /her2阴性|her2negative|her2低表达|her2-low/.test(trialSignals);
+  const trialTNBC = /三阴|tnbc|triplenegative/.test(trialSignals);
+
+  if (trialHER2pos && (patientTNBC || patientHER2neg)) return '试验需 HER2 阳性乳腺癌，患者为三阴/HER2 阴性亚型';
+  if (trialTNBC && patientHER2pos) return '试验限定三阴性乳腺癌，患者为 HER2 阳性';
+  if (trialHER2neg && patientHER2pos) return '试验限定 HER2 阴性，患者为 HER2 阳性';
+  return null;
+};
+
+/**
+ * 判断试验是否限定 MSI 状态（非 MSI-H / MSS）且与患者 MSI-H 冲突
+ */
+const msiStatusConflict = (patientText, trialSignals) => {
+  const patientMSIH = /msi-?h|msih|dmmr/.test(patientText) && !/msi稳定|mss/.test(patientText);
+  const requireNonMSIH = /非msi-?h|非dmmr|pmmr|msi稳定|mss/.test(trialSignals);
+  if (patientMSIH && requireNonMSIH) return '试验限定非 MSI-H/dMMR，患者 MSI-H/dMMR';
+  return null;
+};
+
+/**
+ * 判断试验 allowed_cancer_types 中是否存在 SCLC/NSCLC/乳腺亚型/肠道亚型硬冲突
+ */
+const cancerTypeHardConflict = (patientDiagnosis, allowedTypes) => {
+  if (!allowedTypes || allowedTypes.length === 0) return null;
+  const diagNorm = normalizeText(patientDiagnosis);
+  const diagIsNSCLC = /非小细胞|nsclc|肺腺癌|肺鳞癌|肺腺鳞/.test(diagNorm);
+  const diagIsSCLC = !diagIsNSCLC && /小细胞肺癌|sclc|小细胞癌/.test(diagNorm);
+
+  // 检测试验是否仅允许 SCLC 或仅允许 NSCLC
+  let allowsNSCLC = false;
+  let allowsSCLC = false;
+  let hasPanTumorBasket = false;
+  let exclusionInBasket = null;
+
+  for (const t of allowedTypes) {
+    const n = normalizeText(t);
+    if (/非小细胞|nsclc|肺腺癌|肺鳞癌/.test(n)) allowsNSCLC = true;
+    if (!/(非小细胞|nsclc|肺腺癌|肺鳞癌)/.test(n) && /小细胞肺癌|sclc|小细胞癌/.test(n)) allowsSCLC = true;
+    if (/^(其他|泛|所有|全部)/.test(t) || /实体瘤|恶性肿瘤|肿瘤$/.test(t.replace(/[（(].*?[）)]/, ''))) {
+      hasPanTumorBasket = true;
+      const exclMatch = t.match(/[（(]除外(.+?)[）)]/);
+      if (exclMatch) exclusionInBasket = exclMatch[1];
+    }
+  }
+
+  // SCLC / NSCLC 硬冲突
+  if (diagIsNSCLC && allowsSCLC && !allowsNSCLC && !hasPanTumorBasket) {
+    return '试验仅接收小细胞肺癌（SCLC），患者为非小细胞肺癌（NSCLC）';
+  }
+  if (diagIsSCLC && allowsNSCLC && !allowsSCLC && !hasPanTumorBasket) {
+    return '试验仅接收非小细胞肺癌（NSCLC），患者为小细胞肺癌（SCLC）';
+  }
+  // Basket 试验中的除外项（如 "除外小细胞肺癌"）
+  if (diagIsSCLC && exclusionInBasket && /小细胞|sclc/.test(normalizeText(exclusionInBasket))) {
+    return `试验 basket 明确除外小细胞肺癌`;
+  }
+  return null;
+};
+
+/**
+ * 从患者基因描述中解析基因→状态映射。
+ * 例如 "EGFR L858R突变阳性, KRAS野生型, MSI-H" →
+ *   { egfr: 'mutant', kras: 'wild', msi: 'high' }
+ */
+const parsePatientGeneStatus = (geneText) => {
+  if (!geneText) return {};
+  const text = safeLower(geneText);
+  const status = {};
+  // 按片段切分
+  const segments = text.split(/[,，;；\n]+/);
+  for (const seg of segments) {
+    const segNorm = seg.replace(/[\s]/g, '');
+    for (const gene of KNOWN_GENES) {
+      const gNorm = gene.replace(/[-_]/g, '');
+      if (!segNorm.replace(/[-_]/g, '').includes(gNorm)) continue;
+      let verdict = null;
+      if (/野生型|wildtype|wt(?![a-z])|阴性/.test(segNorm)) verdict = 'wild';
+      else if (/突变|阳性|融合|扩增|positive|mutation|activating|表达/.test(segNorm)) verdict = 'mutant';
+      else verdict = 'detected';
+      // 特殊：MSI-H / MSS
+      if (gene === 'msih' || gene === 'msi-h') {
+        if (/mss|稳定/.test(segNorm)) verdict = 'mss';
+        else verdict = 'high';
+      }
+      status[gene] = verdict;
+    }
+  }
+  // 同义：HER2 ↔ ERBB2
+  if (status.her2 && !status.erbb2) status.erbb2 = status.her2;
+  if (status.erbb2 && !status.her2) status.her2 = status.erbb2;
+  return status;
+};
+
+/**
+ * 从试验 required_genes 条目中解析出 { geneName, requireMutant, requireWild }
+ */
+const parseRequiredGene = (requirement) => {
+  const text = safeLower(requirement);
+  const nameMatch = text.match(/(egfr|alk|ros1|kras|braf|her2|erbb2|met|ret|ntrk|fgfr\d?|pik3ca|pten|tp53|cldn18|ror1|msi|tmb|mmr)/i);
+  if (!nameMatch) return null;
+  const name = nameMatch[1].replace(/-/g, '');
+  const requireMutant = /突变|阳性|融合|扩增|positive|mutation|activating|表达|激活|amplification/.test(text);
+  const requireWild = /野生|wildtype|wt(?![a-z])|阴性/.test(text) && !requireMutant;
+  return { name, requireMutant, requireWild };
+};
+
+/**
+ * 应用 structured_inclusion 的完整硬过滤。
+ * 返回 { excluded: false } 或 { excluded: true, reason: string }
+ */
+const applyStructuredInclusionHardFilter = (record, si) => {
+  if (!si || typeof si !== 'object') return { excluded: false };
+
+  // ---- 年龄 ----
+  const patientAge = getPatientAge(record);
+  if (patientAge != null) {
+    if (si.age_min != null && patientAge < si.age_min) {
+      return { excluded: true, reason: `年龄（${patientAge}岁）低于试验最低要求（${si.age_min}岁）` };
+    }
+    if (si.age_max != null && patientAge > si.age_max) {
+      return { excluded: true, reason: `年龄（${patientAge}岁）超过试验年龄上限（${si.age_max}岁）` };
+    }
+  }
+
+  // ---- ECOG ----
+  const ecog = record.structured?.entities?.ecog ?? record.ecog;
+  if (ecog != null && si.ecog_max != null && Number(ecog) > si.ecog_max) {
+    return { excluded: true, reason: `ECOG评分（${ecog}）超过试验要求（≤${si.ecog_max}）` };
+  }
+
+  // ---- 治疗线数上限（prior_lines_max）----
+  // 患者 treatmentLine 表示"接下来需要第几线治疗"；既往线数 = treatmentLine - 1
+  const patientLine = getPatientTreatmentLine(record);
+  if (patientLine != null && si.prior_lines_max != null) {
+    const patientPriorLines = patientLine - 1;
+    if (patientPriorLines > si.prior_lines_max) {
+      return {
+        excluded: true,
+        reason: `既往治疗线数（${patientPriorLines}线）超过试验允许上限（≤${si.prior_lines_max}线）`
+      };
+    }
+  }
+
+  // ---- 允许癌种硬冲突（SCLC/NSCLC 等亚型分界）----
+  if (Array.isArray(si.allowed_cancer_types) && si.allowed_cancer_types.length > 0) {
+    const conflict = cancerTypeHardConflict(record.diagnosis, si.allowed_cancer_types);
+    if (conflict) return { excluded: true, reason: conflict };
+  }
+
+  // ---- 必需基因硬过滤（required_genes）----
+  if (Array.isArray(si.required_genes) && si.required_genes.length > 0) {
+    const patientGeneRaw = safeText(record.gene_mutation);
+    const patientStatus = parsePatientGeneStatus(patientGeneRaw);
+    const hasAnyGeneInfo = patientGeneRaw.length > 0;
+
+    // 先检查乳腺癌亚型冲突（HER2+ vs TNBC 等）
+    const patientSignals = normalizeText([
+      record.diagnosis || '',
+      record.gene_mutation || ''
+    ].join(' '));
+    const geneReqText = normalizeText(si.required_genes.join(' '));
+    const breastConflict = breastSubtypeConflict(patientSignals, geneReqText);
+    if (breastConflict) return { excluded: true, reason: breastConflict };
+
+    for (const req of si.required_genes) {
+      const parsed = parseRequiredGene(req);
+      if (!parsed) continue; // 无法解析则跳过（留给软评分）
+      const pStatus = patientStatus[parsed.name];
+
+      if (pStatus) {
+        // 有明确冲突的硬排除
+        if (parsed.requireMutant && (pStatus === 'wild' || pStatus === 'mss')) {
+          return {
+            excluded: true,
+            reason: `试验要求 ${parsed.name.toUpperCase()} 阳性/突变，患者为野生型/阴性`
+          };
+        }
+        if (parsed.requireWild && pStatus === 'mutant') {
+          return {
+            excluded: true,
+            reason: `试验要求 ${parsed.name.toUpperCase()} 野生型/阴性，患者为突变阳性`
+          };
+        }
+      } else if (hasAnyGeneInfo && parsed.requireMutant) {
+        // 患者做过基因检测但未提及该基因 —— 对驱动基因互斥的癌种（NSCLC/CRC/乳腺癌/胃癌）
+        // 默认视为该基因不符合（防止把没做过 HER2/CLDN18 等检测的患者高分推给需要该突变的试验）
+        const diagNorm = normalizeText(record.diagnosis || '');
+        const isDriverExclusiveTumor = /(非小细胞|nsclc|肺腺癌|肺鳞癌|结直肠|结肠|直肠|乳腺|胃|nsclc)/.test(diagNorm);
+        const isSpecificGene = ['her2', 'erbb2', 'egfr', 'alk', 'ros1', 'braf', 'kras', 'ret', 'met', 'cldn18', 'ntrk'].includes(parsed.name);
+        if (isDriverExclusiveTumor && isSpecificGene) {
+          return {
+            excluded: true,
+            reason: `试验要求 ${parsed.name.toUpperCase()} 阳性/突变，患者基因检测未提示该靶点阳性`
+          };
+        }
+      }
+    }
+  }
+
+  // ---- other_key_criteria 负向要求（HER2阴性 / 非MSI-H / 除外XXX）----
+  if (Array.isArray(si.other_key_criteria) && si.other_key_criteria.length > 0) {
+    const patientSignals = normalizeText([
+      record.diagnosis || '',
+      record.gene_mutation || '',
+      record.treatment || ''
+    ].join(' '));
+    const trialSignals = normalizeText(si.other_key_criteria.join(' '));
+
+    const breastConflict = breastSubtypeConflict(patientSignals, trialSignals);
+    if (breastConflict) return { excluded: true, reason: breastConflict };
+
+    const msiConflict = msiStatusConflict(patientSignals, trialSignals);
+    if (msiConflict) return { excluded: true, reason: msiConflict };
+
+    // "除外XXX" / "暂不接收XXX"
+    for (const crit of si.other_key_criteria) {
+      const m = crit.match(/(?:除外|暂不接[收受])\s*([^，。；;,\s]{2,20})/);
+      if (m) {
+        const excludedTerm = m[1];
+        const excluded = normalizeText(excludedTerm);
+        if (!excluded) continue;
+        // 使用 containsAlias 的语义排斥，避免 "小细胞肺癌" 被 "非小细胞肺癌" 误命中
+        if (aliasConflictsWithText(excludedTerm, record.diagnosis || '')) continue;
+        if (excluded && patientSignals.includes(excluded)) {
+          return { excluded: true, reason: `试验明确除外「${excludedTerm}」` };
+        }
+      }
+    }
+  }
+
+  // ---- allowed_cancer_types 的负向子类型（如 HER2+ 乳腺癌试验，TNBC 被排除）----
+  if (Array.isArray(si.allowed_cancer_types) && si.allowed_cancer_types.length > 0) {
+    const patientSignals = normalizeText([
+      record.diagnosis || '',
+      record.gene_mutation || ''
+    ].join(' '));
+    const trialTypesText = normalizeText(si.allowed_cancer_types.join(' '));
+    const breastConflict = breastSubtypeConflict(patientSignals, trialTypesText);
+    if (breastConflict) return { excluded: true, reason: breastConflict };
+  }
+
+  // ---- 必需的既往治疗（required_prior_therapies）----
+  // 若试验要求具体治疗类别（如"铂类化疗"、"≥2线抗HER2靶向治疗"），患者未接受则硬排除
+  if (Array.isArray(si.required_prior_therapies) && si.required_prior_therapies.length > 0) {
+    const patientTx = normalizeText([
+      record.treatment || '',
+      (record.structured?.entities?.priorTherapies || []).join(' ')
+    ].join(' '));
+    const patientLine = getPatientTreatmentLine(record);
+    const hasPriorTreatment = (patientLine != null && patientLine > 1) || patientTx.length > 0;
+
+    for (const req of si.required_prior_therapies) {
+      const reqNorm = normalizeText(req);
+      if (!reqNorm || reqNorm.length > 30) continue;
+      // 跳过笼统描述（"标准治疗失败"等由软评分处理）
+      if (/标准治疗|任何|至少一种|系统(性)?治疗失败|所有可用/.test(req) && !/铂|免疫|靶向|化疗|抑制剂|单抗/.test(req)) continue;
+
+      // 若患者没有任何既往治疗，硬排除
+      if (!hasPriorTreatment) {
+        return { excluded: true, reason: `试验要求既往接受过「${req}」，患者未接受任何治疗` };
+      }
+
+      // 展开治疗类→关键词
+      const kws = resolveTherapyKeywords(req);
+      const hit = kws.some((kw) => kw.length >= 2 && patientTx.includes(kw));
+      if (!hit) {
+        // 若是常见治疗类而患者治疗文本无相关关键词，硬排除
+        const isSpecificClass = /铂|免疫|her2|egfr|alk|抗体|靶向|化疗/.test(reqNorm);
+        if (isSpecificClass) {
+          return { excluded: true, reason: `试验要求既往接受过「${req}」，患者治疗记录未提示相关方案` };
+        }
+      }
+    }
+  }
+
+  // ---- 先验疗法硬排除（扩展：支持治疗类→关键词映射）----
+  if (Array.isArray(si.excluded_prior_therapies) && si.excluded_prior_therapies.length > 0) {
+    const patientTx = normalizeText([record.treatment || '', (record.structured?.entities?.priorTherapies || []).join(' ')].join(' '));
+    if (patientTx) {
+      for (const therapy of si.excluded_prior_therapies) {
+        const normTherapy = normalizeText(therapy);
+        if (!normTherapy) continue;
+        // 跳过过长描述（>20字符去标点后通常是复杂条件句而非药名）
+        if (normTherapy.length > 20) continue;
+        // 跳过含时间限定的条件（如"4周内""3个月内"），这些需要时间维度判断
+        if (/\d+[周月天日]内/.test(therapy)) continue;
+        // 跳过过于笼统的系统治疗描述（无靶向/抑制剂/单抗关键词）
+        if (/全身(性)?(抗肿瘤|系统)?治疗|系统(性)?(抗肿瘤)?治疗|系统性抗癌|全身化疗/.test(therapy) && !/靶向|抑制剂|单抗|抗体|免疫|检查点/.test(therapy)) continue;
+
+        // 1) 直接字符串匹配
+        if (patientTx.includes(normTherapy)) {
+          return { excluded: true, reason: `患者既往治疗包含「${therapy}」，被该试验排除` };
+        }
+        // 2) 治疗类→关键词映射（如 "免疫治疗" 命中 "帕博利珠单抗"）
+        const classKws = resolveTherapyKeywords(therapy);
+        // 只有当解析出的关键词不仅仅是自身时，才启用类别匹配
+        if (classKws.length > 1) {
+          for (const kw of classKws) {
+            if (kw.length >= 3 && kw !== normTherapy && patientTx.includes(kw)) {
+              return { excluded: true, reason: `患者既往治疗包含「${kw}」属于「${therapy}」类别，被该试验排除` };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { excluded: false };
+};
+
 const scoreRecordAgainstTrial = (record, trial) => {
   let score = 10; // 基础分
   const reasons = [];
@@ -367,45 +744,9 @@ const scoreRecordAgainstTrial = (record, trial) => {
   // ---- 结构化入组条件硬过滤（structured_inclusion 由 LLM 预解析）----
   const si = trial.structured_inclusion;
   if (si && typeof si === 'object') {
-    const patientAge = getPatientAge(record);
-    // 年龄硬排除
-    if (patientAge != null) {
-      if (si.age_min != null && patientAge < si.age_min) {
-        return { score: 0, reasons: [`年龄（${patientAge}岁）低于试验最低要求（${si.age_min}岁）`], excluded: true };
-      }
-      if (si.age_max != null && patientAge > si.age_max) {
-        return { score: 0, reasons: [`年龄（${patientAge}岁）超过试验年龄上限（${si.age_max}岁）`], excluded: true };
-      }
-    }
-    // ECOG 硬排除（如果有结构化数据）
-    const ecog = record.structured?.entities?.ecog ?? record.ecog;
-    if (ecog != null && si.ecog_max != null && Number(ecog) > si.ecog_max) {
-      return { score: 0, reasons: [`ECOG评分（${ecog}）超过试验要求（≤${si.ecog_max}）`], excluded: true };
-    }
-
-    // A9: 先验疗法硬排除 —— 若患者既往用过被试验排除的疗法，直接排除
-    // 仅匹配具体疗法/靶点名称，跳过过于笼统或带时间限定的描述
-    if (Array.isArray(si.excluded_prior_therapies) && si.excluded_prior_therapies.length > 0) {
-      const patientTx = normalizeText(record.treatment || '');
-      if (patientTx) {
-        for (const therapy of si.excluded_prior_therapies) {
-          const normTherapy = normalizeText(therapy);
-          if (!normTherapy) continue;
-          // 跳过过长描述（>20字符去标点后通常是复杂条件句而非药名）
-          if (normTherapy.length > 20) continue;
-          // 跳过含时间限定的条件（如"4周内""3个月内"），这些需要时间维度判断
-          if (/\d+[周月天日]内/.test(therapy)) continue;
-          // 跳过过于笼统的系统治疗描述
-          if (/全身(性)?(抗肿瘤|系统)?治疗|系统(性)?(抗肿瘤)?治疗|系统性抗癌|全身化疗/.test(therapy) && !/靶向|抑制剂|单抗|抗体/.test(therapy)) continue;
-          if (patientTx.includes(normTherapy)) {
-            return {
-              score: 0,
-              reasons: [`患者既往治疗包含「${therapy}」，被该试验排除`],
-              excluded: true
-            };
-          }
-        }
-      }
+    const hf = applyStructuredInclusionHardFilter(record, si);
+    if (hf.excluded) {
+      return { score: 0, reasons: [hf.reason], excluded: true };
     }
   }
 
@@ -718,5 +1059,12 @@ module.exports = {
   buildCoarseFilter,
   extractDiseaseKeywords,
   getPatientTreatmentLine,
-  getPatientPdl1
+  getPatientPdl1,
+  applyStructuredInclusionHardFilter,
+  parsePatientGeneStatus,
+  parseRequiredGene,
+  resolveTherapyKeywords,
+  cancerTypeHardConflict,
+  breastSubtypeConflict,
+  msiStatusConflict
 };
