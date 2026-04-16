@@ -37,6 +37,50 @@ const NOT_MET = 'not_met';   // Criterion is NOT satisfied (hard fail)
 const UNCERTAIN = 'uncertain'; // Cannot determine — missing patient data
 const NOT_APPLICABLE = 'not_applicable'; // Criterion doesn't apply to this patient
 
+// ---- Hard vs Soft Inclusion Failure Classification ----
+// Hard: unambiguous demographic/clinical facts. Failure → patient is medically ineligible.
+// Soft: molecular/treatment-history signals where patient data may be incomplete
+//       or the trial may accept borderline cases. Failure dampens score but should
+//       not auto-exclude — keeps room for UNCERTAIN classification.
+// gene_requirement is HARD when the patient has documented gene testing that
+// doesn't include the required target (the evaluator already returns
+// UNCERTAIN when gene data is missing or when a specific variant mismatches,
+// so NOT_MET here means real incompatibility).
+const HARD_INCLUSION_SUBCATEGORIES = new Set([
+  'age_range',
+  'ecog',
+  'cancer_type',
+  'stage',
+  'treatment_lines',
+  'gene_requirement'
+]);
+
+// Regex used to detect specific point mutations / alterations inside a gene
+// requirement string. If the requirement names a concrete variant (C797S, V600E,
+// G12C, L858R, etc.) and the patient record doesn't contain that token, we
+// downgrade the match from MET to UNCERTAIN instead of blindly accepting any
+// mutation on the same gene.
+const SPECIFIC_MUTATION_TOKEN = /\b([A-Z]\d{2,4}[A-Z]|[A-Z]\d{2,4}(?:del|ins|fs|\*)|exon\s*\d+\s*(?:ins|del|skipping))\b/gi;
+
+const extractSpecificMutations = (text) => {
+  if (!text) return [];
+  const matches = text.match(SPECIFIC_MUTATION_TOKEN) || [];
+  return [...new Set(matches.map((m) => m.toLowerCase().replace(/\s+/g, '')))];
+};
+
+// Patient is considered treatment-naive when they have no prior therapy
+// records and no free-text treatment description and treatmentLine indicates
+// first-line or unknown. We use this to convert UNCERTAIN → NOT_MET for
+// "requires prior treatment" criteria.
+const isTreatmentNaive = (profile) => {
+  const hasPriorList = Array.isArray(profile.priorTherapies) && profile.priorTherapies.length > 0;
+  const txText = (profile.treatment || '').trim();
+  const hasTxText = txText.length >= 3;
+  const line = profile.treatmentLine;
+  const lineSuggestsNaive = line == null || Number(line) <= 1;
+  return !hasPriorList && !hasTxText && lineSuggestsNaive;
+};
+
 /**
  * Evaluate a single criterion against a patient profile (deterministic rules)
  * @param {Object} criterion - Decomposed criterion object
@@ -310,18 +354,43 @@ const evaluateGeneRequirement = (s, profile) => {
   for (const geneReq of required) {
     const geneNorm = normalizeText(geneReq);
 
-    // Extract the gene name from the requirement
-    const geneNameMatch = geneReq.match(/(EGFR|ALK|ROS1|KRAS|BRAF|HER2|ERBB2|MET|RET|NTRK|FGFR|PIK3CA|PTEN|TP53|CLDN18|ROR1|MSI|TMB|MMR)/i);
+    // Extract the gene/biomarker name from the requirement. Expanded beyond
+    // standard DNA mutation panels to recognize expression markers (PD-L1,
+    // ROR1, CLDN18.2, MAGE-A4) and HLA subtypes which are tested via separate
+    // assays (IHC/flow/typing) and are commonly NOT present on routine NGS
+    // reports.
+    const geneNameMatch = geneReq.match(/(EGFR|ALK|ROS1|KRAS|NRAS|BRAF|HER2|ERBB2|MET|RET|NTRK\d?|FGFR\d?|PIK3CA|PTEN|TP53|CLDN18(?:\.2)?|ROR1|BRCA\d?|PD-?L1|MAGE-?A\d?|HLA-?[A-Z]\*?\d*:?\d*|MSI-?H?|MSS|TMB(?:-?H)?|MMR|dMMR|BCMA|CD20|CD30|CD19|GPC3|TROP2|EBV)/i);
     if (!geneNameMatch) {
       results.push({ gene: geneReq, matched: false, reason: '无法识别基因名称' });
       continue;
     }
 
+    // Biomarkers tested via specialty assays (HLA typing, tumor-antigen IHC,
+    // niche targets) that are NOT routinely part of standard NGS panels or
+    // breast/gastric pathology reports. When a patient's documented gene
+    // testing doesn't cover these, absence is "untested" rather than
+    // "negative" → downgrade NOT_MET → UNCERTAIN so the trial stays in the
+    // uncertain bucket instead of being hard-excluded.
+    // Deliberately excluded: HER2/ERBB2, PD-L1, MSI, TMB — these are part of
+    // routine testing for their indicated cancers and their absence from a
+    // patient report usually reflects actual status (e.g. TNBC implies HER2-).
+    const isSpecialtyBiomarker =
+      /\bHLA\b|MAGE|ROR1|CLDN18|TROP2?|BCMA|GPC\d?|EBV/i.test(geneReq);
+
     const geneName = normalizeText(geneNameMatch[1]);
     const patientHasGene = patientGeneText.includes(geneName);
 
     if (!patientHasGene) {
-      results.push({ gene: geneReq, matched: false, reason: `未检测到${geneNameMatch[1]}` });
+      if (isSpecialtyBiomarker) {
+        results.push({
+          gene: geneReq,
+          matched: false,
+          uncertain: true,
+          reason: `${geneNameMatch[1]}为专项检测（${/HLA/i.test(geneReq) ? 'HLA分型' : /IHC|免疫组化|表达/.test(geneReq) ? '免疫组化' : '专项检测'}），患者记录未涵盖，需补充检测`
+        });
+      } else {
+        results.push({ gene: geneReq, matched: false, reason: `未检测到${geneNameMatch[1]}` });
+      }
       continue;
     }
 
@@ -332,8 +401,27 @@ const evaluateGeneRequirement = (s, profile) => {
     const patientIsMutant = patientGeneText.includes(geneName) && (patientGeneText.includes('突变') || patientGeneText.includes('阳性') || patientGeneText.includes('融合') || patientGeneText.includes('表达'));
     const patientIsWild = patientGeneText.includes(geneName) && (patientGeneText.includes('野生') || patientGeneText.includes('阴性'));
 
+    // Check for specific mutation variant mismatch (e.g. trial wants C797S
+    // but patient has L858R — same gene, different variant).
+    const reqSpecificMuts = extractSpecificMutations(geneReq);
+    const patientSpecificMuts = extractSpecificMutations(profile.geneMutationText || '');
+    let specificVariantMismatch = false;
+    if (reqSpecificMuts.length > 0) {
+      const hasOverlap = reqSpecificMuts.some((m) => patientSpecificMuts.includes(m));
+      if (!hasOverlap) specificVariantMismatch = true;
+    }
+
     if (reqWantsMutant && patientIsMutant) {
-      results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}突变/阳性符合` });
+      if (specificVariantMismatch) {
+        results.push({
+          gene: geneReq,
+          matched: false,
+          uncertain: true,
+          reason: `${geneNameMatch[1]}检出突变，但试验需${reqSpecificMuts.join('/')}，患者为${patientSpecificMuts.join('/') || '其他变异'}，需复核`
+        });
+      } else {
+        results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}突变/阳性符合` });
+      }
     } else if (reqWantsWild && patientIsWild) {
       results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}野生型符合` });
     } else if (reqWantsMutant && patientIsWild) {
@@ -342,18 +430,19 @@ const evaluateGeneRequirement = (s, profile) => {
       results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}为突变阳性，试验需野生型` });
     } else {
       // Gene detected but context unclear
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}检测到但状态不确定` });
+      results.push({ gene: geneReq, matched: false, uncertain: true, reason: `${geneNameMatch[1]}检测到但状态不确定` });
     }
   }
 
   const allMatched = results.every(r => r.matched);
   const anyMatched = results.some(r => r.matched);
+  const anyUncertain = results.some(r => r.uncertain);
   const evidence = results.map(r => r.reason).join('；');
 
   if (allMatched) {
     return { status: MET, evidence, confidence: 0.85 };
   }
-  if (anyMatched) {
+  if (anyMatched || anyUncertain) {
     return { status: UNCERTAIN, evidence: `部分基因符合：${evidence}`, confidence: 0.5 };
   }
   return { status: NOT_MET, evidence, confidence: 0.80 };
@@ -404,6 +493,19 @@ const evaluateRequiredTherapy = (s, profile) => {
     ...(profile.priorTherapies || []),
     profile.treatment || ''
   ].join(' '));
+
+  // Treatment-naive patient facing a "requires prior therapy" criterion:
+  // this is an inclusion mismatch, not missing data. Return NOT_MET with
+  // moderate confidence so callers can treat it as a soft inclusion failure
+  // (score penalty but not auto-exclude — the patient may still qualify via
+  // dose-escalation cohorts).
+  if (!patientTherapies && isTreatmentNaive(profile)) {
+    return {
+      status: NOT_MET,
+      evidence: `试验需既往接受${required.join('、')}，患者为初治状态`,
+      confidence: 0.75
+    };
+  }
 
   if (!patientTherapies) {
     return { status: UNCERTAIN, evidence: '患者既往治疗信息缺失', confidence: 0.3 };
@@ -493,20 +595,70 @@ const evaluateAllCriteria = (criteria, profile) => {
   const not_met = results.filter(r => r.status === NOT_MET).length;
   const uncertain = results.filter(r => r.status === UNCERTAIN).length;
 
-  // Check for exclusion violations (exclusion criteria that ARE met = patient is excluded)
+  // Exclusion criteria that ARE triggered → patient should be EXCLUDED
   const exclusionViolations = results.filter(r => r.is_exclusion && r.status === MET);
-  // Check for inclusion failures (inclusion criteria that are NOT met)
+
+  // Split inclusion NOT_MET into HARD (medically unambiguous) vs SOFT (molecular/
+  // treatment history where missing data may still allow enrollment). Only HARD
+  // failures auto-exclude; SOFT failures dampen the score but preserve room for
+  // clinical review — this keeps the "uncertain" bucket usable.
   const inclusionFailures = results.filter(r => !r.is_exclusion && r.status === NOT_MET);
+  const hardInclusionFailures = inclusionFailures.filter(r =>
+    HARD_INCLUSION_SUBCATEGORIES.has(r.subcategory)
+  );
+  const softInclusionFailures = inclusionFailures.filter(r =>
+    !HARD_INCLUSION_SUBCATEGORIES.has(r.subcategory)
+  );
 
-  const excluded = exclusionViolations.length > 0 || inclusionFailures.length > 0;
+  const excluded = exclusionViolations.length > 0 || hardInclusionFailures.length > 0;
 
-  // Compute a normalized match score (0-100)
-  const scorableCriteria = results.filter(r => r.status !== UNCERTAIN);
-  const metCount = scorableCriteria.filter(r =>
-    (r.is_exclusion && r.status === NOT_MET) || // Exclusion not triggered = good
-    (!r.is_exclusion && r.status === MET)         // Inclusion met = good
+  // Uncertainty-aware match score (0-99):
+  //   each criterion contributes partial credit based on its status.
+  //   Inclusion:   MET=1.0, UNCERTAIN=0.4, NOT_MET=0
+  //   Exclusion:   NOT_MET(not triggered)=1.0, UNCERTAIN=0.7, MET(triggered)=0
+  // Soft NOT_MET then applies a multiplicative penalty so trials with one
+  // unmet soft criterion land in the uncertain band (~40-70) rather than top-
+  // ranked. Trials with many UNCERTAIN criteria also dampen slightly.
+  let credit = 0;
+  for (const r of results) {
+    if (r.is_exclusion) {
+      if (r.status === NOT_MET) credit += 1.0;
+      else if (r.status === UNCERTAIN) credit += 0.7;
+      // MET handled via excluded flag
+    } else {
+      if (r.status === MET) credit += 1.0;
+      else if (r.status === UNCERTAIN) credit += 0.4;
+      // NOT_MET contributes 0
+    }
+  }
+  let matchRate = results.length > 0 ? credit / results.length : 0;
+
+  if (softInclusionFailures.length > 0) {
+    const softPenalty = Math.max(0.5, 1 - softInclusionFailures.length * 0.25);
+    matchRate *= softPenalty;
+  }
+
+  // Critical-criterion uncertainty: gene and prior-therapy requirements are
+  // high-leverage for eligibility. When they're UNCERTAIN (e.g. specific
+  // variant unknown, specialty biomarker untested, prior therapy ambiguous),
+  // the trial-patient pair belongs in the uncertain bucket rather than top
+  // of the list.
+  const criticalUncertainties = results.filter(r =>
+    !r.is_exclusion && r.status === UNCERTAIN &&
+    (r.subcategory === 'gene_requirement' || r.subcategory === 'required_prior_therapy')
   ).length;
-  const matchRate = scorableCriteria.length > 0 ? metCount / scorableCriteria.length : 0;
+  if (criticalUncertainties > 0) {
+    matchRate *= Math.max(0.55, 1 - criticalUncertainties * 0.2);
+  }
+
+  // Heavy uncertainty dampening: if >40% of criteria are UNCERTAIN, cap
+  // matchRate below 0.8 so confidence is visibly lower than a solid match.
+  const uncertaintyRatio = results.length > 0 ? uncertain / results.length : 0;
+  if (uncertaintyRatio > 0.4) {
+    matchRate = Math.min(matchRate, 0.8 - (uncertaintyRatio - 0.4) * 0.5);
+  }
+
+  matchRate = Math.max(0, Math.min(1, matchRate));
 
   return {
     results,
@@ -518,6 +670,8 @@ const evaluateAllCriteria = (criteria, profile) => {
       excluded,
       exclusionViolations: exclusionViolations.length,
       inclusionFailures: inclusionFailures.length,
+      hardInclusionFailures: hardInclusionFailures.length,
+      softInclusionFailures: softInclusionFailures.length,
       matchRate: Math.round(matchRate * 100),
       score: Math.round(matchRate * 99) // 0-99 scale to match existing engine
     }
