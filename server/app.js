@@ -85,9 +85,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // API 路由
 app.use('/api', routes);
 
-// 根路径重定向到管理后台
+// 根路径重定向到 H5 患者端
 app.get('/', (req, res) => {
-  res.redirect('/admin');
+  res.redirect(301, '/h5/quick-match');
 });
 
 // 404 处理
