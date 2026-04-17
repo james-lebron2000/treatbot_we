@@ -9,21 +9,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
         node-version: '18'
         cache: 'npm'
         cache-dependency-path: server/package-lock.json
-    
+
     - name: Install dependencies
       working-directory: ./server
       run: npm ci
-    
+
     - name: Run linter
       working-directory: ./server
       run: npm run lint
@@ -33,14 +32,8 @@ jobs:
       run: npm test -- --runInBand --forceExit
       env:
         NODE_ENV: test
-        # 测试专用 JWT 秘钥，避免 jwtSecret.js 在 CI 打出 warning；足够长、非弱值
         JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
 
-    # 安全冒烟：确保 utils/jwtSecret.js 的生产校验防线没被回退。
-    # 3 个断言全部必须失败才算通过：
-    #   1) 生产环境未设置 JWT_SECRET → 应抛错
-    #   2) 生产环境使用弱值 'your-secret-key' → 应抛错
-    #   3) 生产环境秘钥 < 32 字符 → 应抛错
     - name: Security smoke — JWT_SECRET guard
       working-directory: ./server
       run: |
@@ -53,23 +46,22 @@ jobs:
         ! NODE_ENV=production JWT_SECRET=abc123short node -e "require('./utils/jwtSecret')" 2>/dev/null
         echo "✅ JWT_SECRET guard intact"
 
-  build:
+  build-api:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
-    
+
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
-    
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
       with:
@@ -81,61 +73,347 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  deploy:
-    needs: build
+  build-web:
+    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
     steps:
     - uses: actions/checkout@v3
-    
-    - name: Deploy to server
-      uses: appleboy/ssh-action@v0.1.10
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: web/package-lock.json
+
+    - name: Install web dependencies
+      working-directory: ./web
+      run: npm ci
+
+    - name: Build web (vite, base=/treatbot/)
+      working-directory: ./web
+      run: npm run build
+
+    - name: Upload web dist artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-dist
+        path: web/dist
+        retention-days: 7
+
+  deploy:
+    needs: [build-api, build-web]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download web dist
+      uses: actions/download-artifact@v4
+      with:
+        name: web-dist
+        path: web-dist
+
+    - name: Pack web dist as tarball
+      run: |
+        ls -la web-dist | head
+        tar -czf web-dist.tar.gz -C web-dist .
+        ls -lh web-dist.tar.gz
+
+    - name: Upload web tarball to server
+      uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
+        source: "web-dist.tar.gz"
+        target: "/tmp/"
+
+    # ---- Step 2: SSH 进服务器执行替换 ----
+    - name: Deploy backend container + promote web + patch nginx
+      uses: appleboy/ssh-action@v0.1.10
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        SHA: ${{ github.sha }}
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        envs: DOCKER_USERNAME,SHA
+        command_timeout: 15m
         script: |
-          # Diagnostic-only mode: figure out where treatbot actually lives.
-          # Each block tolerates failure (|| true) so we capture everything.
-          echo "===== whoami / pwd ====="
-          whoami; pwd; uname -a
-          echo "===== /opt/treatbot ====="
-          ls -la /opt/treatbot 2>/dev/null || echo "(missing)"
-          echo "===== /srv/treatbot ====="
-          ls -la /srv/treatbot 2>/dev/null || echo "(missing)"
-          echo "===== /home dirs ====="
-          ls -la /home 2>/dev/null || true
-          echo "===== docker ps -a ====="
-          docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo "(docker not usable)"
-          echo "===== docker images (treatbot) ====="
-          docker images 2>/dev/null | grep -i treatbot || echo "(no treatbot images)"
-          echo "===== pm2 list ====="
-          pm2 list 2>/dev/null || echo "(no pm2)"
-          echo "===== systemd treatbot ====="
-          systemctl list-units --type=service 2>/dev/null | grep -i treatbot || echo "(no treatbot service)"
-          echo "===== listening ports ====="
-          ss -tlnp 2>/dev/null | head -20 || netstat -tlnp 2>/dev/null | head -20 || true
-          echo "===== nginx sites ====="
-          ls /etc/nginx/sites-enabled/ 2>/dev/null || true
-          ls /etc/nginx/conf.d/ 2>/dev/null || true
-          grep -rl inseq /etc/nginx/ 2>/dev/null | head -5 || true
-          echo "===== process tree (node) ====="
-          ps -ef | grep -i node | grep -v grep || true
-          echo "===== treatbot-api: image ====="
-          docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "(failed)"
-          echo "===== treatbot-api: network mode + restart ====="
-          docker inspect treatbot-api -f 'net={{.HostConfig.NetworkMode}} restart={{.HostConfig.RestartPolicy.Name}}' 2>/dev/null || true
-          echo "===== treatbot-api: port bindings ====="
-          docker inspect treatbot-api -f '{{json .HostConfig.PortBindings}}' 2>/dev/null || true
-          echo "===== treatbot-api: env (sanitized — no values containing 'PASS|SECRET|KEY|TOKEN') ====="
-          docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -viE '(PASS|SECRET|KEY|TOKEN)=' || true
-          echo "===== treatbot-api: env names only (sensitive ones) ====="
-          docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -iE '(PASS|SECRET|KEY|TOKEN)=' | sed 's/=.*/=<redacted>/' || true
-          echo "===== treatbot-api: mounts ====="
-          docker inspect treatbot-api -f '{{json .Mounts}}' 2>/dev/null || true
-          echo "===== treatbot-api: networks ====="
-          docker inspect treatbot-api -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' 2>/dev/null || true
-          echo "===== nginx upstream for inseq.top ====="
-          cat /etc/nginx/sites-enabled/treatbot 2>/dev/null | head -80 || true
-          echo "===== DONE ====="
+          set -e
+          TS=$(date +%Y%m%d-%H%M%S)
+          echo "===== Deploy $TS — SHA=$SHA ====="
+
+          ###############################################
+          # PART A — 后端容器替换（带备份 + 自动回滚）
+          ###############################################
+          echo "::group::A) Backend container replace"
+
+          if [ -z "$DOCKER_USERNAME" ] || [ -z "$SHA" ]; then
+            echo "Missing DOCKER_USERNAME or SHA env"; exit 1
+          fi
+
+          # A.1 拉新镜像
+          NEW_IMG="${DOCKER_USERNAME}/treatbot-api:${SHA}"
+          docker pull "$NEW_IMG"
+          docker tag  "$NEW_IMG" "treatbot-api:${SHA}"
+
+          # A.2 备份旧镜像 + 旧 env 到独立 tag/file，永久保留
+          OLD_IMG=$(docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "")
+          if [ -n "$OLD_IMG" ]; then
+            docker tag "$OLD_IMG" "treatbot-api:rollback-${TS}" || true
+            echo "  ✓ Old image '$OLD_IMG' backed up as treatbot-api:rollback-${TS}"
+          else
+            echo "  ⚠ No existing treatbot-api container — first deploy"
+          fi
+
+          mkdir -p ~/treatbot-deploy-backups
+          BACKUP_ENV=~/treatbot-deploy-backups/treatbot-api.${TS}.env
+          if docker inspect treatbot-api >/dev/null 2>&1; then
+            docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' > "$BACKUP_ENV"
+            chmod 600 "$BACKUP_ENV"
+            echo "  ✓ Old env backed up to $BACKUP_ENV ($(wc -l < $BACKUP_ENV) vars)"
+          fi
+
+          # A.3 暂停旧容器，重命名保留（**不删除**，留作回滚靶子）
+          if docker inspect treatbot-api >/dev/null 2>&1; then
+            docker stop treatbot-api
+            # 清理超过 5 个的旧 prev 容器（按时间排序，最旧的删掉）
+            EXISTING_PREV=$(docker ps -a --format '{{.Names}}' | grep -E '^treatbot-api-prev-' | sort | head -n -4 || true)
+            if [ -n "$EXISTING_PREV" ]; then
+              echo "  Cleaning old prev containers:"
+              echo "$EXISTING_PREV" | xargs -r docker rm -f
+            fi
+            docker rename treatbot-api "treatbot-api-prev-${TS}"
+            echo "  ✓ Old container renamed to treatbot-api-prev-${TS}"
+          fi
+
+          # A.4 启动新容器（同样 network/port/mount，env 来自备份文件）
+          docker run -d --name treatbot-api \
+            --network server_treatbot-network \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            --env-file "$BACKUP_ENV" \
+            -v /opt/treatbot/server/data:/app/data \
+            -v /opt/treatbot/server/logs:/app/logs \
+            -v /opt/treatbot/server/uploads:/app/uploads \
+            "treatbot-api:${SHA}"
+
+          # A.5 健康检查（最多 ~36s）
+          HEALTHY=0
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            sleep 3
+            if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
+              HEALTHY=1
+              echo "  ✓ Healthy after $((i*3))s"
+              break
+            fi
+            echo "  …waiting for /health ($i/12)"
+          done
+
+          if [ "$HEALTHY" != "1" ]; then
+            echo "  ❌ Health check failed — rolling back to treatbot-api-prev-${TS}"
+            echo "  --- new container logs (tail 80) ---"
+            docker logs treatbot-api --tail 80 || true
+            echo "  -------------------------------------"
+            docker rm -f treatbot-api
+            docker rename "treatbot-api-prev-${TS}" treatbot-api
+            docker start treatbot-api
+            for i in 1 2 3 4 5; do
+              sleep 2
+              curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1 && echo "  ✓ Old container restored & healthy" && break
+              [ "$i" = "5" ] && echo "  ⚠ Old container not healthy either — manual intervention needed"
+            done
+            exit 1
+          fi
+
+          echo "  ✅ Backend deployed. Rollback cmd:"
+          echo "     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-${TS} treatbot-api && docker start treatbot-api"
+          echo "::endgroup::"
+
+          ###############################################
+          # PART B — 前端 web 提升到 /var/www/treatbot-web/
+          ###############################################
+          echo "::group::B) Web frontend promote"
+
+          STAGING=/tmp/treatbot-web-staging.${TS}
+          TARGET=/var/www/treatbot-web
+          TARBALL=/tmp/web-dist.tar.gz
+
+          if [ ! -f "$TARBALL" ]; then
+            echo "  ❌ Web tarball $TARBALL missing"
+            exit 1
+          fi
+
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          tar -xzf "$TARBALL" -C "$STAGING"
+          rm -f "$TARBALL"
+          echo "  ✓ Tarball extracted ($(ls "$STAGING" | wc -l) entries)"
+
+          # 备份当前 web，再用 rsync 替换
+          if [ -d "$TARGET" ]; then
+            BACKUP_WEB=~/treatbot-deploy-backups/web.${TS}
+            mkdir -p "$BACKUP_WEB"
+            cp -a "$TARGET"/. "$BACKUP_WEB"/ || sudo -n cp -a "$TARGET"/. "$BACKUP_WEB"/
+            echo "  ✓ Web backed up to $BACKUP_WEB"
+
+            # 清理超过 5 个的旧 web 备份
+            ls -1dt ~/treatbot-deploy-backups/web.* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+          fi
+
+          # 同步（rsync 优先，cp -a 兜底）
+          if command -v rsync >/dev/null 2>&1; then
+            (rsync -a --delete "$STAGING"/ "$TARGET"/ 2>/dev/null) \
+              || sudo -n rsync -a --delete "$STAGING"/ "$TARGET"/
+          else
+            (rm -rf "$TARGET"/* && cp -a "$STAGING"/. "$TARGET"/) \
+              || sudo -n sh -c "rm -rf $TARGET/* && cp -a $STAGING/. $TARGET/"
+          fi
+
+          # 校验 index.html 存在 + 含 /treatbot/ 资源引用
+          if [ -f "$TARGET/index.html" ] && grep -q '/treatbot/' "$TARGET/index.html"; then
+            echo "  ✅ Web promoted to $TARGET (index.html OK, base=/treatbot/)"
+          else
+            echo "  ⚠ Web promoted but index.html or base path looks wrong"
+            ls -la "$TARGET" | head -20
+          fi
+
+          rm -rf "$STAGING"
+          echo "::endgroup::"
+
+          ###############################################
+          # PART C — nginx 反代补全（让 /, /api/*, /demo-assets/*, /health 都能命中容器）
+          ###############################################
+          echo "::group::C) nginx proxy patch"
+
+          NGX_CONF=/etc/nginx/sites-available/treatbot
+          NGX_BAK=/etc/nginx/sites-available/treatbot.bak.${TS}
+
+          if [ ! -f "$NGX_CONF" ]; then
+            echo "  ⚠ $NGX_CONF not found — skipping nginx patch"
+          else
+            # 检测是否已经有"通用 catch-all 把 / 或 /api/ 转到 3000"
+            HAS_API_CATCHALL=$(grep -E 'location\s+/api/?\s*\{' "$NGX_CONF" | wc -l)
+            HAS_ROOT_PROXY=$(grep -E 'location\s+/\s*\{' "$NGX_CONF" | wc -l)
+            HAS_DEMO_ASSETS=$(grep -E 'location\s+/demo-assets/?' "$NGX_CONF" | wc -l)
+
+            echo "  Detected: api-catchall=$HAS_API_CATCHALL root-proxy=$HAS_ROOT_PROXY demo-assets=$HAS_DEMO_ASSETS"
+
+            # 如果 catch-all 已经存在，跳过；否则插入到 server { ... } 末尾前
+            if [ "$HAS_API_CATCHALL" -ge 1 ] && [ "$HAS_DEMO_ASSETS" -ge 1 ] && [ "$HAS_ROOT_PROXY" -ge 1 ]; then
+              echo "  ✓ nginx already has all required locations — no patch needed"
+            else
+              # 备份
+              sudo -n cp "$NGX_CONF" "$NGX_BAK"
+              echo "  ✓ Backed up to $NGX_BAK"
+
+              # 生成补丁（写入 /tmp 然后 sudo 合并）
+              PATCH=/tmp/treatbot-nginx-patch.${TS}
+              cat > "$PATCH" <<'NGINXPATCH'
+
+    # === Auto-added by GitHub Actions deploy: route landing/demo/api to treatbot-api container ===
+    # Demo 静态图片（公开演示样例图）
+    location /demo-assets/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Demo / health / 其它 API（catch-all，放在所有 /api/auth/* 白名单之后）
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        client_max_body_size 30m;
+    }
+
+    location = /health   { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /ready    { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /live     { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+
+    # 落地页（根路径 → express.static 落地页）
+    location = / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    # === end auto-added ===
+NGINXPATCH
+
+              # 用 sudo awk 在 server { ... } 块的 closing } 之前插入
+              sudo -n awk -v patch_file="$PATCH" '
+                BEGIN {
+                  while ((getline line < patch_file) > 0) patch = patch line "\n"
+                  close(patch_file)
+                  inserted = 0
+                  depth = 0
+                  in_server = 0
+                }
+                {
+                  # 计算大括号深度，找到 server 块
+                  if ($0 ~ /^server[[:space:]]*\{/) { in_server = 1; depth = 1; print; next }
+                  if (in_server) {
+                    n_open = gsub(/\{/, "&")
+                    n_close = gsub(/\}/, "&")
+                    depth += n_open - n_close
+                    if (depth == 0 && !inserted) {
+                      printf "%s", patch
+                      inserted = 1
+                      in_server = 0
+                    }
+                  }
+                  print
+                }
+              ' "$NGX_BAK" | sudo -n tee "$NGX_CONF" > /dev/null
+
+              # 测试 nginx 配置
+              if sudo -n nginx -t 2>&1; then
+                sudo -n nginx -s reload
+                echo "  ✅ nginx config patched and reloaded"
+              else
+                echo "  ❌ nginx -t failed — restoring backup"
+                sudo -n cp "$NGX_BAK" "$NGX_CONF"
+                exit 1
+              fi
+              rm -f "$PATCH"
+            fi
+          fi
+
+          echo "::endgroup::"
+
+          ###############################################
+          # PART D — 最终烟雾测试
+          ###############################################
+          echo "::group::D) Smoke tests"
+          echo "  /health (container):"
+          curl -fsS http://127.0.0.1:3000/health || echo "  ❌ container /health failed"
+          echo ""
+          echo "  / (via nginx):"
+          curl -fsS -o /dev/null -w "    HTTP %{http_code}\n" https://inseq.top/ || true
+          echo "  /api/demo/samples (via nginx):"
+          curl -fsS -o /dev/null -w "    HTTP %{http_code}\n" https://inseq.top/api/demo/samples || true
+          echo "  /demo-assets/sample-1-hcc.jpg (via nginx):"
+          curl -fsS -o /dev/null -w "    HTTP %{http_code}\n" https://inseq.top/demo-assets/sample-1-hcc.jpg || true
+          echo "  /treatbot/ (Vue SPA):"
+          curl -fsS -o /dev/null -w "    HTTP %{http_code}\n" https://inseq.top/treatbot/ || true
+          echo "::endgroup::"
+
+          # 清理 docker 旧 layer（保留命名容器和镜像）
+          docker image prune -f --filter "until=168h" || true
+          echo "===== ✅ Deploy $TS done ====="
