@@ -105,10 +105,13 @@ app.use('/demo-assets', express.static(path.join(__dirname, 'public/demo'), {
 // API 路由
 app.use('/api', routes);
 
-// 根路径重定向到 H5 患者端
-app.get('/', (req, res) => {
-  res.redirect(301, '/h5/quick-match');
-});
+// 根路径落地页（静态 HTML，纯介绍 + 2 个 CTA 按钮）
+// 放在 /api 之后、404 之前；index: 'index.html' 让 `/` 直接命中 landing/index.html
+app.use('/', express.static(path.join(__dirname, 'public/landing'), {
+  index: 'index.html',
+  maxAge: '5m',
+  fallthrough: true
+}));
 
 // 404 处理
 app.use((req, res) => {
