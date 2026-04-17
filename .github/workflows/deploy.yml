@@ -96,7 +96,25 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
+          set -e
           cd /opt/treatbot
+          echo "===== docker-compose.yml ====="
+          cat docker-compose.yml || true
+          echo "===== docker-compose pull ====="
           docker-compose pull
+          echo "===== docker-compose up -d ====="
           docker-compose up -d
+          echo "===== docker ps ====="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+          echo "===== treatbot images ====="
+          docker images | grep -i treatbot || echo "(no treatbot images)"
+          echo "===== api container HEAD commit (from /app) ====="
+          API_CT=$(docker ps --format '{{.Names}}' | grep -i api | head -1 || true)
+          if [ -n "$API_CT" ]; then
+            docker exec "$API_CT" sh -c 'ls -la /app/public/landing 2>/dev/null && echo "--- demo.js ---" && ls -la /app/controllers/demo.js 2>/dev/null && ls -la /app/fixtures 2>/dev/null' || echo "(failed to inspect $API_CT)"
+          else
+            echo "(no api container running)"
+          fi
+          echo "===== nginx config (if any) ====="
+          ls /etc/nginx/conf.d/ 2>/dev/null || true
           docker system prune -f
