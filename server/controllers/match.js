@@ -4,7 +4,7 @@ const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter } = require('../services/matchEngine');
 const { buildProfile } = require('../services/patientProfile');
-const { buildCriterionExplanation } = require('../../utils/match-explainer');
+const { buildCriterionExplanation } = require('../utils/match-explainer');
 const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
 
 const toPositiveInt = (value, fallback) => {
