@@ -6,6 +6,15 @@
     <input v-model.trim="code" placeholder="验证码请输入 000000" maxlength="6" inputmode="numeric" @keyup.enter="submit" />
     <button class="btn primary" :disabled="loading" @click="submit" style="width:100%;">{{ loading ? '登录中...' : '登录' }}</button>
     <p v-if="error" style="color:#dc2626;font-size:0.9rem;">{{ error }}</p>
+
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6;text-align:center;">
+      <a href="javascript:void(0)" style="color:#2563eb;font-size:0.88rem;" @click="router.push('/demo')">
+        先看演示 →
+      </a>
+      <p style="margin:4px 0 0;font-size:0.78rem;color:#9ca3af;">
+        30 秒了解 TreatBot 如何帮患者匹配试验，无需登录
+      </p>
+    </div>
   </section>
 </template>
 

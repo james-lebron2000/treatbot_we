@@ -9,6 +9,18 @@
         </p>
       </div>
 
+      <div class="card" style="background:#fffbeb;border-color:#fcd34d;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <div style="flex:1;min-width:0;">
+          <h3 style="margin:0 0 4px;font-size:0.98rem;color:#92400e;">先看个演示</h3>
+          <p style="margin:0;font-size:0.82rem;color:#78716c;line-height:1.5;">
+            不想立刻上传？用 30 秒看两个脱敏样例走完完整流程。
+          </p>
+        </div>
+        <button class="btn primary" style="white-space:nowrap;padding:8px 14px;" @click="$router.push('/demo')">
+          试用演示 →
+        </button>
+      </div>
+
       <div class="card">
         <h3 style="margin:0 0 10px;">需要准备什么？</h3>
         <p style="font-size:0.9rem;color:#374151;line-height:1.8;margin:0;">

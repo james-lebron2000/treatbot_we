@@ -15,20 +15,35 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 安全中间件
+// CSP 策略：
+//   - scriptSrc 生产环境**禁止** 'unsafe-inline'，防止 XSS payload 直接执行
+//   - 开发环境（NODE_ENV !== 'production'）保留 'unsafe-inline' 以兼容 Vite HMR
+//   - styleSrc 暂时保留 'unsafe-inline'，因为 Element Plus / Vue 的样式注入依赖它；
+//     后续可通过 nonce 机制彻底移除
+const isProduction = process.env.NODE_ENV === 'production';
+const scriptSrc = ["'self'"];
+if (!isProduction) {
+  scriptSrc.push("'unsafe-inline'", "'unsafe-eval'"); // 本地 HMR 需要
+}
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc,
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
       connectSrc: ["'self'", process.env.PUBLIC_BASE_URL || 'https://inseq.top'].filter(Boolean),
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameAncestors: ["'none'"]
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"]
     }
   },
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // 强制 HTTPS 传输（生产）；hsts 默认 180 天，包含子域
+  hsts: isProduction ? { maxAge: 15552000, includeSubDomains: true, preload: false } : false,
+  referrerPolicy: { policy: 'no-referrer-when-downgrade' }
 }));
 
 // CORS 配置
@@ -81,6 +96,11 @@ app.get('/live', healthController.livenessCheck);
 // 静态文件服务（管理后台）
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// 演示样例图片（公开，可被 /api/demo/samples 返回的 imageUrl 引用）
+app.use('/demo-assets', express.static(path.join(__dirname, 'public/demo'), {
+  maxAge: '1d',
+  fallthrough: true
+}));
 
 // API 路由
 app.use('/api', routes);

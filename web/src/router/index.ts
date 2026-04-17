@@ -8,12 +8,14 @@ import ApplicationsView from '../pages/ApplicationsView.vue'
 import AdminView from '../pages/AdminView.vue'
 import CroBoardView from '../pages/CroBoardView.vue'
 import CroLoginView from '../pages/CroLoginView.vue'
+import DemoView from '../pages/DemoView.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory('/treatbot/'),
   routes: [
     { path: '/login', component: LoginView },
+    { path: '/demo', component: DemoView },
     { path: '/', redirect: '/upload' },
     { path: '/upload', component: UploadView, meta: { requiresAuth: true } },
     { path: '/matches', component: MatchesView, meta: { requiresAuth: true } },

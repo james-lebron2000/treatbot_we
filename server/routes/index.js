@@ -15,6 +15,13 @@ const applicationController = require('../controllers/application');
 const adminController = require('../controllers/admin');
 const croController = require('../controllers/cro');
 const { croAuthMiddleware } = require('../middleware/croAuth');
+const demoController = require('../controllers/demo');
+
+// ===== 公开的「试用演示」接口（免认证） =====
+// 设计约束：只返回 fixtures/demoSamples.json 的只读数据，不触发 OCR，不写 DB。
+router.get('/demo/samples', demoController.listSamples);
+router.get('/demo/samples/:id/result', demoController.getSampleResult);
+router.get('/demo/samples/:id/matches', demoController.getSampleMatches);
 
 // ===== 认证相关 =====
 router.post('/auth/weapp-login', strictLimiter, authController.weappLogin);

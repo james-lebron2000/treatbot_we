@@ -238,6 +238,26 @@ export const api = {
   async updateAdminCro(id: string, payload: Record<string, any>) {
     const { data } = await http.put<ApiResponse<any>>(`/api/admin/cro/${id}`, payload)
     return unwrap<any>(data)
+  },
+
+  // ===== Demo（公开免登录）=====
+  // 注意：/api/demo/* 在后端 auth middleware 之前注册；这里显式不走 http 的 Authorization 也能正常返回。
+  async listDemoSamples() {
+    const { data } = await http.get<ApiResponse<any>>('/api/demo/samples')
+    return unwrap<any>(data)
+  },
+  async getDemoSampleResult(id: string) {
+    const { data } = await http.get<ApiResponse<any>>(
+      `/api/demo/samples/${encodeURIComponent(id)}/result`
+    )
+    return unwrap<any>(data)
+  },
+  async getDemoSampleMatches(id: string) {
+    const { data } = await http.get<ApiResponse<any>>(
+      `/api/demo/samples/${encodeURIComponent(id)}/matches`
+    )
+    // 与 /api/matches 同构：{ list, pagination }
+    return unwrap<any>(data)
   }
 }
 
