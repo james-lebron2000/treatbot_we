@@ -327,47 +327,88 @@ jobs:
               if [ ! -f "$CADDY_CONF" ]; then
                 echo "  ⚠ $CADDY_CONF not found"
               else
+                # 诊断：先 dump anchor 上下文（让我们看清 Caddyfile 实际语法）
+                echo "  --- Caddyfile context around /api/auth/h5-login (±15 lines) ---"
+                sudo -n awk '/\/api\/auth\/h5-login/ {found=NR} END{print found}' "$CADDY_CONF" > /tmp/_anchor_line || true
+                ANCHOR_LN=$(cat /tmp/_anchor_line 2>/dev/null || echo "")
+                if [ -n "$ANCHOR_LN" ]; then
+                  START=$((ANCHOR_LN > 15 ? ANCHOR_LN - 15 : 1))
+                  END=$((ANCHOR_LN + 15))
+                  sudo -n sed -n "${START},${END}p" "$CADDY_CONF" | sed 's/^/    /'
+                else
+                  echo "    (anchor /api/auth/h5-login not found — dumping first 80 lines)"
+                  sudo -n head -80 "$CADDY_CONF" | sed 's/^/    /'
+                fi
+                echo "  --- end context ---"
+
                 # 我们要确保 /api/demo/* 走 127.0.0.1:3000（默认 catch-all 走 5101，不能到 demo controller）
                 if grep -q '/api/demo/\*' "$CADDY_CONF"; then
                   echo "  ✓ Caddyfile already lists /api/demo/* — no patch needed"
+                elif [ -z "$ANCHOR_LN" ]; then
+                  echo "  ⚠ No anchor /api/auth/h5-login found — cannot patch automatically"
                 else
                   CADDY_BAK=/etc/caddy/Caddyfile.bak.${TS}
                   sudo -n cp "$CADDY_CONF" "$CADDY_BAK"
                   echo "  ✓ Backed up to $CADDY_BAK"
 
-                  # 在含 /api/auth/h5-login 的那行（白名单 reverse_proxy 到 3000 的开头）后插 /api/demo/*
-                  # Caddyfile 多行写法常见，每条 path 一行；用 awk 找到 anchor 后在它之前插一行
-                  sudo -n awk '
-                    BEGIN { inserted = 0 }
-                    /\/api\/auth\/h5-login/ && !inserted {
-                      # 复制当前行的缩进
-                      match($0, /^[[:space:]]*/)
-                      indent = substr($0, RSTART, RLENGTH)
-                      print indent "/api/demo/*"
-                      inserted = 1
-                    }
-                    { print }
-                    END { if (!inserted) exit 1 }
-                  ' "$CADDY_BAK" | sudo -n tee "$CADDY_CONF" > /dev/null
-
-                  if [ $? -ne 0 ]; then
-                    echo "  ⚠ Could not find /api/auth/h5-login anchor in Caddyfile — restoring"
-                    sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
+                  # 检测语法：anchor 行是否是 `path` 指令带多个空格分隔参数
+                  ANCHOR_LINE=$(sudo -n sed -n "${ANCHOR_LN}p" "$CADDY_CONF")
+                  echo "  Anchor line: [${ANCHOR_LINE}]"
+                  STRATEGY=""
+                  if echo "$ANCHOR_LINE" | grep -qE '^\s*path\s+'; then
+                    # 同行多参数 path 指令 → 在最末尾追加 /api/demo/*
+                    STRATEGY="same-line-append"
                   else
-                    echo "  --- Caddyfile diff (patched vs backup) ---"
-                    sudo -n diff "$CADDY_BAK" "$CADDY_CONF" || true
-                    echo "  --- caddy validate output ---"
-                    VALIDATE=$(sudo -n caddy validate --config "$CADDY_CONF" --adapter caddyfile 2>&1)
-                    echo "$VALIDATE" | head -20
-                    echo "  --- end validate ---"
-                    if echo "$VALIDATE" | grep -qiE "(Valid|valid configuration)"; then
-                      sudo -n systemctl reload caddy && echo "  ✅ Caddy patched + reloaded" \
-                        || (sudo -n caddy reload --config "$CADDY_CONF" --adapter caddyfile && echo "  ✅ Caddy reloaded via CLI") \
-                        || (echo "  ❌ Caddy reload failed — restoring"; sudo -n cp "$CADDY_BAK" "$CADDY_CONF"; sudo -n systemctl reload caddy)
+                    # 一行一路径风格（如 location 块或 path 单参数）→ 插入新行
+                    STRATEGY="new-line-insert"
+                  fi
+                  echo "  Strategy: $STRATEGY"
+
+                  case "$STRATEGY" in
+                    same-line-append)
+                      # 在 /api/auth/h5-login 之后（同一 path 行内的某处）追加 /api/demo/*
+                      # 用 awk 在匹配行末追加 " /api/demo/*"
+                      sudo -n awk -v ln="$ANCHOR_LN" '
+                        NR==ln { sub(/[[:space:]]*$/, ""); print $0 " /api/demo/*"; next }
+                        { print }
+                      ' "$CADDY_BAK" | sudo -n tee "$CADDY_CONF" > /dev/null
+                      ;;
+                    new-line-insert)
+                      sudo -n awk -v ln="$ANCHOR_LN" '
+                        NR==ln {
+                          match($0, /^[[:space:]]*/)
+                          indent = substr($0, RSTART, RLENGTH)
+                          print indent "/api/demo/*"
+                        }
+                        { print }
+                      ' "$CADDY_BAK" | sudo -n tee "$CADDY_CONF" > /dev/null
+                      ;;
+                  esac
+
+                  echo "  --- Caddyfile diff (patched vs backup) ---"
+                  sudo -n diff "$CADDY_BAK" "$CADDY_CONF" | sed 's/^/    /' || true
+                  echo "  --- caddy validate output ---"
+                  set +e
+                  VALIDATE=$(sudo -n caddy validate --config "$CADDY_CONF" --adapter caddyfile 2>&1)
+                  VALIDATE_RC=$?
+                  set -e
+                  echo "$VALIDATE" | sed 's/^/    /' | head -30
+                  echo "  --- end validate (rc=$VALIDATE_RC) ---"
+                  if [ "$VALIDATE_RC" = "0" ]; then
+                    set +e
+                    sudo -n systemctl reload caddy
+                    RELOAD_RC=$?
+                    set -e
+                    if [ "$RELOAD_RC" = "0" ]; then
+                      echo "  ✅ Caddy patched + reloaded"
                     else
-                      echo "  ❌ Caddy config invalid — restoring"
+                      echo "  ❌ systemctl reload caddy failed — restoring"
                       sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
+                      sudo -n systemctl reload caddy || true
                     fi
+                  else
+                    echo "  ❌ Caddy validate failed (rc=$VALIDATE_RC) — restoring"
+                    sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
                   fi
                 fi
               fi
