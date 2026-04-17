@@ -1,3 +1,7 @@
+/* global wx */
+// `wx` is the WeChat Mini Program global, guarded at runtime by `typeof wx !== 'undefined'`.
+// On Node (server) it's never defined; the guard short-circuits. ESLint needs this comment
+// because the original file is dual-targeted (mini-program + server).
 const CP1252_REVERSE_MAP = {
   0x20ac: 0x80,
   0x201a: 0x82,
