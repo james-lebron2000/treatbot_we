@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const { JWT_SECRET } = require('../utils/jwtSecret');
 
 /**
  * JWT 认证中间件

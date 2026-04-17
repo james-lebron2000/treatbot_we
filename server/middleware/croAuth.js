@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { CroCompany } = require('../models');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const { JWT_SECRET } = require('../utils/jwtSecret');
 
 /**
  * CRO 认证中间件

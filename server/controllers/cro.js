@@ -5,8 +5,8 @@ const { CroCompany, TrialApplication, Trial, User, MedicalRecord, sequelize } = 
 const { success, error, pagination } = require('../utils/response');
 const { safeText, escapeLike } = require('../utils/text');
 const logger = require('../utils/logger');
+const { JWT_SECRET } = require('../utils/jwtSecret');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN) || 1800;
 
 const APPLICATION_STATUS_TEXT = {

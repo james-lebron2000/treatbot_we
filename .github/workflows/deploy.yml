@@ -26,13 +26,32 @@ jobs:
     
     - name: Run linter
       working-directory: ./server
-      run: npm run lint || true
-    
+      run: npm run lint
+
     - name: Run tests
       working-directory: ./server
-      run: npm test -- --runInBand --forceExit || true
+      run: npm test -- --runInBand --forceExit
       env:
         NODE_ENV: test
+        # 测试专用 JWT 秘钥，避免 jwtSecret.js 在 CI 打出 warning；足够长、非弱值
+        JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+
+    # 安全冒烟：确保 utils/jwtSecret.js 的生产校验防线没被回退。
+    # 3 个断言全部必须失败才算通过：
+    #   1) 生产环境未设置 JWT_SECRET → 应抛错
+    #   2) 生产环境使用弱值 'your-secret-key' → 应抛错
+    #   3) 生产环境秘钥 < 32 字符 → 应抛错
+    - name: Security smoke — JWT_SECRET guard
+      working-directory: ./server
+      run: |
+        set -e
+        echo "▶ 1/3 production + missing JWT_SECRET should throw"
+        ! NODE_ENV=production node -e "require('./utils/jwtSecret')" 2>/dev/null
+        echo "▶ 2/3 production + weak value should throw"
+        ! NODE_ENV=production JWT_SECRET=your-secret-key node -e "require('./utils/jwtSecret')" 2>/dev/null
+        echo "▶ 3/3 production + short value should throw"
+        ! NODE_ENV=production JWT_SECRET=abc123short node -e "require('./utils/jwtSecret')" 2>/dev/null
+        echo "✅ JWT_SECRET guard intact"
 
   build:
     needs: test

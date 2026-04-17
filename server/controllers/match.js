@@ -235,7 +235,14 @@ const getMatches = async (req, res, next) => {
         return best ? buildDetailedMatchItem(trial, best) : null;
       })
       .filter((item) => item && trialMatchesFilters(item, filters))
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        // 稳定 tiebreaker: 更新时间新的在前，其次按 id 字典序确保结果每次一致
+        const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        if (tA !== tB) return tB - tA;
+        return `${a.id}`.localeCompare(`${b.id}`);
+      });
 
     const list = allMatches.slice(offset, offset + pageSize);
 
@@ -403,7 +410,13 @@ const findMatches = async (req, res, next) => {
         return buildDetailedMatchItem(trial, scored);
       })
       .filter((item) => trialMatchesFilters(item, filters))
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        if (tA !== tB) return tB - tA;
+        return `${a.id}`.localeCompare(`${b.id}`);
+      });
 
     res.json(success(list));
   } catch (err) {

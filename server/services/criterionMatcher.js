@@ -17,6 +17,8 @@ const {
   normalizeText,
   hasGenericCancerSignal
 } = require('./matchEngine');
+const { parsePatientGenes } = require('./geneParser');
+const { parsePdl1Expression, inferDefaultPdl1System } = require('./pdl1Parser');
 
 // ---- Known solid tumor types (for basket trial matching) ----
 const KNOWN_SOLID_TUMORS = [
@@ -258,15 +260,42 @@ const evaluatePdl1 = (s, profile) => {
   if (s.threshold == null) {
     return { status: UNCERTAIN, evidence: '试验PD-L1阈值未明确', confidence: 0.4 };
   }
-  const numMatch = profile.pdl1.match(/(\d+)/);
-  if (!numMatch) {
+  const parsed = parsePdl1Expression(profile.pdl1);
+  if (!parsed || parsed.value == null) {
     return { status: UNCERTAIN, evidence: `无法解析PD-L1数值: ${profile.pdl1}`, confidence: 0.3 };
   }
-  const patientPdl1 = Number(numMatch[1]);
-  if (patientPdl1 >= s.threshold) {
-    return { status: MET, evidence: `PD-L1 ${profile.pdl1} ≥ 阈值${s.threshold}%`, confidence: 0.90 };
+  // 系统不匹配优先判定：避免拿 CPS 数值去比 TPS 阈值（或反之）造成误判
+  const patientSys = parsed.system;
+  const trialSys = s.system || null;
+  if (patientSys && trialSys && patientSys !== trialSys) {
+    return {
+      status: UNCERTAIN,
+      evidence: `患者PD-L1 ${patientSys} ${parsed.value}，试验要求 ${trialSys}≥${s.threshold}，指标类型不同，需医生确认`,
+      confidence: 0.35
+    };
   }
-  return { status: NOT_MET, evidence: `PD-L1 ${profile.pdl1} < 阈值${s.threshold}%`, confidence: 0.90 };
+  // 缺系统信息时用诊断推断
+  let systemUsed = patientSys || trialSys;
+  let inferred = false;
+  if (!systemUsed) {
+    systemUsed = inferDefaultPdl1System(profile.diagnosis);
+    inferred = !!systemUsed;
+  }
+  const suffix = inferred ? `（按${profile.diagnosis}默认${systemUsed}推断）` : '';
+  const patientPdl1 = parsed.value;
+  const sysLabel = systemUsed || '未标注';
+  if (patientPdl1 >= s.threshold) {
+    return {
+      status: MET,
+      evidence: `PD-L1 ${sysLabel} ${patientPdl1} ≥ 阈值${s.threshold}${suffix}`,
+      confidence: inferred ? 0.75 : 0.90
+    };
+  }
+  return {
+    status: NOT_MET,
+    evidence: `PD-L1 ${sysLabel} ${patientPdl1} < 阈值${s.threshold}${suffix}`,
+    confidence: inferred ? 0.75 : 0.90
+  };
 };
 
 // ---- Semantic Evaluators (pattern-based, no LLM needed for most cases) ----
@@ -300,48 +329,69 @@ const evaluateGeneRequirement = (s, profile) => {
   const required = s.required || [];
   if (required.length === 0) return { status: MET, evidence: '无基因要求', confidence: 0.9 };
 
-  const patientGeneText = normalizeText(profile.geneMutationText || profile.geneMutations?.join(' ') || '');
-  if (!patientGeneText) {
+  // P1-FIX: 用 geneParser 按片段解析每个基因的状态，避免多基因文本里的状态错乱
+  // 原实现直接在全局拼接文本上 includes('野生')，在 "EGFR突变,KRAS野生" 这类文本里会把 EGFR 也判为野生型
+  const rawGeneText = profile.geneMutationText
+    || (Array.isArray(profile.geneMutations) ? profile.geneMutations.join('；') : '')
+    || '';
+  if (!rawGeneText) {
     return { status: UNCERTAIN, evidence: '患者基因检测信息缺失', confidence: 0.3 };
   }
+  const patientGeneMap = parsePatientGenes(rawGeneText);
 
-  // Check each required gene against patient mutations
+  // 基因名识别表 —— 与 geneParser 的 GENE_DEFINITIONS 对齐的正则
+  const GENE_NAME_REGEX = /(EGFR|ALK|ROS1|KRAS|NRAS|HRAS|BRAF|HER2|ERBB2|MET|RET|NTRK[123]?|FGFR[123]?|PIK3CA|PTEN|TP53|CLDN18|ROR1|MSI[- ]?H?|TMB|MMR|PD[- ]?L1|PD[- ]?1)/i;
+
   const results = [];
   for (const geneReq of required) {
     const geneNorm = normalizeText(geneReq);
-
-    // Extract the gene name from the requirement
-    const geneNameMatch = geneReq.match(/(EGFR|ALK|ROS1|KRAS|BRAF|HER2|ERBB2|MET|RET|NTRK|FGFR|PIK3CA|PTEN|TP53|CLDN18|ROR1|MSI|TMB|MMR)/i);
+    const geneNameMatch = geneReq.match(GENE_NAME_REGEX);
     if (!geneNameMatch) {
       results.push({ gene: geneReq, matched: false, reason: '无法识别基因名称' });
       continue;
     }
 
-    const geneName = normalizeText(geneNameMatch[1]);
-    const patientHasGene = patientGeneText.includes(geneName);
+    // 归一基因 key：msih → MSI-H, pdl1 → PD-L1 等 —— 用与 geneParser 相同的大写规则
+    const rawGene = geneNameMatch[1].toUpperCase().replace(/\s|-/g, '');
+    const geneKeyCandidates = [
+      rawGene,
+      rawGene.replace(/^MSI/, 'MSI-H').replace(/-HH$/, '-H'), // MSIH → MSI-H
+      rawGene.replace(/^PDL1$/, 'PD-L1'),
+      rawGene.replace(/^PD1$/, 'PD-1'),
+      // 与 GENE_DEFINITIONS key 完全一致的常见形式
+    ];
+    let patient = null;
+    for (const k of geneKeyCandidates) {
+      if (patientGeneMap.has(k)) { patient = patientGeneMap.get(k); break; }
+    }
+    // 最后兜底：扫 Map 里任何 key 的归一化形式匹配 rawGene
+    if (!patient) {
+      for (const [k, v] of patientGeneMap.entries()) {
+        if (k.replace(/-/g, '').toUpperCase() === rawGene) { patient = v; break; }
+      }
+    }
 
-    if (!patientHasGene) {
+    if (!patient) {
       results.push({ gene: geneReq, matched: false, reason: `未检测到${geneNameMatch[1]}` });
       continue;
     }
 
-    // Check if the mutation context matches (positive/negative/wild-type)
-    const reqWantsMutant = geneNorm.includes('突变') || geneNorm.includes('阳性') || geneNorm.includes('mutation') || geneNorm.includes('activating') || geneNorm.includes('融合') || geneNorm.includes('表达');
-    const reqWantsWild = geneNorm.includes('野生') || geneNorm.includes('阴性') || geneNorm.includes('wildtype');
+    const reqWantsMutant = /(突变|阳性|mutation|activating|融合|扩增|表达|positive)/i.test(geneReq);
+    const reqWantsWild = /(野生|阴性|wildtype|wild[- ]?type|negative)/i.test(geneReq);
 
-    const patientIsMutant = patientGeneText.includes(geneName) && (patientGeneText.includes('突变') || patientGeneText.includes('阳性') || patientGeneText.includes('融合') || patientGeneText.includes('表达'));
-    const patientIsWild = patientGeneText.includes(geneName) && (patientGeneText.includes('野生') || patientGeneText.includes('阴性'));
-
-    if (reqWantsMutant && patientIsMutant) {
+    if (patient.status === 'pending') {
+      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}待检测` });
+    } else if (reqWantsMutant && patient.status === 'mutant') {
       results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}突变/阳性符合` });
-    } else if (reqWantsWild && patientIsWild) {
+    } else if (reqWantsWild && patient.status === 'wild') {
       results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}野生型符合` });
-    } else if (reqWantsMutant && patientIsWild) {
+    } else if (reqWantsMutant && patient.status === 'wild') {
       results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}为野生型，试验需突变` });
-    } else if (reqWantsWild && patientIsMutant) {
+    } else if (reqWantsWild && patient.status === 'mutant') {
       results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}为突变阳性，试验需野生型` });
+    } else if (patient.status === 'mixed') {
+      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}状态存在冲突描述` });
     } else {
-      // Gene detected but context unclear
       results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}检测到但状态不确定` });
     }
   }

@@ -16,6 +16,7 @@
 ### 🏗️ 架构设计
 - **[production-plan.md](./production-plan.md)** - 生产级架构方案
 - **[performance-optimization.md](./performance-optimization.md)** - 性能优化指南
+- **[research-rollout-plan.md](./research-rollout-plan.md)** - 下一步研究落地方案
 
 ### 🛠️ 部署运维
 - **[deployment-checklist.md](./deployment-checklist.md)** - 部署检查清单
@@ -43,8 +44,9 @@
 
 ### 👨‍💼 产品经理
 1. [production-plan.md](./production-plan.md) - 产品架构
-2. [weapp-setup.md](./weapp-setup.md) - 小程序配置
-3. [tencent-cloud-setup.md](./tencent-cloud-setup.md) - 成本估算
+2. [research-rollout-plan.md](./research-rollout-plan.md) - 试点与研究落地路线
+3. [weapp-setup.md](./weapp-setup.md) - 小程序配置
+4. [tencent-cloud-setup.md](./tencent-cloud-setup.md) - 成本估算
 
 ### 👨‍💻 项目经理
 1. [project-completion-report.md](./project-completion-report.md) - 项目报告
@@ -64,13 +66,14 @@
 | openapi.json | 工具 | Swagger/OpenAPI |
 | production-plan.md | 架构 | 生产级方案 |
 | performance-optimization.md | 优化 | 性能优化指南 |
+| research-rollout-plan.md | 路线 | 研究落地与试点方案 |
 | deployment-checklist.md | 运维 | 部署检查清单 |
 | tencent-cloud-setup.md | 采购 | 云服务购买指南 |
 | security-checklist.md | 安全 | 安全加固清单 |
 | weapp-setup.md | 配置 | 小程序配置 |
 | project-completion-report.md | 报告 | 项目完成报告 |
 
-**总计：13 份文档**
+**总计：14 份文档**
 
 ---
 
@@ -109,6 +112,10 @@
 - ✅ Postman 集合
 - ✅ OpenAPI 规范
 - ✅ FAQ 问答
+
+### 2026-04-15
+- ✅ 新增研究落地方案文档
+- ✅ 明确试点病种、KPI 和后端配合项
 
 ---
 

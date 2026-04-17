@@ -2,6 +2,7 @@ const os = require('os');
 const { sequelize } = require('../config/database');
 const { redisClient } = require('../middleware/rateLimit');
 const logger = require('../utils/logger');
+const { getDecomposedCriteriaStatus, getTrialPrepStats } = require('../services/matchEngine');
 
 /**
  * 基础健康检查
@@ -85,6 +86,32 @@ const detailedHealth = async (req, res) => {
     system: `${(os.uptime() / 3600).toFixed(2)} hours`,
     process: `${(process.uptime() / 3600).toFixed(2)} hours`
   };
+
+  // 匹配引擎数据加载状态
+  try {
+    const dcStatus = getDecomposedCriteriaStatus();
+    checks.matchEngine = {
+      // loaded=false 视为 warning 而非 error：引擎会退化到纯启发式评分，不影响可用性
+      status: dcStatus.loaded ? 'ok' : 'warning',
+      decomposedCriteria: {
+        loaded: dcStatus.loaded,
+        trialCount: dcStatus.trialCount,
+        criterionCount: dcStatus.criterionCount,
+        loadedAt: dcStatus.loadedAt,
+        loadError: dcStatus.loadError
+      },
+      trialPrepCache: getTrialPrepStats()
+    };
+    if (!dcStatus.loaded) {
+      logger.warn('健康检查 - decomposed_criteria 未加载', { error: dcStatus.loadError });
+    }
+  } catch (error) {
+    checks.matchEngine = {
+      status: 'error',
+      message: error.message
+    };
+    logger.error('健康检查 - 匹配引擎状态失败:', error);
+  }
 
   // 确定整体状态
   const hasError = Object.values(checks).some(

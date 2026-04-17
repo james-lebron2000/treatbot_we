@@ -197,8 +197,10 @@ REDIS_HOST=your-redis-host
 REDIS_PORT=6379
 REDIS_PASSWORD=your-password
 
-# JWT
-JWT_SECRET=your-super-secret-key
+# JWT（必须为 ≥32 字符的强随机秘钥，禁止示例值）
+# 生成：node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=<在服务器上用上面命令生成后粘贴>
+
 
 # 微信小程序
 WEAPP_APPID=your-app-id

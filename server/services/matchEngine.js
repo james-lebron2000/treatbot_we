@@ -82,6 +82,7 @@ const DISEASE_PROFILES = [
 const GENERIC_CANCER_ALIASES = ['实体瘤', '实体性肿瘤', '恶性肿瘤', '晚期实体瘤', '进展期实体瘤', '实体肿瘤'];
 
 // 已知基因列表，用于精确基因名匹配（避免子串假阳性）
+// NOTE: 保留此列表仅为向后兼容；内部使用 geneParser 的 GENE_DEFINITIONS（长度降序、去重）。
 const KNOWN_GENES = [
   'egfr', 'alk', 'ros1', 'kras', 'braf', 'her2', 'erbb2',
   'met', 'ret', 'ntrk', 'ntrk1', 'ntrk2', 'ntrk3',
@@ -91,16 +92,16 @@ const KNOWN_GENES = [
   'tmb', 'msih', 'msi-h', 'mmr', 'dmmr'
 ];
 
+const { parsePatientGenes, parseTrialGeneRequirements, matchGenesAgainstTrial } = require('./geneParser');
+const { evaluatePdl1Match } = require('./pdl1Parser');
+
 /**
- * 从文本中提取命中的已知基因名列表
+ * 从文本中提取命中的已知基因名列表（长度优先、已去重；NTRK1 命中时不再额外返回 NTRK）
  */
 const extractGeneNames = (text) => {
   if (!text) return [];
-  const s = safeLower(text).replace(/[\s\-_]/g, '');
-  return KNOWN_GENES.filter((gene) => {
-    const normalizedGene = gene.replace(/[\-_]/g, '');
-    return s.includes(normalizedGene);
-  });
+  const map = parsePatientGenes(text);
+  return Array.from(map.keys()).map((k) => k.toLowerCase());
 };
 
 const parseArrayField = (value) => {
@@ -277,6 +278,43 @@ const getTrialInclusionText = (trial) => {
 // 保留原函数名作为别名，方便其他地方调用全文搜索
 const getTrialText = getTrialInclusionText;
 
+// ---- Per-trial 预处理缓存（P2 性能优化）----
+// 同一 trial 会被粗筛出的多条记录反复评分，每次都 join / lower / re-parse 浪费 CPU。
+// 用 WeakMap 缓存预处理结果，trial 对象被 GC 时缓存自动失效。
+const _trialPrepCache = new WeakMap();
+const _trialPrepStats = { hits: 0, misses: 0 };
+
+const getTrialPrep = (trial) => {
+  if (!trial || typeof trial !== 'object') {
+    // 非对象传入（极少见）：不缓存，直接计算
+    const inclusionText = getTrialInclusionText(trial);
+    const trialText = safeLower(inclusionText);
+    return {
+      inclusionText,
+      trialText,
+      exclusionText: safeLower(parseArrayField(trial && trial.exclusion_criteria).join(' ')),
+      geneReqMap: parseTrialGeneRequirements(trialText),
+      _cached: false
+    };
+  }
+  let p = _trialPrepCache.get(trial);
+  if (p) {
+    _trialPrepStats.hits++;
+    return p;
+  }
+  _trialPrepStats.misses++;
+  const inclusionText = getTrialInclusionText(trial);
+  const trialText = safeLower(inclusionText);
+  const exclusionText = safeLower(parseArrayField(trial.exclusion_criteria).join(' '));
+  const geneReqMap = parseTrialGeneRequirements(trialText);
+  p = { inclusionText, trialText, exclusionText, geneReqMap, _cached: true };
+  _trialPrepCache.set(trial, p);
+  return p;
+};
+
+/** 缓存统计接口（供 /health/detailed 使用） */
+const getTrialPrepStats = () => ({ ...(_trialPrepStats) });
+
 /**
  * 从患者诊断文本中提取用于粗筛的疾病关键词
  */
@@ -409,7 +447,9 @@ const scoreRecordAgainstTrial = (record, trial) => {
     }
   }
 
-  const trialText = safeLower(getTrialText(trial));
+  // 使用 per-trial 预处理缓存：避免同一 trial 被多次 join/lower/re-parse
+  const _prep = getTrialPrep(trial);
+  const trialText = _prep.trialText;
   const diagnosis = safeLower(record.diagnosis);
   const diseaseMatch = matchDiseaseText(diagnosis, trialText);
 
@@ -436,43 +476,45 @@ const scoreRecordAgainstTrial = (record, trial) => {
     }
   }
 
-  // ---- 基因匹配（P2-6: 区分阳性/野生型/待检测）----
-  const patientGeneText = safeLower(record.gene_mutation || '');
-  const patientGenes = extractGeneNames(patientGeneText);
-  const trialGenes = extractGeneNames(trialText);
-  const geneOverlap = patientGenes.filter((g) => trialGenes.includes(g));
-  if (geneOverlap.length > 0) {
-    let geneScore = 0;
-    const geneDetails = [];
-    for (const gene of geneOverlap) {
-      const geneUpper = gene.toUpperCase();
-      // 检查患者该基因的状态
-      const isWild = patientGeneText.includes(gene) && (patientGeneText.includes('野生') || patientGeneText.includes('阴性') || patientGeneText.includes('wt'));
-      const isPending = patientGeneText.includes(gene) && (patientGeneText.includes('待检') || patientGeneText.includes('未检'));
-      // 检查试验是否要求野生型
-      const trialWantsWild = trialText.includes(gene) && (trialText.includes('野生型') || trialText.includes('wild') || trialText.includes('阴性'));
-      const trialWantsMutant = trialText.includes(gene) && (trialText.includes('突变') || trialText.includes('阳性') || trialText.includes('mutation') || trialText.includes('activating'));
-
-      if (isPending) {
-        geneScore += 5;
-        geneDetails.push(`${geneUpper}（待检测）`);
-      } else if (isWild && trialWantsWild) {
-        geneScore += 20;
-        geneDetails.push(`${geneUpper}野生型符合`);
-      } else if (!isWild && trialWantsMutant) {
-        geneScore += 20;
-        geneDetails.push(`${geneUpper}突变阳性符合`);
-      } else if (isWild && trialWantsMutant) {
-        // 患者野生型但试验要突变：不加分
-        geneDetails.push(`${geneUpper}野生型（试验需突变）`);
-      } else {
-        // 无法区分具体上下文：给中等分
-        geneScore += 12;
-        geneDetails.push(geneUpper);
-      }
+  // ---- 基因匹配（P1-FIX: 每基因独立状态解析，避免多基因混淆）----
+  // 原实现用全局 includes('野生') 判断状态，在 "EGFR突变，KRAS野生" 这类文本里会错乱。
+  // 新实现通过 geneParser 按分隔符切片，对每个基因独立识别状态。
+  const patientGeneRaw = record.gene_mutation || record.structured?.entities?.geneMutation || '';
+  const patientGeneMap = parsePatientGenes(patientGeneRaw);
+  const trialReqMap = _prep.geneReqMap; // 使用缓存，避免同 trial 重复扫描基因要求
+  if (patientGeneMap.size > 0 && trialReqMap.size > 0) {
+    const overlaps = [];
+    for (const [gene] of trialReqMap.entries()) {
+      if (patientGeneMap.has(gene)) overlaps.push(gene);
     }
-    score += Math.min(20, geneScore);
-    reasons.push(`基因变异（${geneDetails.join('、')}）`);
+    if (overlaps.length > 0) {
+      const geneResults = matchGenesAgainstTrial(patientGeneMap, trialReqMap);
+      let geneScore = 0;
+      const geneDetails = [];
+      for (const r of geneResults) {
+        if (r.patientStatus === 'pending') {
+          geneScore += 5; // 待检测给鼓励分，提示去做检测
+          geneDetails.push(r.label);
+        } else if (r.matched) {
+          geneScore += 20;
+          geneDetails.push(r.label);
+        } else if (r.trialReq === 'mutant' && r.patientStatus === 'wild') {
+          // 高置信度"不符合"：患者野生型但试验要突变 —— 负分避免误推
+          geneScore -= 10;
+          geneDetails.push(r.label);
+        } else if (r.trialReq === 'wild' && r.patientStatus === 'mutant') {
+          geneScore -= 10;
+          geneDetails.push(r.label);
+        } else {
+          // either / mixed / unknown：给中等分，不偏向
+          geneScore += 8;
+          geneDetails.push(r.label);
+        }
+      }
+      // 上限保持原 +20，下限 -15 允许体现硬性不符合
+      score += Math.max(-15, Math.min(20, geneScore));
+      reasons.push(`基因匹配（${geneDetails.join('、')}）`);
+    }
   }
 
   // ---- 分期匹配 ----
@@ -498,28 +540,17 @@ const scoreRecordAgainstTrial = (record, trial) => {
     }
   }
 
-  // ---- PD-L1 阈值匹配（P2-7）----
+  // ---- PD-L1 阈值匹配（P1-FIX: 区分 TPS / CPS / IC 评分体系）----
+  // 不同癌种用不同体系（NSCLC-TPS / 胃癌-CPS / 尿路上皮-CPS），数值不能互通。
   const patientPdl1 = getPatientPdl1(record);
-  const trialMentionsPdl1 = trialText.includes('pdl1') || trialText.includes('pd-l1');
-  if (patientPdl1 && trialMentionsPdl1) {
-    // 解析患者 PD-L1 数值（如 "TPS 80%" → 80, "CPS 15" → 15）
-    const pdl1NumMatch = patientPdl1.match(/(\d+)/);
-    const patientPdl1Num = pdl1NumMatch ? Number(pdl1NumMatch[1]) : null;
-    // 解析试验 PD-L1 阈值要求（如 "TPS≥50%"、"CPS≥10"、"PD-L1 ≥1%"）
-    const trialPdl1ReqMatch = trialText.match(/pd-?l1[^0-9]*(?:[≥>=]+\s*)(\d+)/i)
-      || trialText.match(/(?:tps|cps)[^0-9]*(?:[≥>=]+\s*)(\d+)/i);
-    const trialThreshold = trialPdl1ReqMatch ? Number(trialPdl1ReqMatch[1]) : null;
-
-    if (patientPdl1Num != null && trialThreshold != null && patientPdl1Num >= trialThreshold) {
-      score += 8;
-      reasons.push(`PD-L1表达（${patientPdl1}）达到试验阈值（≥${trialThreshold}%）`);
-    } else if (patientPdl1Num != null && trialThreshold != null) {
-      score += 2;
-      reasons.push(`PD-L1表达（${patientPdl1}）低于试验阈值（≥${trialThreshold}%），可能不符合`);
-    } else {
-      score += 4;
-      reasons.push(`PD-L1表达（${patientPdl1}）与试验免疫治疗方向相关`);
-    }
+  const pdl1Eval = evaluatePdl1Match(patientPdl1, _prep.inclusionText, record.diagnosis);
+  if (pdl1Eval.verdict !== 'no_requirement') {
+    score += pdl1Eval.bonus;
+    if (pdl1Eval.reason) reasons.push(pdl1Eval.reason);
+  } else if (patientPdl1 && (trialText.includes('pdl1') || trialText.includes('pd-l1'))) {
+    // 试验文本提及 PD-L1 但无明确阈值 —— 给小幅加分作为相关性信号
+    score += 4;
+    reasons.push(`PD-L1表达（${patientPdl1}）与试验免疫治疗方向相关`);
   }
 
   // ---- ECOG 评分（P1-4: 从试验文本动态解析要求）----
@@ -560,7 +591,7 @@ const scoreRecordAgainstTrial = (record, trial) => {
   }
 
   // ---- 排除标准负分（P1-8）----
-  const exclusionText = safeLower(parseArrayField(trial.exclusion_criteria).join(' '));
+  const exclusionText = _prep.exclusionText; // 使用缓存
   if (exclusionText) {
     const exclusionRisks = [];
     // 检查患者已知条件是否命中排除标准
@@ -633,6 +664,13 @@ const matchRecordsToTrials = (records, trials, minScore = SCORE_MIN) => {
 // ---- Hybrid Scoring with Criterion-Level Matching (Phase 1.3/1.4) ----
 
 let _decomposedCriteria = null;
+let _decomposedCriteriaStatus = {
+  loaded: false,
+  trialCount: 0,
+  criterionCount: 0,
+  loadError: null,
+  loadedAt: null
+};
 
 /**
  * Load decomposed criteria (lazy, cached)
@@ -641,11 +679,41 @@ const getDecomposedCriteria = () => {
   if (!_decomposedCriteria) {
     try {
       _decomposedCriteria = require('../data/decomposed_criteria.json');
+      const trialIds = Object.keys(_decomposedCriteria);
+      const criterionCount = trialIds.reduce((sum, tid) => {
+        const arr = _decomposedCriteria[tid];
+        return sum + (Array.isArray(arr) ? arr.length : 0);
+      }, 0);
+      _decomposedCriteriaStatus = {
+        loaded: true,
+        trialCount: trialIds.length,
+        criterionCount,
+        loadError: null,
+        loadedAt: new Date().toISOString()
+      };
     } catch (e) {
       _decomposedCriteria = {};
+      _decomposedCriteriaStatus = {
+        loaded: false,
+        trialCount: 0,
+        criterionCount: 0,
+        loadError: e.message || String(e),
+        loadedAt: new Date().toISOString()
+      };
     }
   }
   return _decomposedCriteria;
+};
+
+/**
+ * 返回 decomposed_criteria.json 的加载状态，供 /health/detailed 端点使用。
+ * 若尚未触发加载，这里会主动触发一次以便健康检查能反映真实状态。
+ */
+const getDecomposedCriteriaStatus = () => {
+  if (!_decomposedCriteriaStatus.loadedAt) {
+    getDecomposedCriteria();
+  }
+  return { ..._decomposedCriteriaStatus };
 };
 
 /**
@@ -718,5 +786,8 @@ module.exports = {
   buildCoarseFilter,
   extractDiseaseKeywords,
   getPatientTreatmentLine,
-  getPatientPdl1
+  getPatientPdl1,
+  // Observability helpers
+  getDecomposedCriteriaStatus,
+  getTrialPrepStats
 };
