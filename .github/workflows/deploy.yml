@@ -191,7 +191,18 @@ jobs:
             echo "  ✓ Old container renamed to treatbot-api-prev-${TS}"
           fi
 
-          # A.4 启动新容器（同样 network/port/mount，env 来自备份文件）
+          # A.4 修复 bind mount 目录所有者（新镜像以 node uid=1000 运行，旧镜像可能是 root）
+          # 一次性操作 —— 后续 deploy 不会重复 chown（目录已是 1000:1000）
+          for d in /opt/treatbot/server/data /opt/treatbot/server/logs /opt/treatbot/server/uploads; do
+            mkdir -p "$d" 2>/dev/null || sudo -n mkdir -p "$d"
+            CUR_OWNER=$(stat -c '%u:%g' "$d" 2>/dev/null || echo "?")
+            if [ "$CUR_OWNER" != "1000:1000" ]; then
+              echo "  chown $d ($CUR_OWNER → 1000:1000)"
+              sudo -n chown -R 1000:1000 "$d" || (echo "  ⚠ chown failed (need sudo NOPASSWD); continuing"; true)
+            fi
+          done
+
+          # A.5 启动新容器（同样 network/port/mount，env 来自备份文件）
           docker run -d --name treatbot-api \
             --network server_treatbot-network \
             --restart unless-stopped \
