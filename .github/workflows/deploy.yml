@@ -323,16 +323,49 @@ jobs:
           case "$PROXY" in
             caddy)
               echo "  → Detected Caddy as reverse proxy"
-              # 找 Caddyfile
-              for f in /etc/caddy/Caddyfile /etc/caddy/conf.d/inseq.top /etc/caddy/conf.d/inseq.top.caddy /etc/caddy/sites/inseq.top; do
-                [ -f "$f" ] && CADDY_CONF="$f" && break
-              done
-              echo "  Caddyfile: ${CADDY_CONF:-NOT FOUND}"
+              CADDY_CONF=/etc/caddy/Caddyfile
+              if [ ! -f "$CADDY_CONF" ]; then
+                echo "  ⚠ $CADDY_CONF not found"
+              else
+                # 我们要确保 /api/demo/* 走 127.0.0.1:3000（默认 catch-all 走 5101，不能到 demo controller）
+                if grep -q '/api/demo/\*' "$CADDY_CONF"; then
+                  echo "  ✓ Caddyfile already lists /api/demo/* — no patch needed"
+                else
+                  CADDY_BAK=/etc/caddy/Caddyfile.bak.${TS}
+                  sudo -n cp "$CADDY_CONF" "$CADDY_BAK"
+                  echo "  ✓ Backed up to $CADDY_BAK"
 
-              # 从 Caddy admin API dump 当前完整配置（供我们 inspect）
-              echo "  --- caddy admin /config dump (first 80 lines) ---"
-              curl -sf http://127.0.0.1:2019/config/ 2>/dev/null | head -200 || echo "  (admin API unreachable)"
-              echo "  ---"
+                  # 在含 /api/auth/h5-login 的那行（白名单 reverse_proxy 到 3000 的开头）后插 /api/demo/*
+                  # Caddyfile 多行写法常见，每条 path 一行；用 awk 找到 anchor 后在它之前插一行
+                  sudo -n awk '
+                    BEGIN { inserted = 0 }
+                    /\/api\/auth\/h5-login/ && !inserted {
+                      # 复制当前行的缩进
+                      match($0, /^[[:space:]]*/)
+                      indent = substr($0, RSTART, RLENGTH)
+                      print indent "/api/demo/*"
+                      inserted = 1
+                    }
+                    { print }
+                    END { if (!inserted) exit 1 }
+                  ' "$CADDY_BAK" | sudo -n tee "$CADDY_CONF" > /dev/null
+
+                  if [ $? -ne 0 ]; then
+                    echo "  ⚠ Could not find /api/auth/h5-login anchor in Caddyfile — restoring"
+                    sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
+                  else
+                    # 验证
+                    if sudo -n caddy validate --config "$CADDY_CONF" --adapter caddyfile 2>&1 | grep -q "Valid"; then
+                      sudo -n systemctl reload caddy && echo "  ✅ Caddy patched + reloaded" \
+                        || (sudo -n caddy reload --config "$CADDY_CONF" --adapter caddyfile && echo "  ✅ Caddy reloaded via CLI") \
+                        || (echo "  ❌ Caddy reload failed — restoring"; sudo -n cp "$CADDY_BAK" "$CADDY_CONF"; sudo -n systemctl reload caddy)
+                    else
+                      echo "  ❌ Caddy config invalid — restoring"
+                      sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
+                    fi
+                  fi
+                fi
+              fi
               ;;
             nginx)
               echo "  → Detected nginx as reverse proxy"
