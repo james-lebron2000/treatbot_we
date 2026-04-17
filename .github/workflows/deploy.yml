@@ -122,4 +122,19 @@ jobs:
           grep -rl inseq /etc/nginx/ 2>/dev/null | head -5 || true
           echo "===== process tree (node) ====="
           ps -ef | grep -i node | grep -v grep || true
+          echo "===== treatbot-api container config ====="
+          docker inspect treatbot-api --format '
+IMAGE: {{.Config.Image}}
+NETWORK_MODE: {{.HostConfig.NetworkMode}}
+RESTART: {{.HostConfig.RestartPolicy.Name}}
+PORTS: {{range $p, $b := .HostConfig.PortBindings}}{{$p}}->{{(index $b 0).HostPort}} {{end}}
+ENVS:
+{{range .Config.Env}}  {{.}}
+{{end}}MOUNTS:
+{{range .Mounts}}  {{.Type}} {{.Source}} -> {{.Destination}} (rw={{.RW}})
+{{end}}LABELS:
+{{range $k, $v := .Config.Labels}}  {{$k}}={{$v}}
+{{end}}NETWORKS: {{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' 2>/dev/null || echo "(failed)"
+          echo "===== nginx upstream for inseq.top ====="
+          cat /etc/nginx/sites-enabled/treatbot 2>/dev/null | head -80 || true
           echo "===== DONE ====="
