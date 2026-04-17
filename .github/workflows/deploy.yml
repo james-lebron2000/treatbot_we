@@ -297,77 +297,79 @@ jobs:
           echo "::endgroup::"
 
           ###############################################
-          # PART C — nginx 反代补全（让 /, /api/*, /demo-assets/*, /health 都能命中容器）
+          # PART C — 反向代理补全（自动检测 nginx vs Caddy，patch 实际在跑的那个）
           ###############################################
-          echo "::group::C) nginx proxy patch"
+          echo "::group::C) Reverse-proxy patch"
 
-          NGX_CONF=/etc/nginx/sites-available/treatbot
-          NGX_BAK=/etc/nginx/sites-available/treatbot.bak.${TS}
-
-          if [ ! -f "$NGX_CONF" ]; then
-            echo "  ⚠ $NGX_CONF not found — skipping nginx patch"
-          else
-            # 检测是否已经有"通用 catch-all 把 / 或 /api/ 转到 3000"
-            HAS_API_CATCHALL=$(grep -E 'location\s+/api/?\s*\{' "$NGX_CONF" | wc -l)
-            HAS_ROOT_PROXY=$(grep -E 'location\s+/\s*\{' "$NGX_CONF" | wc -l)
-            HAS_DEMO_ASSETS=$(grep -E 'location\s+/demo-assets/?' "$NGX_CONF" | wc -l)
-
-            echo "  Detected: api-catchall=$HAS_API_CATCHALL root-proxy=$HAS_ROOT_PROXY demo-assets=$HAS_DEMO_ASSETS"
-
-            # 如果 catch-all 已经存在，跳过；否则插入到 server { ... } 末尾前
-            if [ "$HAS_API_CATCHALL" -ge 1 ] && [ "$HAS_DEMO_ASSETS" -ge 1 ] && [ "$HAS_ROOT_PROXY" -ge 1 ]; then
-              echo "  ✓ nginx already has all required locations — no patch needed"
-            else
-              # 备份
-              sudo -n cp "$NGX_CONF" "$NGX_BAK"
-              echo "  ✓ Backed up to $NGX_BAK"
-
-              # 补丁来自 repo 里 deploy/nginx-patch.conf（已通过 scp 上传到 /tmp/deploy/）
-              PATCH=/tmp/deploy/nginx-patch.conf
-              if [ ! -f "$PATCH" ]; then
-                echo "  ❌ Nginx patch file $PATCH not found"
-                exit 1
-              fi
-
-              # 用 sudo awk 在 server { ... } 块的 closing } 之前插入
-              sudo -n awk -v patch_file="$PATCH" '
-                BEGIN {
-                  while ((getline line < patch_file) > 0) patch = patch line "\n"
-                  close(patch_file)
-                  inserted = 0
-                  depth = 0
-                  in_server = 0
-                }
-                {
-                  # 计算大括号深度，找到 server 块
-                  if ($0 ~ /^server[[:space:]]*\{/) { in_server = 1; depth = 1; print; next }
-                  if (in_server) {
-                    n_open = gsub(/\{/, "&")
-                    n_close = gsub(/\}/, "&")
-                    depth += n_open - n_close
-                    if (depth == 0 && !inserted) {
-                      printf "%s", patch
-                      inserted = 1
-                      in_server = 0
-                    }
-                  }
-                  print
-                }
-              ' "$NGX_BAK" | sudo -n tee "$NGX_CONF" > /dev/null
-
-              # 测试 nginx 配置
-              if sudo -n nginx -t 2>&1; then
-                sudo -n nginx -s reload
-                echo "  ✅ nginx config patched and reloaded"
-              else
-                echo "  ❌ nginx -t failed — restoring backup"
-                sudo -n cp "$NGX_BAK" "$NGX_CONF"
-                exit 1
-              fi
-              rm -rf /tmp/deploy
-            fi
+          # 检测哪个反代真正在运行
+          PROXY=""
+          if pgrep -x nginx >/dev/null 2>&1 || systemctl is-active --quiet nginx 2>/dev/null; then
+            PROXY="nginx"
           fi
+          if pgrep -x caddy >/dev/null 2>&1 || systemctl is-active --quiet caddy 2>/dev/null; then
+            # Caddy 优先（占了 80/443 + admin 2019）
+            PROXY="caddy"
+          fi
+          # 用监听端口验证 —— 谁在 443？
+          PORT443=$(sudo -n ss -tlnp 2>/dev/null | awk '/:443 / {print $NF}' | head -1)
+          echo "  pgrep result: PROXY=$PROXY"
+          echo "  :443 listener: $PORT443"
+          if [ -z "$PROXY" ] && echo "$PORT443" | grep -qi caddy; then PROXY="caddy"; fi
+          if [ -z "$PROXY" ] && echo "$PORT443" | grep -qi nginx; then PROXY="nginx"; fi
 
+          PATCH=/tmp/deploy/nginx-patch.conf
+          [ -f "$PATCH" ] || { echo "  ❌ Patch file $PATCH missing"; PROXY=""; }
+
+          case "$PROXY" in
+            caddy)
+              echo "  → Detected Caddy as reverse proxy"
+              # 找 Caddyfile
+              for f in /etc/caddy/Caddyfile /etc/caddy/conf.d/inseq.top /etc/caddy/conf.d/inseq.top.caddy /etc/caddy/sites/inseq.top; do
+                [ -f "$f" ] && CADDY_CONF="$f" && break
+              done
+              echo "  Caddyfile: ${CADDY_CONF:-NOT FOUND}"
+
+              # 从 Caddy admin API dump 当前完整配置（供我们 inspect）
+              echo "  --- caddy admin /config dump (first 80 lines) ---"
+              curl -sf http://127.0.0.1:2019/config/ 2>/dev/null | head -200 || echo "  (admin API unreachable)"
+              echo "  ---"
+              ;;
+            nginx)
+              echo "  → Detected nginx as reverse proxy"
+              NGX_CONF=/etc/nginx/sites-available/treatbot
+              if [ ! -f "$NGX_CONF" ]; then
+                echo "  ⚠ $NGX_CONF not found"
+              else
+                NGX_BAK=/etc/nginx/sites-available/treatbot.bak.${TS}
+                HAS_API_CATCHALL=$(grep -E 'location\s+/api/?\s*\{' "$NGX_CONF" | wc -l)
+                HAS_ROOT=$(grep -E 'location\s*=\s*/\s*\{' "$NGX_CONF" | wc -l)
+                HAS_DEMO=$(grep -E 'location\s+/demo-assets/?' "$NGX_CONF" | wc -l)
+                if [ "$HAS_API_CATCHALL" -ge 1 ] && [ "$HAS_DEMO" -ge 1 ] && [ "$HAS_ROOT" -ge 1 ]; then
+                  echo "  ✓ nginx already has all locations"
+                else
+                  sudo -n cp "$NGX_CONF" "$NGX_BAK"
+                  sudo -n awk -v patch_file="$PATCH" '
+                    BEGIN { while ((getline line < patch_file) > 0) patch = patch line "\n"; close(patch_file); depth=0; in_server=0 }
+                    { if ($0 ~ /^server[[:space:]]*\{/) { in_server=1; depth=1; print; next }
+                      if (in_server) { n_open=gsub(/\{/,"&"); n_close=gsub(/\}/,"&"); depth += n_open-n_close; if (depth==0) { printf "%s", patch; in_server=0 } }
+                      print }
+                  ' "$NGX_BAK" | sudo -n tee "$NGX_CONF" > /dev/null
+                  if sudo -n nginx -t 2>&1; then
+                    sudo -n nginx -s reload && echo "  ✅ nginx patched + reloaded" || echo "  ⚠ reload failed (nginx not running?)"
+                  else
+                    echo "  ❌ nginx -t failed — restoring backup"
+                    sudo -n cp "$NGX_BAK" "$NGX_CONF"
+                  fi
+                fi
+              fi
+              ;;
+            *)
+              echo "  ⚠ Could not auto-detect reverse proxy — skipping patch"
+              echo "  Listening on :443: $PORT443"
+              ;;
+          esac
+
+          rm -rf /tmp/deploy
           echo "::endgroup::"
 
           ###############################################
