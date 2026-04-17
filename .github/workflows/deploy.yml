@@ -122,19 +122,20 @@ jobs:
           grep -rl inseq /etc/nginx/ 2>/dev/null | head -5 || true
           echo "===== process tree (node) ====="
           ps -ef | grep -i node | grep -v grep || true
-          echo "===== treatbot-api container config ====="
-          docker inspect treatbot-api --format '
-IMAGE: {{.Config.Image}}
-NETWORK_MODE: {{.HostConfig.NetworkMode}}
-RESTART: {{.HostConfig.RestartPolicy.Name}}
-PORTS: {{range $p, $b := .HostConfig.PortBindings}}{{$p}}->{{(index $b 0).HostPort}} {{end}}
-ENVS:
-{{range .Config.Env}}  {{.}}
-{{end}}MOUNTS:
-{{range .Mounts}}  {{.Type}} {{.Source}} -> {{.Destination}} (rw={{.RW}})
-{{end}}LABELS:
-{{range $k, $v := .Config.Labels}}  {{$k}}={{$v}}
-{{end}}NETWORKS: {{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' 2>/dev/null || echo "(failed)"
+          echo "===== treatbot-api: image ====="
+          docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "(failed)"
+          echo "===== treatbot-api: network mode + restart ====="
+          docker inspect treatbot-api -f 'net={{.HostConfig.NetworkMode}} restart={{.HostConfig.RestartPolicy.Name}}' 2>/dev/null || true
+          echo "===== treatbot-api: port bindings ====="
+          docker inspect treatbot-api -f '{{json .HostConfig.PortBindings}}' 2>/dev/null || true
+          echo "===== treatbot-api: env (sanitized — no values containing 'PASS|SECRET|KEY|TOKEN') ====="
+          docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -viE '(PASS|SECRET|KEY|TOKEN)=' || true
+          echo "===== treatbot-api: env names only (sensitive ones) ====="
+          docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -iE '(PASS|SECRET|KEY|TOKEN)=' | sed 's/=.*/=<redacted>/' || true
+          echo "===== treatbot-api: mounts ====="
+          docker inspect treatbot-api -f '{{json .Mounts}}' 2>/dev/null || true
+          echo "===== treatbot-api: networks ====="
+          docker inspect treatbot-api -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' 2>/dev/null || true
           echo "===== nginx upstream for inseq.top ====="
           cat /etc/nginx/sites-enabled/treatbot 2>/dev/null | head -80 || true
           echo "===== DONE ====="
