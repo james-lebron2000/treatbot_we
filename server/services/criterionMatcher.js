@@ -37,6 +37,60 @@ const NOT_MET = 'not_met';   // Criterion is NOT satisfied (hard fail)
 const UNCERTAIN = 'uncertain'; // Cannot determine — missing patient data
 const NOT_APPLICABLE = 'not_applicable'; // Criterion doesn't apply to this patient
 
+// ---- Therapy class → drug/keyword expansion ----
+// Shared between evaluateExcludedTherapy and evaluateRequiredTherapy so class-level
+// criteria (e.g., "免疫治疗") match specific drug names in patient records.
+// Keys are matched against trial criterion text (normalized, no punctuation).
+//
+// Keep this list conservative. Each class name MUST be unambiguous so that when a
+// trial's exclusion text contains the class label, patient exposure to any member
+// drug is clearly a real exclusion. Narrow-scoped targeted therapy classes (e.g.,
+// HER2-TKI, EGFR-TKI) are intentionally excluded here — those criteria usually
+// include specific drug names already, and a loose class map risks over-exclusion
+// when the trial permits a specific sub-generation.
+const THERAPY_CLASSES = {
+  '免疫治疗': [
+    'pd1', 'pdl1', 'pd-1', 'pd-l1', 'ctla4', 'ctla-4',
+    '免疫检查点', '检查点抑制剂',
+    'pembrolizumab', 'nivolumab', 'atezolizumab', 'durvalumab',
+    'ipilimumab', 'tremelimumab', 'avelumab', 'cemiplimab',
+    '帕博利珠', '纳武利尤', '阿替利珠', '信迪利', '卡瑞利珠',
+    '替雷利珠', '特瑞普利', '度伐利尤', '派安普利', '赛帕利'
+  ],
+  '免疫检查点抑制剂': [
+    'pd1', 'pdl1', 'pd-1', 'pd-l1', 'ctla4', 'ctla-4',
+    'pembrolizumab', 'nivolumab', 'atezolizumab', 'durvalumab',
+    'ipilimumab', 'tremelimumab',
+    '帕博利珠', '纳武利尤', '阿替利珠', '信迪利', '卡瑞利珠',
+    '替雷利珠', '特瑞普利', '度伐利尤', '派安普利', '赛帕利'
+  ],
+  '免疫细胞治疗': ['car-t', 'cart', 'tcr-t', 'til治疗', '过继性细胞', '细胞免疫'],
+  '铂类化疗': [
+    '卡铂', '顺铂', '奥沙利铂', '奈达铂', 'platinum',
+    'folfox', 'xelox', 'capeox', 'gemox'
+  ],
+  '铂类': [
+    '卡铂', '顺铂', '奥沙利铂', '奈达铂', 'platinum',
+    'folfox', 'xelox', 'capeox', 'gemox'
+  ]
+};
+
+// Build a normalized lookup for class name → keywords (precomputed for speed).
+const NORMALIZED_THERAPY_CLASSES = Object.entries(THERAPY_CLASSES).map(([cls, drugs]) => ({
+  classLabel: cls,
+  classNorm: normalizeText(cls),
+  drugNorms: drugs.map((d) => normalizeText(d)).filter(Boolean)
+}));
+
+/**
+ * Given a criterion text (normalized), return all matching therapy classes
+ * whose class name appears in the text.
+ */
+const matchTherapyClasses = (criterionNorm) => {
+  if (!criterionNorm) return [];
+  return NORMALIZED_THERAPY_CLASSES.filter((c) => c.classNorm && criterionNorm.includes(c.classNorm));
+};
+
 /**
  * Evaluate a single criterion against a patient profile (deterministic rules)
  * @param {Object} criterion - Decomposed criterion object
@@ -380,15 +434,31 @@ const evaluateExcludedTherapy = (s, profile) => {
   // Check each excluded therapy
   for (const excTherapy of excluded) {
     const excNorm = normalizeText(excTherapy);
-    // Check for drug name or therapy class overlap
+
+    // 1) Direct keyword match (drug names or short phrases)
     const keywords = excNorm.split(/[，,、；;]/g).filter(Boolean);
     for (const kw of keywords) {
       if (kw.length >= 2 && patientTherapies.includes(kw)) {
         return {
           status: MET,
           evidence: `患者既往使用过"${excTherapy}"相关治疗，试验排除此类患者`,
-          confidence: 0.75
+          confidence: 0.80
         };
+      }
+    }
+
+    // 2) Therapy class expansion — e.g., trial excludes "免疫治疗",
+    //    map to PD-1/PD-L1 drug names and check patient record.
+    const classes = matchTherapyClasses(excNorm);
+    for (const c of classes) {
+      for (const drugNorm of c.drugNorms) {
+        if (drugNorm && patientTherapies.includes(drugNorm)) {
+          return {
+            status: MET,
+            evidence: `患者既往治疗包含${c.classLabel}类药物（命中 "${drugNorm}"），被试验排除`,
+            confidence: 0.82
+          };
+        }
       }
     }
   }
@@ -409,15 +479,6 @@ const evaluateRequiredTherapy = (s, profile) => {
     return { status: UNCERTAIN, evidence: '患者既往治疗信息缺失', confidence: 0.3 };
   }
 
-  // Check for generic therapy class keywords
-  const classKeywords = {
-    '铂类化疗': ['铂', '卡铂', '顺铂', '奥沙利铂', 'platinum', 'folfox', 'xelox', 'capeox'],
-    '免疫治疗': ['pd1', 'pdl1', 'pd-1', 'pd-l1', '免疫', '单抗', 'pembrolizumab', 'nivolumab', 'atezolizumab', '信迪利', '卡瑞利', '帕博利珠'],
-    '靶向治疗': ['靶向', 'tki', '替尼', '替布', 'egfr', 'alk'],
-    '化疗': ['化疗', '培美', '紫杉', '多西他赛', '依托泊苷', '伊立替康', 'folfox', 'folfiri', '卡培他滨'],
-    '标准治疗': [] // Generic — accept if any treatment exists
-  };
-
   for (const reqTherapy of required) {
     const reqNorm = normalizeText(reqTherapy);
 
@@ -429,16 +490,17 @@ const evaluateRequiredTherapy = (s, profile) => {
       return { status: UNCERTAIN, evidence: `"${reqTherapy}"需要确认`, confidence: 0.4 };
     }
 
-    // Check specific therapy class
+    // Check specific therapy class using shared THERAPY_CLASSES map
     let found = false;
-    for (const [className, keywords] of Object.entries(classKeywords)) {
-      if (reqNorm.includes(normalizeText(className))) {
-        found = keywords.some(kw => patientTherapies.includes(normalizeText(kw)));
-        if (found) break;
+    const classes = matchTherapyClasses(reqNorm);
+    for (const c of classes) {
+      if (c.drugNorms.some((kw) => patientTherapies.includes(kw))) {
+        found = true;
+        break;
       }
     }
 
-    // Direct keyword match
+    // Direct keyword match (fallback): check drug-name substring
     if (!found) {
       found = patientTherapies.includes(reqNorm.substring(0, Math.min(6, reqNorm.length)));
     }
@@ -528,6 +590,8 @@ module.exports = {
   evaluateDeterministic,
   evaluateSemantic,
   evaluateAllCriteria,
+  matchTherapyClasses,
+  THERAPY_CLASSES,
   MET,
   NOT_MET,
   UNCERTAIN,
