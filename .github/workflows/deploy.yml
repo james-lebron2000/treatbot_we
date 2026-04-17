@@ -354,8 +354,13 @@ jobs:
                     echo "  ⚠ Could not find /api/auth/h5-login anchor in Caddyfile — restoring"
                     sudo -n cp "$CADDY_BAK" "$CADDY_CONF"
                   else
-                    # 验证
-                    if sudo -n caddy validate --config "$CADDY_CONF" --adapter caddyfile 2>&1 | grep -q "Valid"; then
+                    echo "  --- Caddyfile diff (patched vs backup) ---"
+                    sudo -n diff "$CADDY_BAK" "$CADDY_CONF" || true
+                    echo "  --- caddy validate output ---"
+                    VALIDATE=$(sudo -n caddy validate --config "$CADDY_CONF" --adapter caddyfile 2>&1)
+                    echo "$VALIDATE" | head -20
+                    echo "  --- end validate ---"
+                    if echo "$VALIDATE" | grep -qiE "(Valid|valid configuration)"; then
                       sudo -n systemctl reload caddy && echo "  ✅ Caddy patched + reloaded" \
                         || (sudo -n caddy reload --config "$CADDY_CONF" --adapter caddyfile && echo "  ✅ Caddy reloaded via CLI") \
                         || (echo "  ❌ Caddy reload failed — restoring"; sudo -n cp "$CADDY_BAK" "$CADDY_CONF"; sudo -n systemctl reload caddy)
