@@ -96,25 +96,30 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          set -e
-          cd /opt/treatbot
-          echo "===== docker-compose.yml ====="
-          cat docker-compose.yml || true
-          echo "===== docker-compose pull ====="
-          docker-compose pull
-          echo "===== docker-compose up -d ====="
-          docker-compose up -d
-          echo "===== docker ps ====="
-          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
-          echo "===== treatbot images ====="
-          docker images | grep -i treatbot || echo "(no treatbot images)"
-          echo "===== api container HEAD commit (from /app) ====="
-          API_CT=$(docker ps --format '{{.Names}}' | grep -i api | head -1 || true)
-          if [ -n "$API_CT" ]; then
-            docker exec "$API_CT" sh -c 'ls -la /app/public/landing 2>/dev/null && echo "--- demo.js ---" && ls -la /app/controllers/demo.js 2>/dev/null && ls -la /app/fixtures 2>/dev/null' || echo "(failed to inspect $API_CT)"
-          else
-            echo "(no api container running)"
-          fi
-          echo "===== nginx config (if any) ====="
+          # Diagnostic-only mode: figure out where treatbot actually lives.
+          # Each block tolerates failure (|| true) so we capture everything.
+          echo "===== whoami / pwd ====="
+          whoami; pwd; uname -a
+          echo "===== /opt/treatbot ====="
+          ls -la /opt/treatbot 2>/dev/null || echo "(missing)"
+          echo "===== /srv/treatbot ====="
+          ls -la /srv/treatbot 2>/dev/null || echo "(missing)"
+          echo "===== /home dirs ====="
+          ls -la /home 2>/dev/null || true
+          echo "===== docker ps -a ====="
+          docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo "(docker not usable)"
+          echo "===== docker images (treatbot) ====="
+          docker images 2>/dev/null | grep -i treatbot || echo "(no treatbot images)"
+          echo "===== pm2 list ====="
+          pm2 list 2>/dev/null || echo "(no pm2)"
+          echo "===== systemd treatbot ====="
+          systemctl list-units --type=service 2>/dev/null | grep -i treatbot || echo "(no treatbot service)"
+          echo "===== listening ports ====="
+          ss -tlnp 2>/dev/null | head -20 || netstat -tlnp 2>/dev/null | head -20 || true
+          echo "===== nginx sites ====="
+          ls /etc/nginx/sites-enabled/ 2>/dev/null || true
           ls /etc/nginx/conf.d/ 2>/dev/null || true
-          docker system prune -f
+          grep -rl inseq /etc/nginx/ 2>/dev/null | head -5 || true
+          echo "===== process tree (node) ====="
+          ps -ef | grep -i node | grep -v grep || true
+          echo "===== DONE ====="
