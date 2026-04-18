@@ -3,636 +3,456 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#1e40af" />
-  <title>TreatBot · AI 临床试验匹配平台</title>
-  <meta name="description" content="TreatBot 是为中国癌症患者打造的临床试验匹配助手。上传病历，AI 3 分钟内给出正在招募的临床试验名单，并支持一键预约、PDF 导出、脱敏存储。" />
-  <meta name="keywords" content="临床试验,癌症,肝癌,肺癌,非小细胞肺癌,AI 匹配,治疗方案,病历解析,CRO,临床研究" />
-  <meta property="og:title" content="TreatBot · AI 临床试验匹配平台" />
-  <meta property="og:description" content="上传病历 → AI 提取诊断与分期 → 匹配正在招募的临床试验。3 分钟完成，数据全程加密。" />
+  <meta name="theme-color" content="#0a0e1a" />
+  <title>ShuYu Health · 上传病历，帮您找到合适的治疗方案</title>
+  <meta name="description" content="数愈科技 ShuYu Health：把病历拍照上传，我们帮您看懂它，给出参考建议，还能匹配可能适合您的免费新药临床试验。免费 · 安全 · 几分钟就能用。" />
+  <meta name="keywords" content="临床试验,癌症,肝癌,肺癌,AI 匹配,病历解析,治疗建议,新药试验,CSCO,NCCN,ESMO" />
+  <meta property="og:title" content="ShuYu Health · 上传病历，帮您找到合适的治疗方案" />
+  <meta property="og:description" content="把病历拍照上传 → 看懂它 → 给出参考方案 → 匹配新药试验。几分钟，免费。" />
   <meta property="og:type" content="website" />
   <style>
     :root {
-      --blue: #1e40af;
-      --blue-2: #2563eb;
-      --blue-light: #eff6ff;
-      --green: #16a34a;
-      --green-light: #f0fdf4;
-      --amber: #f59e0b;
-      --amber-light: #fffbeb;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --line: #e5e7eb;
-      --bg: #f9fafb;
+      --bg-deep: #0a0e1a;
+      --bg-surface: #12172a;
+      --bg-surface-2: #161b2e;
+      --bg-cream: #f3ece0;
+      --bg-cream-2: #ece4d4;
+      --text-light: #eef1f7;
+      --text-light-dim: #aeb5c7;
+      --text-light-muted: #7a8198;
+      --text-dark: #1f2430;
+      --text-dark-dim: #4b5260;
+      --text-dark-muted: #7a8195;
+      --line-light: rgba(255, 255, 255, 0.08);
+      --line-dark: rgba(0, 0, 0, 0.08);
+      --accent-blue: #3b82f6;
+      --accent-blue-bg: rgba(59, 130, 246, 0.12);
+      --accent-blue-border: rgba(59, 130, 246, 0.28);
+      --num-blue: #6aa2ff;
+      --num-blue-bg: rgba(106, 162, 255, 0.12);
+      --num-green: #6ed39b;
+      --num-green-bg: rgba(110, 211, 155, 0.14);
+      --num-peach: #f5a987;
+      --num-peach-bg: rgba(245, 169, 135, 0.16);
+      --tag-red: #d94f4f;
+      --tag-red-bg: #fbe4e0;
+      --tag-olive: #7a6c2e;
+      --tag-olive-bg: #ece0b8;
     }
 
     * { box-sizing: border-box; }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: var(--text);
-      background: #ffffff;
-      line-height: 1.6;
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-light);
+      line-height: 1.65;
       -webkit-font-smoothing: antialiased;
     }
-
     a { color: inherit; text-decoration: none; }
 
-    .container {
-      max-width: 1120px;
-      margin: 0 auto;
-      padding: 0 20px;
+    .container { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+    /* ===== Nav ===== */
+    .nav {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(10, 14, 26, 0.88);
+      backdrop-filter: saturate(140%) blur(10px);
+      -webkit-backdrop-filter: saturate(140%) blur(10px);
+      border-bottom: 1px solid var(--line-light);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+    .brand-logo {
+      width: 26px; height: 26px; border-radius: 8px;
+      background: conic-gradient(from 220deg, #60a5fa, #a78bfa, #f472b6, #60a5fa);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.15) inset;
+    }
+    .nav-links { display: flex; gap: 26px; font-size: 14px; color: var(--text-light-dim); }
+    .nav-links a:hover { color: var(--text-light); }
+    @media (max-width: 640px) {
+      .nav-links { gap: 18px; font-size: 13px; }
+      .brand-logo { width: 22px; height: 22px; }
     }
 
-    /* 顶部导航 */
-    header.topbar {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      background: rgba(255, 255, 255, 0.92);
-      backdrop-filter: saturate(180%) blur(12px);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .topbar-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 58px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 600;
-      font-size: 1.05rem;
-      letter-spacing: 0.01em;
-      color: var(--blue);
-    }
-
-    .brand .mark {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #2563eb, #16a34a);
-      color: #fff;
-      font-weight: 700;
-      font-size: 0.95rem;
-    }
-
-    .topbar nav {
-      display: flex;
-      gap: 22px;
-      font-size: 0.9rem;
-      color: var(--muted);
-    }
-
-    .topbar nav a:hover { color: var(--blue); }
-
-    /* Hero */
-    .hero {
-      padding: 72px 0 48px;
-      background: linear-gradient(180deg, var(--blue-light) 0%, #ffffff 100%);
-    }
-
-    .hero-inner {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 48px;
-      align-items: center;
-    }
-
-    .hero h1 {
-      font-size: 2.4rem;
-      line-height: 1.25;
-      margin: 0 0 16px;
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .hero h1 .accent {
-      background: linear-gradient(120deg, #2563eb 0%, #16a34a 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      white-space: nowrap;
-    }
-
-    .hero p.lead {
-      font-size: 1.08rem;
-      color: #374151;
-      margin: 0 0 28px;
-      max-width: 560px;
-    }
-
-    .cta-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 13px 22px;
-      border-radius: 10px;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-      min-width: 180px;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-      color: #fff;
-      box-shadow: 0 6px 18px rgba(37, 99, 235, 0.24);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.32);
-    }
-
-    .btn-secondary {
-      background: #fff;
-      color: var(--blue);
-      border-color: #bfdbfe;
-    }
-
-    .btn-secondary:hover {
-      background: var(--blue-light);
-      border-color: #93c5fd;
-    }
-
-    .btn .arrow {
-      transition: transform 160ms ease;
-    }
-
-    .btn:hover .arrow { transform: translateX(2px); }
-
-    .trust-line {
-      font-size: 0.85rem;
-      color: var(--muted);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px 16px;
-    }
-
-    .trust-line .dot::before {
-      content: "•";
-      margin-right: 8px;
-      color: #9ca3af;
-    }
-
-    /* Hero 右侧可视化卡片 */
-    .hero-card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 22px;
-      box-shadow: 0 24px 48px rgba(17, 24, 39, 0.08);
-    }
-
-    .hero-card .chip {
+    /* ===== Hero ===== */
+    .hero { padding: 72px 0 56px; text-align: center; }
+    .eyebrow {
       display: inline-block;
-      padding: 3px 10px;
+      padding: 5px 14px;
       border-radius: 999px;
-      font-size: 0.72rem;
-      background: var(--green-light);
-      color: #166534;
-      margin-bottom: 10px;
+      background: var(--accent-blue-bg);
+      border: 1px solid var(--accent-blue-border);
+      color: #b8cdff;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      margin-bottom: 22px;
+    }
+    .hero h1 {
+      font-size: 44px; line-height: 1.25; font-weight: 700;
+      margin: 0 auto 18px; max-width: 780px;
+      color: #eef1f7;
+      letter-spacing: -0.01em;
+    }
+    .hero-sub {
+      font-size: 15.5px; color: var(--text-light-dim);
+      max-width: 620px; margin: 0 auto 34px;
+    }
+    .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 13px 22px; border-radius: 12px;
+      font-size: 15px; font-weight: 500;
+      transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+      border: 1px solid transparent; cursor: pointer;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary {
+      background: #f3f4f6; color: #0a0e1a;
+      border-color: #f3f4f6;
+    }
+    .btn-primary:hover { background: #fff; }
+    .btn-ghost {
+      background: transparent; color: var(--text-light-dim);
+      border-color: rgba(255,255,255,0.14);
+    }
+    .btn-ghost:hover { color: var(--text-light); border-color: rgba(255,255,255,0.28); }
+    .arrow { display: inline-block; }
+    .hero-extra {
+      margin-top: 22px; font-size: 12.5px; color: var(--text-light-muted);
+    }
+    .hero-extra .sep { margin: 0 8px; opacity: 0.5; }
+    .desktop-hint {
+      margin-top: 14px; font-size: 13px; color: var(--text-light-muted);
+    }
+    .desktop-hint a { color: #9bb3ff; border-bottom: 1px dashed rgba(155,179,255,0.4); padding-bottom: 1px; }
+    .desktop-hint a:hover { color: #c4d2ff; }
+    @media (max-width: 640px) {
+      .hero { padding: 48px 0 40px; }
+      .hero h1 { font-size: 30px; line-height: 1.3; }
+      .hero-sub { font-size: 14px; }
+      .btn { padding: 12px 18px; font-size: 14px; }
     }
 
-    .hero-card h3 {
-      margin: 0 0 8px;
-      font-size: 1.05rem;
+    /* ===== Section common ===== */
+    .section { padding: 48px 0; }
+    .section-title {
+      text-align: center; font-size: 22px; font-weight: 600;
+      margin: 0 0 28px; color: var(--text-light);
+    }
+    .section.on-cream .section-title { color: var(--text-dark); }
+    .section-sub {
+      text-align: center; font-size: 14px; color: var(--text-light-dim);
+      margin: -18px auto 26px; max-width: 560px;
+    }
+    .section.on-cream .section-sub { color: var(--text-dark-dim); }
+
+    /* ===== Steps (三步就能用) ===== */
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    }
+    .step-card {
+      background: var(--bg-surface); border: 1px solid var(--line-light);
+      border-radius: 14px; padding: 20px;
+    }
+    .num-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 50%;
+      font-size: 13px; font-weight: 600; margin-bottom: 14px;
+    }
+    .num-1 { background: var(--num-blue-bg); color: var(--num-blue); }
+    .num-2 { background: var(--num-green-bg); color: var(--num-green); }
+    .num-3 { background: var(--num-peach-bg); color: var(--num-peach); }
+    .step-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+    .step-card p { margin: 0; font-size: 14px; color: var(--text-light-dim); line-height: 1.6; }
+    @media (max-width: 760px) {
+      .steps-grid { grid-template-columns: 1fr; }
     }
 
-    .hero-card .fields {
-      display: grid;
-      gap: 8px;
-      margin-top: 12px;
+    /* ===== Prep (上传前准备) on cream ===== */
+    .cream {
+      background: var(--bg-cream);
+      color: var(--text-dark);
+    }
+    .cream .container { padding-top: 10px; padding-bottom: 10px; }
+    .prep-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+      margin-bottom: 18px;
+    }
+    .prep-card {
+      background: #fbf7ed; border: 1px solid var(--line-dark);
+      border-radius: 12px; padding: 16px 18px;
+      position: relative;
+    }
+    .prep-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .prep-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      font-size: 12px; font-weight: 700; color: #4b5260;
+      background: #ece4d4;
+    }
+    .prep-card h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-dark); }
+    .prep-card p { margin: 0; font-size: 13.5px; color: var(--text-dark-dim); line-height: 1.6; }
+    .tag {
+      position: absolute; right: 14px; top: 16px;
+      font-size: 11px; padding: 2px 8px; border-radius: 6px;
+    }
+    .tag-must { background: var(--tag-red-bg); color: var(--tag-red); }
+    .tag-optional { background: var(--tag-olive-bg); color: var(--tag-olive); }
+    .tip-box {
+      background: #e8edfb; border: 1px solid #c9d4f5;
+      border-radius: 12px; padding: 14px 18px;
+      color: #1d3a8a; font-size: 13.5px;
+    }
+    .tip-box strong { display: block; margin-bottom: 6px; color: #1e3a8a; }
+    .tip-box ul { margin: 0; padding-left: 18px; }
+    .tip-box li { margin: 2px 0; }
+    @media (max-width: 760px) {
+      .prep-grid { grid-template-columns: 1fr; }
     }
 
-    .field-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 12px;
-      background: var(--bg);
-      border-radius: 8px;
-      font-size: 0.88rem;
+    /* ===== Audience (谁在用) ===== */
+    .audience-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    }
+    .aud-card {
+      background: var(--bg-surface); border: 1px solid var(--line-light);
+      border-radius: 14px; padding: 20px;
+    }
+    .aud-card h4 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+    .aud-card p { margin: 0; font-size: 13.5px; color: var(--text-light-dim); line-height: 1.7; }
+    @media (max-width: 760px) {
+      .audience-grid { grid-template-columns: 1fr; }
     }
 
-    .field-row .k { color: var(--muted); }
-    .field-row .v { color: var(--text); font-weight: 500; }
-
-    .match-strip {
-      margin-top: 14px;
-      padding: 12px;
-      background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-      border-radius: 10px;
-      font-size: 0.85rem;
+    /* ===== Trust (为什么信任) on cream ===== */
+    .trust-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 36px;
+      max-width: 760px; margin: 0 auto;
+    }
+    .trust-item {
+      font-size: 14px; color: var(--text-dark);
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .trust-item::before {
+      content: "·"; color: #9a8550; font-weight: 700;
+    }
+    @media (max-width: 640px) {
+      .trust-grid { grid-template-columns: 1fr; }
     }
 
-    .match-strip strong { color: var(--blue); }
-
-    /* Section 通用 */
-    section.block {
-      padding: 64px 0;
-    }
-
-    section.block h2 {
-      font-size: 1.7rem;
-      margin: 0 0 6px;
-    }
-
-    section.block .block-sub {
-      color: var(--muted);
-      margin: 0 0 32px;
-      font-size: 0.98rem;
-    }
-
-    /* How it works */
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-    }
-
-    .step {
-      padding: 24px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      transition: transform 160ms ease, box-shadow 160ms ease;
-    }
-
-    .step:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 24px rgba(17, 24, 39, 0.05);
-    }
-
-    .step .num {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--blue-light);
-      color: var(--blue);
-      font-weight: 700;
-      margin-bottom: 14px;
-    }
-
-    .step h3 { margin: 0 0 6px; font-size: 1.05rem; }
-    .step p { margin: 0; color: var(--muted); font-size: 0.92rem; }
-
-    /* 价值点 */
-    .values {
-      background: var(--bg);
-    }
-
-    .value-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-    }
-
-    .value-card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 20px;
-    }
-
-    .value-card .v-title {
-      font-weight: 600;
-      margin-bottom: 6px;
-      color: var(--blue);
-    }
-
-    .value-card p {
-      margin: 0;
-      color: #374151;
-      font-size: 0.92rem;
-    }
-
-    /* FAQ / 说明 */
-    .faq details {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 14px 18px;
-      margin-bottom: 10px;
-    }
-
-    .faq summary {
-      cursor: pointer;
-      font-weight: 500;
-      color: var(--text);
-      outline: none;
-    }
-
-    .faq summary::-webkit-details-marker { display: none; }
-    .faq summary::before {
-      content: "+";
-      display: inline-block;
-      width: 20px;
-      color: var(--blue);
-      font-weight: 700;
-    }
-    .faq details[open] summary::before { content: "−"; }
-
-    .faq details p {
-      margin: 10px 0 0;
-      color: #4b5563;
-      font-size: 0.92rem;
-      line-height: 1.65;
-    }
-
-    /* Bottom CTA */
-    .bottom-cta {
-      padding: 56px 0;
-      background: linear-gradient(135deg, #1e40af 0%, #16a34a 100%);
-      color: #fff;
-      text-align: center;
-    }
-
+    /* ===== Bottom CTA ===== */
+    .bottom-cta { padding: 72px 0 64px; text-align: center; }
     .bottom-cta h2 {
-      margin: 0 0 10px;
-      font-size: 1.6rem;
+      font-size: 30px; font-weight: 700; margin: 0 0 12px; color: var(--text-light);
+      letter-spacing: -0.01em;
     }
+    .bottom-cta p { margin: 0 0 26px; color: var(--text-light-dim); font-size: 14.5px; }
 
-    .bottom-cta p {
-      margin: 0 0 24px;
-      color: rgba(255, 255, 255, 0.88);
-    }
-
-    .bottom-cta .btn-primary {
-      background: #fff;
-      color: var(--blue);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
-    }
-
-    .bottom-cta .btn-secondary {
-      background: transparent;
-      color: #fff;
-      border-color: rgba(255, 255, 255, 0.6);
-    }
-
-    .bottom-cta .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.12);
-    }
-
-    /* Footer */
+    /* ===== Footer ===== */
     footer {
-      padding: 28px 0 40px;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 0.85rem;
+      border-top: 1px solid var(--line-light);
+      padding: 22px 0 30px; text-align: center;
+      font-size: 12.5px; color: var(--text-light-muted);
     }
+    footer .foot-links { margin-top: 8px; }
+    footer .foot-links a { color: var(--text-light-dim); margin: 0 10px; }
+    footer .foot-links a:hover { color: var(--text-light); }
 
-    footer .foot-inner {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    /* Responsive */
-    @media (max-width: 860px) {
-      .hero { padding: 48px 0 36px; }
-      .hero-inner { grid-template-columns: 1fr; gap: 28px; }
-      .hero h1 { font-size: 1.85rem; }
-      .steps, .value-grid { grid-template-columns: 1fr; }
-      section.block { padding: 48px 0; }
-      .topbar nav { display: none; }
-      .btn { min-width: 0; width: 100%; }
-      .cta-row { flex-direction: column; }
+    /* ===== Skip nav helper for screen readers ===== */
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0,0,0,0); white-space: nowrap; border: 0;
     }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="container topbar-inner">
-      <div class="brand">
-        <span class="mark">T</span>
-        <span>TreatBot</span>
-      </div>
-      <nav>
-        <a href="#how">工作方式</a>
-        <a href="#value">能帮到谁</a>
-        <a href="#faq">常见问题</a>
-        <a href="/h5/quick-match/login">登录</a>
+
+  <!-- ===== Nav ===== -->
+  <header class="nav" id="home">
+    <div class="container nav-inner">
+      <a href="/" class="brand">
+        <span class="brand-logo" aria-hidden="true"></span>
+        <span>ShuYu Health</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#home">首页</a>
+        <a href="#how">怎么用</a>
+        <a href="#about">关于我们</a>
       </nav>
     </div>
   </header>
 
-  <main>
-    <!-- Hero -->
-    <section class="hero">
-      <div class="container hero-inner">
-        <div>
-          <h1>
-            3 分钟，为癌症患者<br />
-            匹配<span class="accent">正在招募的临床试验</span>
-          </h1>
-          <p class="lead">
-            上传一份病理报告或出院小结，TreatBot 会自动识别诊断、分期、基因突变、治疗史，
-            从正在招募的数百项临床试验中挑出最契合的几条，并解释为什么匹配。
-          </p>
-
-          <div class="cta-row">
-            <a class="btn btn-primary" href="/h5/quick-match/login">
-              立即使用 · 上传我的病历
-              <span class="arrow">→</span>
-            </a>
-            <a class="btn btn-secondary" href="/treatbot/demo">
-              查看样例演示
-              <span class="arrow">→</span>
-            </a>
-          </div>
-
-          <div class="trust-line">
-            <span>全程手机号登录，无需下载 App</span>
-            <span class="dot">病历信息加密存储，可随时删除</span>
-            <span class="dot">演示无需登录</span>
-          </div>
-        </div>
-
-        <!-- 示意卡：模拟一份病历被解析后的结果 -->
-        <div class="hero-card" aria-hidden="true">
-          <span class="chip">AI 解析样例 · 肺癌</span>
-          <h3>非小细胞肺癌（肺腺癌）</h3>
-          <div class="fields">
-            <div class="field-row"><span class="k">分期</span><span class="v">IV 期</span></div>
-            <div class="field-row"><span class="k">基因检测</span><span class="v">EGFR L858R</span></div>
-            <div class="field-row"><span class="k">PD-L1</span><span class="v">TPS 30%</span></div>
-            <div class="field-row"><span class="k">既往治疗</span><span class="v">奥希替尼一线进展</span></div>
-            <div class="field-row"><span class="k">ECOG</span><span class="v">1 分</span></div>
-          </div>
-          <div class="match-strip">
-            匹配到 <strong>5</strong> 项招募中的临床试验 · 最高匹配度 <strong>99 分</strong>
-          </div>
-        </div>
+  <!-- ===== Hero ===== -->
+  <section class="hero">
+    <div class="container">
+      <div class="eyebrow">免费 · 安全 · 几分钟就能用</div>
+      <h1>上传病历，<br/>帮您找到合适的治疗方案</h1>
+      <p class="hero-sub">
+        把病历拍照上传。<br/>
+        我们帮您看懂它，给出参考建议，还能找到可能适合您的新药临床试验。
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="/h5/quick-match" aria-label="开始匹配（手机端）">
+          开始匹配 <span class="arrow">→</span>
+        </a>
+        <a class="btn btn-ghost" href="/treatbot/demo" aria-label="先看演示，无需登录">
+          先看演示
+        </a>
       </div>
-    </section>
+      <div class="hero-extra">
+        您的病历全程加密 <span class="sep">·</span> 仅供参考，不代替医生看病
+      </div>
+      <div class="desktop-hint">
+        在电脑上使用？<a href="/treatbot/">打开网页版上传入口 →</a>
+      </div>
+    </div>
+  </section>
 
-    <!-- How it works -->
-    <section class="block" id="how">
-      <div class="container">
-        <h2>它是怎么工作的</h2>
-        <p class="block-sub">从拍病历到拿到匹配结果，只有 3 步。</p>
-
-        <div class="steps">
-          <div class="step">
-            <div class="num">1</div>
-            <h3>上传病历</h3>
-            <p>
-              病理报告、出院小结、基因检测报告都可以，图片或 PDF 均支持。
-              一份也行，多份一起上传会更准。
-            </p>
-          </div>
-          <div class="step">
-            <div class="num">2</div>
-            <h3>AI 提取关键字段</h3>
-            <p>
-              自动读出诊断、分期、基因突变、PD-L1、ECOG、既往治疗方案等医生真正关心的信息，
-              比人工录表快 10 倍。
-            </p>
-          </div>
-          <div class="step">
-            <div class="num">3</div>
-            <h3>排出候选试验</h3>
-            <p>
-              对照正在招募的试验入组标准做逐条比对，按匹配度排序，
-              同时告诉你「为什么匹配」「还缺哪些信息」。
-            </p>
-          </div>
+  <!-- ===== 三步就能用 ===== -->
+  <section class="section" id="how">
+    <div class="container">
+      <h2 class="section-title">三步就能用</h2>
+      <div class="steps-grid">
+        <div class="step-card">
+          <span class="num-pill num-1">1</span>
+          <h3>拍照上传病历</h3>
+          <p>手机拍一拍就行。<br/>看不清也没关系，我们帮您识别。</p>
+        </div>
+        <div class="step-card">
+          <span class="num-pill num-2">2</span>
+          <h3>获得治疗建议</h3>
+          <p>按照权威诊疗指南，<br/>给您一份能看懂的方案。</p>
+        </div>
+        <div class="step-card">
+          <span class="num-pill num-3">3</span>
+          <h3>匹配新药试验</h3>
+          <p>找到可能适合您的<br/>免费新药临床试验。</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Value props -->
-    <section class="block values" id="value">
-      <div class="container">
-        <h2>谁会用到它</h2>
-        <p class="block-sub">给患者、给家属，也给临床协作方。</p>
-
-        <div class="value-grid">
-          <div class="value-card">
-            <div class="v-title">癌症患者 / 家属</div>
-            <p>
-              不用一家家医院跑、一条条官网查。上传病历，5 分钟内拿到一份筛选过的、可打印给医生看的匹配清单。
-            </p>
-          </div>
-          <div class="value-card">
-            <div class="v-title">肿瘤科医生</div>
-            <p>
-              面对同一位患者，可以快速看到有哪些试验可能适合，把原来 1 小时的文献检索压缩到 3 分钟，减少「错失窗口期」。
-            </p>
-          </div>
-          <div class="value-card">
-            <div class="v-title">临床研究协作方（CRO）</div>
-            <p>
-              拿到一份已完成初筛、结构化字段齐全的候选人名单；CRO 后台支持患者跟进、状态流转、导出分析。
-            </p>
-          </div>
+  <!-- ===== 上传前准备 ===== -->
+  <section class="section cream on-cream">
+    <div class="container">
+      <h2 class="section-title">上传前，请准备这些资料</h2>
+      <p class="section-sub">不用全部有，有哪些就传哪些。越齐全，建议越准。</p>
+      <div class="prep-grid">
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">1</span><h4>病理报告</h4></div>
+          <span class="tag tag-must">最重要</span>
+          <p>手术或穿刺后出的化验单。<br/>上面写着什么癌、几期、分型。</p>
+        </div>
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">2</span><h4>影像检查报告</h4></div>
+          <p>CT、核磁、B超、PET-CT 报告。<br/>只要文字报告就行，不用片子。</p>
+        </div>
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">3</span><h4>基因检测报告</h4></div>
+          <span class="tag tag-optional">有就传</span>
+          <p>如果做过基因检测，请一并上传。<br/>对找新药很有帮助。</p>
+        </div>
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">4</span><h4>出院小结、门诊病历</h4></div>
+          <p>写着您看过什么病、<br/>做过什么治疗的本子或单子。</p>
+        </div>
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">5</span><h4>血液化验单</h4></div>
+          <p>最近的血常规、生化、肿瘤标志物。<br/>半年内的就可以。</p>
+        </div>
+        <div class="prep-card">
+          <div class="prep-head"><span class="prep-num">6</span><h4>用药清单</h4></div>
+          <p>正在吃的药，拍个药盒也行。<br/>包括其他慢性病的药。</p>
         </div>
       </div>
-    </section>
-
-    <!-- FAQ -->
-    <section class="block faq" id="faq">
-      <div class="container">
-        <h2>常见问题</h2>
-        <p class="block-sub">没看到答案？欢迎联系我们。</p>
-
-        <details open>
-          <summary>我的病历数据安全吗？</summary>
-          <p>
-            所有上传内容均通过 HTTPS 传输，服务器加密存储，不会用于任何非本人发起的匹配流程。
-            您可以在个人中心随时删除自己的病历记录，删除后无法恢复。
-          </p>
-        </details>
-
-        <details>
-          <summary>匹配结果是医学建议吗？</summary>
-          <p>
-            不是。TreatBot 给出的是基于您病历信息与试验入组标准的文本匹配结果，仅供您和主治医生讨论参考。
-            是否参加某项临床试验、如何进行需要您与主治医师、试验牵头医院共同决定。
-          </p>
-        </details>
-
-        <details>
-          <summary>为什么能做到 3 分钟出结果？</summary>
-          <p>
-            我们为中文病历和中国在研临床试验做了专门的解析和索引：OCR → 医学实体抽取 → 入组条件逐条比对，
-            整条管线跑在后台队列上，用户端看到的只是「上传 → 查看结果」两步。
-          </p>
-        </details>
-
-        <details>
-          <summary>现在覆盖哪些癌种？</summary>
-          <p>
-            目前已接入肺癌、肝癌、乳腺癌、胃肠道肿瘤等常见实体瘤的数百项正在招募的试验，
-            并持续从公开试验注册数据中更新。匹配结果里会告诉您这条试验目前的招募状态和牵头单位。
-          </p>
-        </details>
-
-        <details>
-          <summary>没有登录可以先看看吗？</summary>
-          <p>
-            可以。点首页的「查看样例演示」按钮，我们已经准备了两份脱敏样例病历，
-            30 秒走完完整流程，让您先看到产品能做什么再决定是否注册。
-          </p>
-        </details>
+      <div class="tip-box">
+        <strong>小贴士</strong>
+        <ul>
+          <li>拍照时光线要亮，字要清楚</li>
+          <li>多页的报告，每一页都拍</li>
+          <li>不会操作？让家人帮忙就行</li>
+        </ul>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Bottom CTA -->
-    <section class="bottom-cta">
-      <div class="container">
-        <h2>现在就试一下？</h2>
-        <p>演示不需要登录，真正上传也只需要手机号验证。</p>
-        <div class="cta-row" style="justify-content:center;">
-          <a class="btn btn-primary" href="/h5/quick-match/login">
-            立即使用 <span class="arrow">→</span>
-          </a>
-          <a class="btn btn-secondary" href="/treatbot/demo">
-            查看样例演示 <span class="arrow">→</span>
-          </a>
+  <!-- ===== 谁在用 ===== -->
+  <section class="section" id="about">
+    <div class="container">
+      <h2 class="section-title">谁在用这个平台</h2>
+      <div class="audience-grid">
+        <div class="aud-card">
+          <h4>患者和家属</h4>
+          <p>看懂自己的病。<br/>知道下一步怎么治。<br/>去医院前心里有底。</p>
+        </div>
+        <div class="aud-card">
+          <h4>医生</h4>
+          <p>查指南更快。<br/>帮助开会讨论方案。<br/>每条建议都能查到出处。</p>
+        </div>
+        <div class="aud-card">
+          <h4>监管部门</h4>
+          <p>数据合规。<br/>让好的治疗资源，<br/>也能到小城市。</p>
         </div>
       </div>
-    </section>
-  </main>
+    </div>
+  </section>
 
+  <!-- ===== 为什么可以信任我们 ===== -->
+  <section class="section cream on-cream">
+    <div class="container">
+      <h2 class="section-title">为什么可以信任我们</h2>
+      <div class="trust-grid">
+        <div class="trust-item">参考 CSCO、NCCN、ESMO 权威诊疗指南</div>
+        <div class="trust-item">三甲医院肿瘤专家参与审核</div>
+        <div class="trust-item">通过国家信息安全三级认证</div>
+        <div class="trust-item">遵守《个人信息保护法》</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 底部 CTA ===== -->
+  <section class="bottom-cta">
+    <div class="container">
+      <h2>准备好了吗</h2>
+      <p>几分钟，就能拿到您的第一份参考方案。免费。</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="/h5/quick-match">开始匹配 <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="/treatbot/demo">先看演示</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
   <footer>
-    <div class="container foot-inner">
-      <div>
-        &copy; <span id="year"></span> TreatBot · AI 临床试验匹配平台
-      </div>
-      <div>
-        <a href="/h5/quick-match/login" style="margin-right:18px;">患者登录</a>
-        <a href="/treatbot/cro/login" style="margin-right:18px;">CRO 登录</a>
-        <a href="/admin">管理后台</a>
+    <div class="container">
+      © 数愈科技 ShuYu Health · 本平台只供参考，不能代替医生看病
+      <div class="foot-links">
+        <a href="/h5/quick-match">手机端快速匹配</a>
+        <a href="/treatbot/">网页版上传</a>
+        <a href="/treatbot/demo">样例演示</a>
       </div>
     </div>
   </footer>
 
   <script>
-    document.getElementById('year').textContent = new Date().getFullYear();
+    // 平滑锚点滚动（nav 60px 抵消）
+    document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        var id = this.getAttribute('href').slice(1);
+        if (!id) return;
+        var el = document.getElementById(id);
+        if (!el) return;
+        e.preventDefault();
+        var top = el.getBoundingClientRect().top + window.pageYOffset - 60;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+      });
+    });
   </script>
 </body>
 </html>
