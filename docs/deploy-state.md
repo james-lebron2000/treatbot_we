@@ -102,6 +102,13 @@ CSS 审计（`web/src/style.css`）：
 - `/api/demo/*` catch-all 404 bug 彻底修复：`{code:0,...}` Express 格式
 - 标记全部 5 个 Phase 交付完成
 
+### 2026-04-18 cycle 3 — routine dry-run（demo fixture geneRequired 对齐）
+- Task source: Minor follow-ups 暗含问题 —— demo 匹配与运行时 `/api/matches` 字段不一致
+- Read: prod smoke 200，CI 最近 3 次全绿，WIP 文件有 4 个（router/migrate/ocr/vite）→ routine 全程绕开
+- Change scope: 2 文件（`server/scripts/generateDemoFixture.js` +1 行 `geneRequired: inferGeneRequired(trial)`；`server/fixtures/demoSamples.json` 重生成）
+- Verify: `npx jest tests/demo.test.js` 10/10 pass；lint clean；fixture 中 sample-1-hcc 5 条全 `false`，sample-2-nsclc 4 false + 1 true（符合基因突变样例的预期分布）
+- Outcome: demo 数据面现在与真实 `/api/matches` 字段齐平，"无需基因检测" 绿标将在 demo 匹配列表也能正确展示
+
 ---
 
 ## Needs human

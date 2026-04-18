@@ -14,7 +14,7 @@ const FIXTURE_PATH = path.join(__dirname, '..', 'fixtures', 'demoSamples.json');
 const TRIALS_DATA_PATH = path.join(__dirname, '..', 'data', 'trials_data.json');
 
 const { mapTrial } = require('./importTrials');
-const { scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('../services/matchEngine');
+const { scoreRecordAgainstTrial, STATUS_TEXT_MAP, inferGeneRequired } = require('../services/matchEngine');
 
 const loadAllTrials = () => {
   const raw = JSON.parse(fs.readFileSync(TRIALS_DATA_PATH, 'utf-8'));
@@ -32,7 +32,8 @@ const toApiMatch = (trial, scored) => ({
   indication: trial.indication || '',
   institution: trial.institution || '',
   reasons: scored.reasons || [],
-  statusText: STATUS_TEXT_MAP[trial.status] || '招募中'
+  statusText: STATUS_TEXT_MAP[trial.status] || '招募中',
+  geneRequired: inferGeneRequired(trial)
 });
 
 const generate = () => {
