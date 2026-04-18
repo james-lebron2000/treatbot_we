@@ -132,13 +132,13 @@ jobs:
         tar -czf web-dist.tar.gz -C web-dist .
         ls -lh web-dist.tar.gz
 
-    - name: Upload web tarball + nginx patch to server
+    - name: Upload web tarball + Caddyfile + nginx patch to server
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "web-dist.tar.gz,deploy/nginx-patch.conf"
+        source: "web-dist.tar.gz,deploy/Caddyfile,deploy/nginx-patch.conf"
         target: "/tmp/"
 
     # ---- Step 2: SSH 进服务器执行替换 ----
@@ -414,7 +414,90 @@ jobs:
             echo "    ✓ Caddyfile → $BAK"
           fi
 
-          echo "  ⏸  Discovery only — no config changes this run."
+          ###############################################
+          # PART C.5 — Apply deploy/Caddyfile + disable nginx（若还在跑）
+          ###############################################
+          echo "::group::C.5) Apply new Caddyfile + retire nginx"
+
+          NEW_CADDYFILE=/tmp/deploy/Caddyfile
+          if [ ! -f "$NEW_CADDYFILE" ]; then
+            echo "  ⚠ $NEW_CADDYFILE not uploaded — skipping Caddyfile swap"
+          else
+            echo "  ✓ New Caddyfile uploaded ($(wc -l < $NEW_CADDYFILE) lines)"
+            CADDY_BAK=~/treatbot-deploy-backups/Caddyfile.before-swap.${TS}
+            sudo -n cp /etc/caddy/Caddyfile "$CADDY_BAK"
+            sudo -n chown $(whoami):$(whoami) "$CADDY_BAK"
+            echo "  ✓ Current Caddyfile backed up to $CADDY_BAK"
+
+            # diff 预览
+            echo "  --- diff (current → new) ---"
+            sudo -n diff /etc/caddy/Caddyfile "$NEW_CADDYFILE" | sed 's/^/    /' | head -80 || true
+            echo "  --- end diff ---"
+
+            # caddy validate（不会动运行中服务）
+            set +e
+            VALIDATE=$(sudo -n caddy validate --config "$NEW_CADDYFILE" --adapter caddyfile 2>&1)
+            VRC=$?
+            set -e
+            echo "  --- validate (rc=$VRC) ---"
+            echo "$VALIDATE" | sed 's/^/    /' | head -30
+            echo "  --- end validate ---"
+
+            if [ "$VRC" = "0" ]; then
+              sudo -n cp "$NEW_CADDYFILE" /etc/caddy/Caddyfile
+              sudo -n chown root:root /etc/caddy/Caddyfile
+              sudo -n chmod 644 /etc/caddy/Caddyfile
+              if sudo -n systemctl reload caddy; then
+                echo "  ✅ Caddy swapped + reloaded"
+                # 烟雾：新配置下 /api/demo/samples 应该 200（之前 404）
+                sleep 2
+                SMOKE_CODE=$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/demo/samples || echo "000")
+                PUB_CODE=$(curl -sS -o /dev/null -w "%{http_code}" https://inseq.top/api/demo/samples || echo "000")
+                echo "  smoke: 127.0.0.1:3000/api/demo/samples=$SMOKE_CODE  inseq.top/api/demo/samples=$PUB_CODE"
+                if [ "$PUB_CODE" != "200" ]; then
+                  echo "  ❌ public /api/demo/samples did not return 200 — restoring"
+                  sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+                  sudo -n systemctl reload caddy
+                else
+                  echo "  ✅ /api/demo/samples=200 — Caddyfile swap confirmed healthy"
+                fi
+              else
+                echo "  ❌ systemctl reload caddy failed — restoring"
+                sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+                sudo -n systemctl reload caddy || true
+              fi
+            else
+              echo "  ❌ validate failed — NOT swapping"
+            fi
+          fi
+
+          echo ""
+          echo "  ===== Retire nginx (backup + stop + disable) ====="
+          if systemctl list-unit-files 2>/dev/null | grep -q '^nginx.service'; then
+            NGX_ACTIVE=$(systemctl is-active nginx 2>/dev/null || echo unknown)
+            NGX_ENABLED=$(systemctl is-enabled nginx 2>/dev/null || echo unknown)
+            echo "  nginx: active=$NGX_ACTIVE enabled=$NGX_ENABLED"
+
+            # 再打一份配置备份（冗余，但便宜）
+            if [ -d /etc/nginx ]; then
+              RETIRE_BAK=~/treatbot-deploy-backups/nginx-tree.retired.${TS}.tar.gz
+              sudo -n tar -czf "$RETIRE_BAK" -C /etc nginx 2>/dev/null || true
+              sudo -n chown $(whoami):$(whoami) "$RETIRE_BAK" 2>/dev/null || true
+              [ -f "$RETIRE_BAK" ] && echo "  ✓ nginx tree archived → $RETIRE_BAK"
+            fi
+
+            if [ "$NGX_ACTIVE" = "active" ]; then
+              sudo -n systemctl stop nginx && echo "  ✓ nginx stopped"
+            fi
+            if [ "$NGX_ENABLED" = "enabled" ]; then
+              sudo -n systemctl disable nginx && echo "  ✓ nginx disabled (won't start on boot)"
+            else
+              echo "  ✓ nginx already disabled"
+            fi
+          else
+            echo "  (nginx not installed)"
+          fi
+
           rm -rf /tmp/deploy
           echo "::endgroup::"
 
