@@ -3,6 +3,10 @@ name: Deploy to Production
 on:
   push:
     branches: [ main, master ]
+    # 不要因为 bot 回写 deploy-state 文件而触发死循环：当这些路径是 push 里唯一的改动时跳过 workflow
+    paths-ignore:
+      - 'docs/deploy-state-server-dump.md'
+      - 'docs/deploy-state.md'
   pull_request:
     branches: [ main, master ]
 
@@ -106,8 +110,15 @@ jobs:
     needs: [build-api, build-web]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    permissions:
+      contents: write   # 需要回写 docs/deploy-state-server-dump.md 到 main
     steps:
     - uses: actions/checkout@v3
+      with:
+        # 让后续 git push 能走 GITHUB_TOKEN（默认的 actions/checkout 配置就行，显式写更清晰）
+        token: ${{ secrets.GITHUB_TOKEN }}
+        # 拉全历史以防 rebase 冲突
+        fetch-depth: 0
 
     - name: Download web dist
       uses: actions/download-artifact@v4
@@ -145,6 +156,10 @@ jobs:
         script: |
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
+          # 把整段 SSH 脚本的 stdout/stderr 同时落盘到 /tmp/treatbot-discovery.txt
+          # 下一个 workflow 步骤会 scp 回 runner 并 commit 进 docs/deploy-state-server-dump.md
+          # 这样 autonomous routine 只需 `git pull` 就能读到最新服务器状态，不需要 gh CLI
+          exec > >(tee /tmp/treatbot-discovery.txt) 2>&1
           echo "===== Deploy $TS — SHA=$SHA ====="
 
           ###############################################
@@ -423,3 +438,86 @@ jobs:
           # 清理 docker 旧 layer（保留命名容器和镜像）
           docker image prune -f --filter "until=168h" || true
           echo "===== ✅ Deploy $TS done ====="
+
+    # ---- Step 3: 从服务器拉回 discovery 输出，commit 到 main ----
+    # autonomous routine 只需 `git pull` 就能拿到最新服务器状态，无需 gh CLI
+    - name: Fetch discovery dump from server
+      if: always()   # 即使前一步失败（例如健康检查回滚）也要拉，帮助诊断
+      env:
+        SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+        SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      run: |
+        set -e
+        mkdir -p server-dump ~/.ssh
+        echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+        if scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+             "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-discovery.txt" \
+             ./server-dump/treatbot-discovery.txt; then
+          echo "  ✓ fetched $(wc -l < server-dump/treatbot-discovery.txt) lines"
+        else
+          echo "  ⚠ scp failed — no state file to commit"
+        fi
+
+        # 清理临时 key（GH runner 每次 job 会销毁 VM，保险起见）
+        rm -f ~/.ssh/deploy_key
+
+    - name: Commit discovery dump back to main
+      if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      run: |
+        set -e
+        SRC=server-dump/treatbot-discovery.txt
+        DST=docs/deploy-state-server-dump.md
+        mkdir -p docs
+
+        if [ ! -f "$SRC" ]; then
+          echo "⚠ $SRC not fetched — skipping state commit"
+          exit 0
+        fi
+
+        # 包一层 markdown 头 + fenced code block，避免 ANSI/emoji/heredoc 破坏 md 渲染
+        {
+          echo "# Deploy State — Server Dump (auto-generated, do not edit)"
+          echo ""
+          echo "> Written by \`.github/workflows/deploy.yml\` after every deploy."
+          echo "> autonomous routine reads this file via \`git pull\` — no GitHub API needed."
+          echo ""
+          echo "- **Run**: ${{ github.run_id }}"
+          echo "- **Commit**: \`${{ github.sha }}\`"
+          echo "- **Workflow URL**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "- **Generated at**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo ""
+          echo "---"
+          echo ""
+          echo '```'
+          # 去掉潜在的 ANSI 颜色码（\x1b\[[0-9;]*m）
+          sed -e 's/\x1b\[[0-9;]*m//g' "$SRC"
+          echo '```'
+        } > "$DST"
+
+        # 只有内容变化才 commit（避免空提交污染历史）
+        git config user.name  "treatbot-deploy-bot[bot]"
+        git config user.email "treatbot-deploy-bot@users.noreply.github.com"
+        git add "$DST"
+        if git diff --cached --quiet; then
+          echo "  ✓ $DST unchanged — skip commit"
+          exit 0
+        fi
+
+        git commit -m "chore(deploy-state): update server dump from run ${{ github.run_id }}"
+
+        # 推到 main。用 --rebase 以防其它 push 抢先（尤其是 human commits during deploy）
+        for i in 1 2 3; do
+          git pull --rebase origin main || true
+          if git push origin HEAD:main; then
+            echo "  ✅ pushed to main (attempt $i)"
+            exit 0
+          fi
+          echo "  ⚠ push attempt $i failed, retrying..."
+          sleep 2
+        done
+        echo "  ❌ push failed after 3 attempts — manual intervention needed"
+        exit 1
