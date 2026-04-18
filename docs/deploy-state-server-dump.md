@@ -3,34 +3,34 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 24595460091
-- **Commit**: `df34e806362b9878911cd976466d12b0648824a7`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/24595460091
-- **Generated at**: 2026-04-18T03:04:41Z
+- **Run**: 24596589441
+- **Commit**: `a9576480a841d1f91f3c3f47669042cc0ed8ad2e`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/24596589441
+- **Generated at**: 2026-04-18T04:12:48Z
 
 ---
 
 ```
-===== Deploy 20260418-110414 — SHA=df34e806362b9878911cd976466d12b0648824a7 =====
+===== Deploy 20260418-121211 — SHA=a9576480a841d1f91f3c3f47669042cc0ed8ad2e =====
 ::group::A) Backend container replace
-df34e806362b9878911cd976466d12b0648824a7: Pulling from jakelebron18/treatbot-api
-Digest: sha256:87ebccb9bab37e6ca9015a628b29cc6610262aa97ea183bee270d38bec07b09b
-Status: Downloaded newer image for jakelebron18/treatbot-api:df34e806362b9878911cd976466d12b0648824a7
-docker.io/jakelebron18/treatbot-api:df34e806362b9878911cd976466d12b0648824a7
-  ✓ Old image 'treatbot-api:e15295c423b76b4b48adc323e27a963c7dc79056' backed up as treatbot-api:rollback-20260418-110414
-  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260418-110414.env (29 vars)
+a9576480a841d1f91f3c3f47669042cc0ed8ad2e: Pulling from jakelebron18/treatbot-api
+Digest: sha256:cef90bbd951c62840b59cbaa14b4b678fb2d71e6caa4d787bd51675c9fc41434
+Status: Downloaded newer image for jakelebron18/treatbot-api:a9576480a841d1f91f3c3f47669042cc0ed8ad2e
+docker.io/jakelebron18/treatbot-api:a9576480a841d1f91f3c3f47669042cc0ed8ad2e
+  ✓ Old image 'treatbot-api:df34e806362b9878911cd976466d12b0648824a7' backed up as treatbot-api:rollback-20260418-121211
+  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260418-121211.env (29 vars)
 treatbot-api
   Cleaning old prev containers:
-treatbot-api-prev-20260418-032143
-  ✓ Old container renamed to treatbot-api-prev-20260418-110414
-18dbceaa94fe55d86896969e9f5c9c6c2d050b10f3041475e30bdbe69301f237
+treatbot-api-prev-20260418-032447
+  ✓ Old container renamed to treatbot-api-prev-20260418-121211
+4b9f9bb7f5b74cbebc0adb7ba87b0c05e87115f7be0c03f2a0467683b85b113a
   ✓ Healthy after 3s
   ✅ Backend deployed. Rollback cmd:
-     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260418-110414 treatbot-api && docker start treatbot-api
+     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260418-121211 treatbot-api && docker start treatbot-api
 ::endgroup::
 ::group::B) Web frontend promote
   ✓ Tarball extracted (2 entries)
-  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260418-110414
+  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260418-121211
   ✅ Web promoted to /var/www/treatbot-web (index.html OK, base=/treatbot/)
 ::endgroup::
 ::group::C) Reverse-proxy discovery (read-only)
@@ -41,15 +41,15 @@ unknown
     caddy: active=active, enabled=enabled
   ===== 2. Listening sockets (top relevant ports) =====
     State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                                  
-    LISTEN 0      4096         0.0.0.0:3000      0.0.0.0:*    users:(("docker-proxy",pid=2260918,fd=4))               
+    LISTEN 0      4096         0.0.0.0:3000      0.0.0.0:*    users:(("docker-proxy",pid=2294958,fd=4))               
     LISTEN 0      4096       127.0.0.1:2019      0.0.0.0:*    users:(("caddy",pid=303834,fd=11))                      
     LISTEN 0      4096               *:443             *:*    users:(("caddy",pid=303834,fd=3))                       
     LISTEN 0      4096               *:80              *:*    users:(("caddy",pid=303834,fd=12))                      
     LISTEN 0      511                *:5101            *:*    users:(("MainThread",pid=3237127,fd=21))                
-    LISTEN 0      4096            [::]:3000         [::]:*    users:(("docker-proxy",pid=2260924,fd=4))               
+    LISTEN 0      4096            [::]:3000         [::]:*    users:(("docker-proxy",pid=2294964,fd=4))               
   ===== 3. Docker containers + ports =====
     NAMES            IMAGE                                                   PORTS                                                  STATUS
-    treatbot-api     treatbot-api:df34e806362b9878911cd976466d12b0648824a7   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 5 seconds (health: starting)
+    treatbot-api     treatbot-api:a9576480a841d1f91f3c3f47669042cc0ed8ad2e   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 5 seconds (health: starting)
     treatbot-redis   redis:7-alpine                                          0.0.0.0:6379->6379/tcp, :::6379->6379/tcp              Up 7 weeks (healthy)
     treatbot-mysql   mysql:8.0                                               0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp   Up 7 weeks (healthy)
   ===== 4. /etc/caddy/Caddyfile (full) =====
@@ -684,26 +684,101 @@ unknown
     drwxr-xr-x 14 root   root   4096 Feb 26 16:26 ..
     drwxr-xr-x  2 root   root   4096 Mar 25 16:46 clinicalmatch-home
     drwxr-xr-x  2 root   root   4096 Feb 26 16:26 html
-    drwxr-xr-x  3 ubuntu ubuntu 4096 Apr 18 11:03 treatbot-web
+    drwxr-xr-x  3 ubuntu ubuntu 4096 Apr 18 12:11 treatbot-web
   ===== 11. Backup nginx tree (NOT removing) =====
-    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260418-110414.tar.gz (16K)
+    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260418-121211.tar.gz (16K)
   ===== 12. Backup current Caddyfile =====
-    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260418-110414
-  ⏸  Discovery only — no config changes this run.
+    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260418-121211
+::group::C.5) Apply new Caddyfile + retire nginx
+  ✓ New Caddyfile uploaded (108 lines)
+  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260418-121211
+  --- diff (current → new) ---
+    0a1,24
+    > # TreatBot Caddy 反代配置（唯一源 — deploy.yml 会把本文件 scp 到 /etc/caddy/Caddyfile）
+    > #
+    > # 修复：原线上配置中 `/api/demo/*` 缺了 `path` 关键字，导致 Caddy 把它当成未知 matcher 名丢弃，
+    > # 请求落到 `handle /api/*` catch-all → :5101（Python 服务）→ 返回 404
+    > # {"success":false,"message":"Not found","code":"not_found"}。
+    > # 本文件把它补回 `path /api/demo/*` 并保留原 `/api/demo/*` 作为 bare path shorthand 不再使用。
+    > #
+    > # 路由拓扑（所有请求经 Caddy:443 → 下游）：
+    > #   /                         → 127.0.0.1:3000  (Express static landing page)
+    > #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
+    > #   /h5 → redir /h5/quick-match
+    > #   /h5/*                     → 127.0.0.1:3100  (Next.js)
+    > #   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
+    > #   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
+    > #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*
+    > #                             → 127.0.0.1:3000  (Express, treatbot-api)
+    > #   /api/*  (所有其他)         → 127.0.0.1:5101  (遗留 Python 服务)
+    > #   /demo-assets/*, /uploads/* → static via Express :3000
+    > 
+    > {
+    >     # Caddy admin API 只绑 localhost（防止腾讯云告警误判未授权接口暴露）
+    >     admin 127.0.0.1:2019
+    > }
+    > 
+    10a35
+    >     # Vue SPA（/treatbot/*）
+    17a43
+    >     # H5（Next.js @ 3100）
+    19d44
+    < 
+    31a57
+    >     # 所有 treatbot-api（Express @ 3000）的专有 API（在 /api/* catch-all 之前）
+    33c59
+    <         /api/demo/*
+    ---
+    >         path /api/demo/*
+    50a77
+    >     # 遗留 Python 服务（其他所有 /api/*）
+    62a90
+    >     # Express 静态：上传文件
+    67a96
+    >     # 默认兜底（landing page、/demo-assets/、/health 等都由 Express :3000 处理）
+  --- end diff ---
+  --- validate (rc=0) ---
+    {"level":"info","ts":1776485549.349432,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
+    {"level":"warn","ts":1776485549.3507574,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3507736,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3510795,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3510935,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3511782,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3511887,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.351305,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1776485549.3513155,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"info","ts":1776485549.3522072,"msg":"adapted config to JSON","adapter":"caddyfile"}
+    {"level":"warn","ts":1776485549.3522198,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":19}
+    {"level":"info","ts":1776485549.3528724,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc000516f80"}
+    {"level":"info","ts":1776485551.0431077,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1776485551.0431285,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1776485551.0431316,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+    {"level":"info","ts":1776485551.044545,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc000516f80"}
+    Valid configuration
+  --- end validate ---
+  ✅ Caddy swapped + reloaded
+  smoke: 127.0.0.1:3000/api/demo/samples=200  inseq.top/api/demo/samples=200
+  ✅ /api/demo/samples=200 — Caddyfile swap confirmed healthy
+
+  ===== Retire nginx (backup + stop + disable) =====
+  nginx: active=inactive
+unknown enabled=disabled
+unknown
+  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260418-121211.tar.gz
+  ✓ nginx already disabled
 ::endgroup::
 ::group::D) Smoke tests
   /health (container):
-{"status":"ok","timestamp":"2026-04-18T03:04:32.231Z","version":"1.0.0","environment":"production"}
+{"status":"ok","timestamp":"2026-04-18T04:12:34.250Z","version":"1.0.0","environment":"production"}
   / (via nginx):
     HTTP 200
   /api/demo/samples (via nginx):
-curl: (22) The requested URL returned error: 404
-    HTTP 404
+    HTTP 200
   /demo-assets/sample-1-hcc.jpg (via nginx):
     HTTP 200
   /treatbot/ (Vue SPA):
     HTTP 200
 ::endgroup::
 Total reclaimed space: 0B
-===== ✅ Deploy 20260418-110414 done =====
+===== ✅ Deploy 20260418-121211 done =====
 ```
