@@ -107,10 +107,19 @@ app.use('/api', routes);
 
 // 根路径落地页（静态 HTML，纯介绍 + 2 个 CTA 按钮）
 // 放在 /api 之后、404 之前；index: 'index.html' 让 `/` 直接命中 landing/index.html
+// Cache 策略：HTML 设为 no-cache + must-revalidate，靠 ETag/If-None-Match 做 304，
+// 这样每次主页改版用户刷新就能看到新版，不会被 5 分钟 max-age 卡住。
 app.use('/', express.static(path.join(__dirname, 'public/landing'), {
   index: 'index.html',
-  maxAge: '5m',
-  fallthrough: true
+  fallthrough: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else {
+      // 其它静态资源（目前只有 HTML，但预留给以后的 /favicon.ico 等）缓存 1 天
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  }
 }));
 
 // 404 处理

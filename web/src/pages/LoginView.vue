@@ -12,7 +12,7 @@
         先看演示 →
       </a>
       <p style="margin:4px 0 0;font-size:0.78rem;color:#9ca3af;">
-        30 秒了解 TreatBot 如何帮患者匹配试验，无需登录
+        30 秒了解数愈健康如何帮患者匹配试验，无需登录
       </p>
     </div>
   </section>

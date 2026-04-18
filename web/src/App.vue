@@ -1,7 +1,7 @@
 <template>
   <main class="app-shell">
     <header class="app-header">
-      <h1>Treatbot 患者端</h1>
+      <h1>数愈健康</h1>
     </header>
     <section class="app-main">
       <RouterView />

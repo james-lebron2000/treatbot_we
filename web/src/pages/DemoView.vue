@@ -3,7 +3,7 @@
     <!-- 顶部说明卡 -->
     <div class="card intro-card">
       <div class="badge">演示模式 · 无需登录</div>
-      <h2 style="margin:8px 0 6px;">30 秒看懂 TreatBot 怎么帮患者找到临床试验</h2>
+      <h2 style="margin:8px 0 6px;">30 秒看懂数愈健康怎么帮患者找到临床试验</h2>
       <p style="font-size:0.9rem;color:#374151;line-height:1.6;margin:0;">
         下面是两份脱敏的真实病历样本。选一份 → 系统会模拟完整的「上传 → OCR → 结构化 → 匹配」流程，
         并给出和正式流程完全一致的结构化摘要和试验匹配结果。你也可以直接把摘要导出为 PDF 带给医生看。

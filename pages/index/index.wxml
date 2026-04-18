@@ -1,7 +1,7 @@
 <view class="container">
   <view class="hero-section">
     <view class="hero-content">
-      <text class="hero-eyebrow">Treatbot 智能预筛</text>
+      <text class="hero-eyebrow">数愈健康 · 智能预筛</text>
       <text class="hero-title">真心对待每一人</text>
       <text class="hero-title">多看看这个世界</text>
       <text class="hero-subtitle">把病历整理、结构化预筛和试验匹配，压缩到一次上传里完成。</text>
