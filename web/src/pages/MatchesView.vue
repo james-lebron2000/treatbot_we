@@ -2,6 +2,52 @@
   <section class="grid">
     <h2>为您匹配的临床试验</h2>
 
+    <!-- 手动录入面板（用户没有病历时的入口）-->
+    <div v-if="manualEntryOpen" class="card" style="background:#f0f9ff;border-color:#bae6fd;">
+      <h3 style="margin:0 0 6px;color:#075985;">告诉我们您的基本情况</h3>
+      <p style="margin:0 0 12px;font-size:0.85rem;color:#0c4a6e;">
+        至少填写癌种即可匹配。基因检测结果<strong>非必填</strong>，未上传基因报告也能查到试验。
+      </p>
+      <div style="display:grid;gap:10px;">
+        <div>
+          <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">癌种 <span style="color:#dc2626;">*</span></label>
+          <input v-model="manualDisease" placeholder="例如：非小细胞肺癌、胃腺癌" />
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">分期</label>
+            <select v-model="manualStage">
+              <option value="">不限</option>
+              <option value="I期">I期</option>
+              <option value="II期">II期</option>
+              <option value="III期">III期</option>
+              <option value="IV期">IV期</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">城市</label>
+            <input v-model="manualCity" placeholder="例如：北京" />
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn primary" :disabled="!manualDisease.trim()" @click="applyManualEntry" style="flex:1;">
+          查看匹配的试验
+        </button>
+        <button class="btn ghost" @click="closeManualEntry" style="flex:1;">取消</button>
+      </div>
+    </div>
+
+    <!-- 无基因提示条 -->
+    <div v-if="showNoGeneHint" class="card" style="background:#fffbeb;border-color:#fcd34d;padding:10px 12px;">
+      <p style="margin:0;font-size:0.88rem;color:#92400e;">
+        未上传基因报告？下方 <strong>{{ noGeneFriendlyCount }}</strong> 个试验不需要基因检测结果也能评估。
+        <a href="#" @click.prevent="toggleGeneAgnosticOnly" style="color:#1d4ed8;text-decoration:underline;">
+          {{ filterGeneAgnosticOnly ? '查看全部' : '只看这些试验 →' }}
+        </a>
+      </p>
+    </div>
+
     <!-- 患者诊断摘要（可折叠） -->
     <details v-if="hasRecord" class="record-summary-toggle" open>
       <summary class="summary-trigger">我的诊断信息 <span class="toggle-hint">{{ summaryOpen ? '收起' : '展开' }}</span></summary>
@@ -33,8 +79,11 @@
     <div class="card" v-else-if="error">{{ error }}</div>
     <div v-else-if="!matches.length && !loading" class="card" style="text-align:center;padding:20px;">
       <p style="color:#6b7280;">暂未找到匹配的试验</p>
-      <p style="font-size:0.85rem;color:#9ca3af;">请确认病历已完成识别，或尝试补充更多信息</p>
-      <router-link to="/upload" class="btn ghost" style="margin-top:8px;">重新上传</router-link>
+      <p style="font-size:0.85rem;color:#9ca3af;">请尝试调整筛选条件，或补充癌种/城市信息再查</p>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;">
+        <button class="btn primary" @click="openManualEntry">调整癌种 / 城市</button>
+        <router-link to="/upload" class="btn ghost">重新上传病历</router-link>
+      </div>
     </div>
 
     <div v-for="match in matches" :key="match.id" class="card grid" style="gap:6px;">
@@ -49,6 +98,7 @@
         <span class="badge">{{ match.phase }}</span>
         <span class="badge">{{ match.location }}</span>
         <span class="badge" v-if="match.statusText">{{ match.statusText }}</span>
+        <span v-if="match.geneRequired === false" class="badge" style="background:#dcfce7;color:#166534;">无需基因检测</span>
       </div>
 
       <!-- 匹配理由（人话化） -->
@@ -80,13 +130,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { api } from '../services/api'
 import { sortMatches } from '../utils/schema'
 import { usePatientStore } from '../stores/patient'
 import RecordSummaryCard from '../components/RecordSummaryCard.vue'
 
 const router = useRouter()
+const route = useRoute()
 const patientStore = usePatientStore()
 
 const hasRecord = computed(() => Object.keys(patientStore.structuredRecord || {}).length > 0)
@@ -104,6 +155,51 @@ const filterPhase = ref('')
 const filterCity = ref('')
 const filterStatus = ref('')
 const filterOptions = ref<{ phases: string[]; cities: string[] }>({ phases: [], cities: [] })
+
+// 手动录入 + 无基因筛选
+const manualEntryOpen = ref(false)
+const manualDisease = ref('')
+const manualStage = ref('')
+const manualCity = ref('')
+const filterGeneAgnosticOnly = ref(false)
+
+const openManualEntry = () => {
+  const rec = patientStore.structuredRecord || {}
+  manualDisease.value = `${rec.diagnosis || ''}`
+  manualStage.value = `${rec.stage || ''}`
+  manualCity.value = `${rec.city || filterCity.value || ''}`
+  manualEntryOpen.value = true
+}
+const closeManualEntry = () => { manualEntryOpen.value = false }
+const applyManualEntry = () => {
+  const disease = manualDisease.value.trim()
+  if (!disease) return
+  const rec: Record<string, unknown> = {
+    diagnosis: disease,
+    stage: manualStage.value,
+    city: manualCity.value
+  }
+  // 手动录入是临时/探索态，不写后端 —— 只在 store 里保存，currentRecordId 置空以便 getMatches 走 filters 分支
+  patientStore.setRecord('', rec)
+  manualEntryOpen.value = false
+  if (manualCity.value) filterCity.value = manualCity.value
+  currentPage.value = 1
+  loadMatches()
+}
+
+const toggleGeneAgnosticOnly = () => {
+  filterGeneAgnosticOnly.value = !filterGeneAgnosticOnly.value
+  currentPage.value = 1
+  loadMatches()
+}
+
+const patientHasGene = computed(() => {
+  const raw = patientStore.structuredRecord || {}
+  const gene = `${raw.geneMutation || raw.gene_mutation || ''}`.trim()
+  return gene.length > 0
+})
+const showNoGeneHint = computed(() => !patientHasGene.value && matches.value.length > 0 && noGeneFriendlyCount.value > 0)
+const noGeneFriendlyCount = computed(() => matches.value.filter((m) => m.geneRequired === false).length)
 
 const matchLevelText = (score: number) => {
   if (score >= 80) return '高度匹配'
@@ -154,6 +250,7 @@ const normalize = (item: Record<string, any>) => ({
   institution: item.institution || '待补',
   reasons: item.reasons || [],
   statusText: item.statusText || '',
+  geneRequired: item.geneRequired === true ? true : (item.geneRequired === false ? false : undefined),
   updatedAt: item.updatedAt || item.createdAt || '',
   applied: false
 })
@@ -162,6 +259,7 @@ const loadMatches = async () => {
   loading.value = true
   error.value = ''
   try {
+    const rec = patientStore.structuredRecord || {}
     const params: Record<string, unknown> = {
       recordId: patientStore.currentRecordId || undefined,
       page: currentPage.value,
@@ -170,6 +268,13 @@ const loadMatches = async () => {
     if (filterPhase.value) params.phase = filterPhase.value
     if (filterCity.value) params.city = filterCity.value
     if (filterStatus.value) params.status = filterStatus.value
+    // 没有 recordId（手动录入 / 探索态）时，把 store 里的结构化字段传给 api 的 filters 构造器
+    if (!patientStore.currentRecordId) {
+      if (rec.diagnosis) params.disease = rec.diagnosis
+      if (rec.stage) params.stage = rec.stage
+      if (rec.city && !filterCity.value) params.city = rec.city
+    }
+    if (filterGeneAgnosticOnly.value) params.gene_required = false
 
     const payload = await api.getMatches(params)
     const list = Array.isArray(payload) ? payload : payload.list || payload.items || payload.trials || payload.matches || []
@@ -206,7 +311,13 @@ const apply = async (match: any) => {
   }
 }
 
-onMounted(() => { loadMatches(); loadFilterOptions() })
+onMounted(() => {
+  if (route.query.manualEntry === '1') {
+    openManualEntry()
+  }
+  loadMatches()
+  loadFilterOptions()
+})
 </script>
 
 <style scoped>

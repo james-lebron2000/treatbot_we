@@ -45,6 +45,14 @@
         </p>
       </div>
 
+      <div class="card" style="background:#f0f9ff;border-color:#bae6fd;">
+        <h3 style="margin:0 0 6px;color:#075985;">没有纸质报告？手动输入也能匹配</h3>
+        <p style="margin:0 0 10px;font-size:0.85rem;color:#0c4a6e;line-height:1.6;">
+          只需 1-2 项关键信息（癌种、分期），AI 会帮您筛出可以尝试的试验。<strong>基因检测非必填</strong>。
+        </p>
+        <button class="btn ghost" @click="goManualEntry" style="width:100%;">开始手动录入 →</button>
+      </div>
+
       <div class="card grid">
         <h3 style="margin:0;">上传病历</h3>
         <label class="upload-area" :class="{ 'has-files': files.length }">
@@ -87,12 +95,25 @@
     </div>
 
     <!-- 解析错误 -->
-    <div v-if="uploadError" class="card" style="border-color:#fca5a5;background:#fef2f2;">
-      <p style="color:#dc2626;margin:0 0 8px;">{{ uploadError }}</p>
-      <p style="font-size:0.85rem;color:#6b7280;margin:0 0 8px;">
-        可能原因：图片模糊、文件格式不支持、或网络异常。请确保拍照清晰后重试。
+    <div v-if="uploadError.message" class="card" :style="errorCardStyle">
+      <p :style="{ color: uploadError.kind === 'rate_limit' ? '#b45309' : '#dc2626', margin:'0 0 8px', fontWeight: 500 }">
+        {{ errorTitle }}
       </p>
-      <button class="btn primary" @click="retryParse" style="width:100%;">重新识别</button>
+      <p style="font-size:0.85rem;color:#6b7280;margin:0 0 12px;line-height:1.6;">
+        {{ errorHelper }}
+      </p>
+      <!-- 限流：不显示"重新识别"，给出替代入口 -->
+      <template v-if="uploadError.kind === 'rate_limit'">
+        <button class="btn primary" @click="goManualEntry" style="width:100%;margin-bottom:8px;">
+          先不上传，手动录入信息
+        </button>
+        <button class="btn ghost" @click="$router.push('/demo')" style="width:100%;">
+          先看脱敏样例演示
+        </button>
+      </template>
+      <template v-else>
+        <button class="btn primary" @click="retryParse" style="width:100%;" :disabled="!file">重新识别</button>
+      </template>
     </div>
 
     <!-- 解析完成 — 结果展示 -->
@@ -153,8 +174,65 @@ const parsedRecord = ref<Record<string, unknown>>({})
 const recordId = ref('')
 const fileId = ref('')
 const submitting = ref(false)
-const uploadError = ref('')
+type UploadErrorKind = 'rate_limit' | 'parse' | 'network' | ''
+interface UploadErrorState {
+  kind: UploadErrorKind
+  message: string
+  retryAfter: number // 秒
+}
+const uploadError = reactive<UploadErrorState>({ kind: '', message: '', retryAfter: 0 })
+const retryCountdown = ref(0)
+let retryTimer: number | null = null
 const gapValues = reactive<Record<string, string>>({})
+
+const clearUploadError = () => {
+  uploadError.kind = ''
+  uploadError.message = ''
+  uploadError.retryAfter = 0
+  retryCountdown.value = 0
+  if (retryTimer) { window.clearInterval(retryTimer); retryTimer = null }
+}
+
+const startRetryCountdown = (seconds: number) => {
+  retryCountdown.value = Math.max(0, Math.ceil(seconds))
+  if (retryTimer) window.clearInterval(retryTimer)
+  retryTimer = window.setInterval(() => {
+    retryCountdown.value -= 1
+    if (retryCountdown.value <= 0) {
+      if (retryTimer) { window.clearInterval(retryTimer); retryTimer = null }
+    }
+  }, 1000)
+}
+
+const classifyError = (err: any): UploadErrorState => {
+  const status = err?.response?.status
+  const data = err?.response?.data
+  const backendMsg: string = (data && typeof data === 'object' && (data.message || data.msg)) || ''
+  if (status === 429) {
+    const retryAfterHeader = Number(err?.response?.headers?.['retry-after'] || 0)
+    const retryAfterBody = Number(data?.data?.retryAfter || data?.retryAfter || 0)
+    const retryAfter = retryAfterHeader || retryAfterBody || 0
+    return { kind: 'rate_limit', message: backendMsg || '上传过于频繁，请稍后再试', retryAfter }
+  }
+  if (err?.code === 'ECONNABORTED' || err?.message === 'Network Error' || status === 0) {
+    return { kind: 'network', message: '网络连接失败，请检查网络后重试', retryAfter: 0 }
+  }
+  return { kind: 'parse', message: backendMsg || err?.message || '识别失败，请重试', retryAfter: 0 }
+}
+
+const setUploadError = (err: any) => {
+  const classified = classifyError(err)
+  uploadError.kind = classified.kind
+  uploadError.message = classified.message
+  uploadError.retryAfter = classified.retryAfter
+  if (classified.kind === 'rate_limit' && classified.retryAfter > 0) {
+    startRetryCountdown(classified.retryAfter)
+  }
+}
+
+const goManualEntry = () => {
+  router.push('/matches?manualEntry=1')
+}
 
 let timer: number | null = null
 let pollStartTime = 0
@@ -163,6 +241,33 @@ const POLL_TIMEOUT_MS = 120_000
 const elapsedSeconds = ref(0)
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
+
+const errorCardStyle = computed(() => {
+  if (uploadError.kind === 'rate_limit') return { borderColor: '#fcd34d', background: '#fffbeb' }
+  if (uploadError.kind === 'network') return { borderColor: '#93c5fd', background: '#eff6ff' }
+  return { borderColor: '#fca5a5', background: '#fef2f2' }
+})
+
+const errorTitle = computed(() => {
+  if (uploadError.kind === 'rate_limit') return '上传次数已达上限'
+  if (uploadError.kind === 'network') return '网络连接失败'
+  return uploadError.message || '识别失败'
+})
+
+const errorHelper = computed(() => {
+  if (uploadError.kind === 'rate_limit') {
+    const minutes = Math.ceil(retryCountdown.value / 60)
+    const wait = retryCountdown.value > 0
+      ? `约 ${minutes} 分钟后可再次尝试`
+      : '请稍后再试'
+    return `为了保护服务稳定，每位用户每小时可上传 30 份病历。${wait}。如不方便等待，也可直接手动录入信息查看匹配的试验。`
+  }
+  if (uploadError.kind === 'network') {
+    return '请检查网络连接后点击「重新识别」。如果持续失败，可先手动录入关键信息查看匹配。'
+  }
+  // parse 分支：保留原有的故障排查提示
+  return '可能原因：图片模糊、文件格式不支持、或网络异常。请确保拍照清晰后重试。'
+})
 
 const previewRows = computed(() => {
   const fields = ['diagnosis', 'stage', 'geneMutation', 'ecog', 'treatment']
@@ -181,7 +286,7 @@ const resetUpload = () => {
   recordId.value = ''
   files.value = []
   file.value = null
-  uploadError.value = ''
+  clearUploadError()
   parseStatus.value = ''
   parseProgress.value = 0
   Object.keys(gapValues).forEach((k) => delete gapValues[k])
@@ -192,7 +297,7 @@ const onFileChange = (event: Event) => {
   const selected = Array.from(target.files || [])
   files.value = selected
   file.value = selected[0] || null
-  uploadError.value = ''
+  clearUploadError()
 }
 
 const stopPolling = () => {
@@ -202,7 +307,22 @@ const stopPolling = () => {
 
 const retryParse = async () => {
   if (!file.value) return
-  uploadError.value = ''
+  // 若之前已上传成功（fileId 存在）但解析失败，直接轮询已有 fileId，避免再消耗一个限流槽
+  if (fileId.value && uploadError.kind === 'parse') {
+    clearUploadError()
+    parseStatus.value = 'parsing'
+    pollStartTime = Date.now()
+    elapsedSeconds.value = 0
+    elapsedTimer = window.setInterval(() => { elapsedSeconds.value = Math.floor((Date.now() - pollStartTime) / 1000) }, 1000)
+    try {
+      await pollStatus()
+      timer = window.setInterval(async () => { try { await pollStatus() } catch {} }, 2000)
+    } catch (err: any) {
+      setUploadError(err)
+    }
+    return
+  }
+  clearUploadError()
   parseStatus.value = 'pending'
   elapsedSeconds.value = 0
   try {
@@ -214,7 +334,7 @@ const retryParse = async () => {
     await pollStatus()
     timer = window.setInterval(async () => { try { await pollStatus() } catch {} }, 2000)
   } catch (err: any) {
-    uploadError.value = err?.response?.data?.message || err?.message || '重试失败，请稍后再试'
+    setUploadError(err)
   }
 }
 
@@ -222,7 +342,9 @@ const pollStatus = async () => {
   if (!fileId.value) return
   if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
     stopPolling()
-    uploadError.value = '识别超时，请重试。如果是大文件，可稍后刷新页面查看结果。'
+    uploadError.kind = 'parse'
+    uploadError.message = '识别超时，请重试。如果是大文件，可稍后刷新页面查看结果。'
+    uploadError.retryAfter = 0
     parseStatus.value = 'error'
     return
   }
@@ -234,7 +356,9 @@ const pollStatus = async () => {
     parsedRecord.value = normalizeRecord(status.result || status.record || status)
   } else if (status.status === 'error') {
     stopPolling()
-    uploadError.value = status.message || '识别失败，请确认文件内容清晰后重试'
+    uploadError.kind = 'parse'
+    uploadError.message = status.message || '识别失败，请确认文件内容清晰后重试'
+    uploadError.retryAfter = 0
     parseStatus.value = 'error'
   }
 }
@@ -272,9 +396,10 @@ const waitForCompletion = (fid: string): Promise<Record<string, unknown>> => {
 
 const uploadAndParse = async () => {
   if (!files.value.length) return
+  if (uploading.value) return // 避免用户连点
   uploading.value = true
   parseProgress.value = 0
-  uploadError.value = ''
+  clearUploadError()
   uploadIndex.value = 0
 
   try {
@@ -308,7 +433,7 @@ const uploadAndParse = async () => {
     }
     parseStatus.value = 'completed'
   } catch (err: any) {
-    uploadError.value = err?.response?.data?.message || err?.message || '上传失败，请稍后重试'
+    setUploadError(err)
   } finally {
     uploading.value = false
     stopPolling()
@@ -331,7 +456,10 @@ const toMatches = async () => {
   }
 }
 
-onUnmounted(() => { stopPolling() })
+onUnmounted(() => {
+  stopPolling()
+  if (retryTimer) { window.clearInterval(retryTimer); retryTimer = null }
+})
 </script>
 
 <style scoped>

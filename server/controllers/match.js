@@ -2,7 +2,7 @@ const { Op } = require('sequelize');
 const { Trial, MedicalRecord } = require('../models');
 const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
-const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter } = require('../services/matchEngine');
+const { matchRecordsToTrials, parseArrayField, scoreRecordAgainstTrial, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter, inferGeneRequired } = require('../services/matchEngine');
 const { buildProfile } = require('../services/patientProfile');
 const { buildCriterionExplanation } = require('../utils/match-explainer');
 const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
@@ -36,11 +36,21 @@ const parseFilters = (value) => {
   }
 };
 
+const parseBoolLike = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const s = String(value).toLowerCase();
+  if (s === 'true' || s === '1' || s === 'yes') return true;
+  if (s === 'false' || s === '0' || s === 'no') return false;
+  return undefined;
+};
+
 const normalizeMatchFilters = (input = {}) => ({
   disease: safeText(input.disease || input.diagnosis),
   stage: safeText(input.stage),
   city: safeText(input.city || input.location),
-  gene_mutation: safeText(input.gene_mutation || input.geneMutation)
+  gene_mutation: safeText(input.gene_mutation || input.geneMutation),
+  // 显式筛选"不需要基因检测结果的试验"：undefined = 不筛选
+  gene_required: parseBoolLike(input.gene_required ?? input.geneRequired)
 });
 
 const getTrialSearchText = (trial) => {
@@ -73,6 +83,11 @@ const trialMatchesFilters = (trial, filters) => {
   if (geneMutation && !trialText.includes(geneMutation)) {
     return false;
   }
+  // 当调用方显式要求"不限基因的试验"，过滤掉 geneRequired=true 的试验；
+  // 这里 item 经过 buildDetailedMatchItem 后会带有 geneRequired 字段。
+  if (filters.gene_required === false && trial.geneRequired === true) {
+    return false;
+  }
   return true;
 };
 
@@ -100,6 +115,7 @@ const getUserCompletedRecords = async (userId) => {
 };
 
 const buildDetailedMatchItem = (trial, scored) => {
+  const geneRequired = inferGeneRequired(trial);
   const item = {
     id: trial.id,
     trialId: trial.id,
@@ -112,6 +128,7 @@ const buildDetailedMatchItem = (trial, scored) => {
     institution: safeText(trial.institution) || '待补充',
     status: trial.status,
     statusText: STATUS_TEXT_MAP[trial.status] || trial.status,
+    geneRequired,
     reasons: (scored.reasons || ['已根据病历基础信息进行规则匹配']).map((r) => safeText(r)).filter(Boolean),
     inclusion: parseArrayField(trial.inclusion_criteria),
     exclusion: parseArrayField(trial.exclusion_criteria),

@@ -30,11 +30,17 @@ const createRateLimiter = (options = {}) => {
       return `${keyPrefix}${req.userId || req.ip}`;
     },
     handler: (req, res) => {
-      logger.warn('限流触发:', { ip: req.ip, userId: req.userId, path: req.path });
+      // express-rate-limit v6+ 将 resetTime 挂在 req.rateLimit 上
+      const resetTime = req.rateLimit && req.rateLimit.resetTime
+        ? new Date(req.rateLimit.resetTime).getTime()
+        : Date.now() + windowMs;
+      const retryAfter = Math.max(1, Math.ceil((resetTime - Date.now()) / 1000));
+      logger.warn('限流触发:', { ip: req.ip, userId: req.userId, path: req.path, retryAfter });
+      res.setHeader('Retry-After', String(retryAfter));
       res.status(429).json({
         code: 429,
         message,
-        data: null
+        data: { retryAfter }
       });
     }
   });
@@ -50,10 +56,11 @@ const strictLimiter = createRateLimiter({
   keyPrefix: 'rl:strict:'
 });
 
-// 上传限流：10 次/小时
+// 上传限流：30 次/小时（一份完整病历可能含 3 份文件：病理 + 出院小结 + 基因报告，
+// 允许 2-3 次识别失败后的重试，避免正常用户被 10/小时卡死）
 const uploadLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
-  max: 10,
+  max: 30,
   keyPrefix: 'rl:upload:',
   message: '上传过于频繁，请稍后再试'
 });

@@ -58,6 +58,9 @@ const buildMatchPayload = (params: Record<string, unknown>) => {
   if (isPresent(stage)) payload.stage = stage
   if (isPresent(city)) payload.city = city
   if (isPresent(geneMutation)) payload.gene_mutation = geneMutation
+  if (params.gene_required === false || params.gene_required === 'false') {
+    payload.gene_required = false
+  }
 
   return payload
 }

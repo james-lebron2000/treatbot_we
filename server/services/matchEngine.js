@@ -95,6 +95,33 @@ const KNOWN_GENES = [
 const { parsePatientGenes, parseTrialGeneRequirements, matchGenesAgainstTrial } = require('./geneParser');
 const { evaluatePdl1Match } = require('./pdl1Parser');
 
+// 表示试验对基因检测"豁免"的关键词：出现任一即视为无需基因检测
+const GENE_AGNOSTIC_HINTS = [
+  '不限基因', '不限制基因', '不限突变', '无需基因检测', '无需基因检查',
+  '不要求基因', '不要求检测', '基因检测非必需', '基因非必需',
+  'any mutation', 'regardless of mutation', 'biomarker-agnostic'
+];
+
+/**
+ * 启发式：推断试验是否要求基因检测结果。
+ * - 若 trial 文本含豁免关键词（"不限基因"/"泛实体瘤"/etc）→ false
+ * - 若 parseTrialGeneRequirements 解析出任意具体基因要求（EGFR/ALK/…）→ true
+ * - 否则 → false（默认不强制要求）
+ */
+const inferGeneRequired = (trial) => {
+  if (!trial) return false;
+  const prep = getTrialPrep(trial);
+  const text = prep && prep.trialText ? prep.trialText : '';
+  // 显式豁免优先
+  for (const hint of GENE_AGNOSTIC_HINTS) {
+    if (text.includes(hint.toLowerCase())) return false;
+  }
+  // 泛实体瘤也视为不强制要求
+  if (hasGenericCancerSignal(text)) return false;
+  const reqMap = prep && prep.geneReqMap ? prep.geneReqMap : parseTrialGeneRequirements(text);
+  return reqMap && reqMap.size > 0;
+};
+
 /**
  * 从文本中提取命中的已知基因名列表（长度优先、已去重；NTRK1 命中时不再额外返回 NTRK）
  */
@@ -517,6 +544,22 @@ const scoreRecordAgainstTrial = (record, trial) => {
     }
   }
 
+  // ---- 无基因报告时的软性调整 ----
+  // 患者没提供任何基因信息，但试验要求具体基因 → 轻微降分并给出提示，
+  // 试验明确豁免基因 → 轻微加分，帮助"无基因检测"用户优先看到可参加的试验。
+  if (patientGeneMap.size === 0) {
+    const geneRequired = trialReqMap.size > 0;
+    const trialTextLower = trialText; // 已 lower
+    const explicitAgnostic = GENE_AGNOSTIC_HINTS.some((hint) => trialTextLower.includes(hint.toLowerCase()));
+    if (geneRequired && !explicitAgnostic) {
+      score -= 8;
+      reasons.push('该试验通常需要基因检测结果，建议尽快补做检测');
+    } else if (!geneRequired || explicitAgnostic) {
+      score += 4;
+      reasons.push('无需基因检测即可评估');
+    }
+  }
+
   // ---- 分期匹配 ----
   if (record.stage && stageMatches(record.stage, trialText)) {
     score += 6;
@@ -787,6 +830,7 @@ module.exports = {
   extractDiseaseKeywords,
   getPatientTreatmentLine,
   getPatientPdl1,
+  inferGeneRequired,
   // Observability helpers
   getDecomposedCriteriaStatus,
   getTrialPrepStats
