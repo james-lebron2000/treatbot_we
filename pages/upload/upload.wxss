@@ -807,3 +807,12 @@
 .file-type {
   font-size: 26rpx;
 }
+
+/* PRD-2026Q2 §3.7：上传主按钮下方的手动录入 ghost 入口 */
+.manual-entry-link {
+  margin-top: 16rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #0F2B57;
+  text-decoration: underline;
+}

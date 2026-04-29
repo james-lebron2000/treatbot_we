@@ -133,4 +133,53 @@ describe('Fixture 完整性', () => {
       expect(s.result.diagnosis).toBeTruthy();
     });
   });
+
+  test('共 3 份样例，且包含 sample-3-sba 小肠腺癌案例', () => {
+    const fixture = require('../fixtures/demoSamples.json');
+    expect(fixture.samples.length).toBe(3);
+    const ids = fixture.samples.map((s) => s.id);
+    expect(ids).toContain('sample-3-sba');
+  });
+
+  test('sample-3-sba 富字段（TNM / 转移 / 分子 / vMTB）齐全', () => {
+    const fixture = require('../fixtures/demoSamples.json');
+    const sba = fixture.samples.find((s) => s.id === 'sample-3-sba');
+    expect(sba).toBeTruthy();
+    const r = sba.result;
+    expect(r.tnmStage).toBe('T3N1M1');
+    expect(Array.isArray(r.metastasisSites)).toBe(true);
+    expect(r.metastasisSites).toContain('肝脏多发');
+    expect(Array.isArray(r.molecular.drivers)).toBe(true);
+    expect(r.molecular.drivers[0].gene).toBe('KRAS');
+    expect(Array.isArray(r.vMTBPlans)).toBe(true);
+    expect(r.vMTBPlans.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('sample-3-sba 完整脱敏：不含真实姓氏 / 医院 / 出生年', () => {
+    const fixture = require('../fixtures/demoSamples.json');
+    const sba = fixture.samples.find((s) => s.id === 'sample-3-sba');
+    const serialized = JSON.stringify(sba);
+    expect(serialized).not.toMatch(/钱志达/);
+    expect(serialized).not.toMatch(/钱/);
+    expect(serialized).not.toMatch(/长海/);
+    expect(serialized).not.toMatch(/1967/);
+  });
+
+  test('sample-2-nsclc 试验匹配与 EGFR 突变阳性人群一致（不含驱动基因阴性）', () => {
+    const fixture = require('../fixtures/demoSamples.json');
+    const nsclc = fixture.samples.find((s) => s.id === 'sample-2-nsclc');
+    nsclc.matches.forEach((m) => {
+      expect(m.name || '').not.toMatch(/驱动基因阴性/);
+      expect(m.indication || '').not.toMatch(/驱动基因阴性/);
+    });
+  });
+
+  test('sample-1-hcc 试验匹配为 HCC 一致（不含乳腺 / HER2 阳性）', () => {
+    const fixture = require('../fixtures/demoSamples.json');
+    const hcc = fixture.samples.find((s) => s.id === 'sample-1-hcc');
+    hcc.matches.forEach((m) => {
+      expect(m.indication || '').not.toMatch(/乳腺/);
+      expect(m.indication || '').not.toMatch(/HER2 阳性/);
+    });
+  });
 });

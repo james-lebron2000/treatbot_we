@@ -107,6 +107,18 @@ const Trial = sequelize.define('Trial', {
     type: DataTypes.TEXT,
     allowNull: true,
     comment: '报名所需资料'
+  },
+  // PRD-2026Q2 §2.4：试验新鲜度字段
+  last_verified_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: '最后一次被抓取/人工确认仍在招募的时间'
+  },
+  freshness_score: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 100,
+    comment: '新鲜度 0-100，低于 30 视为过期并自动关闭'
   }
 }, {
   tableName: 'trials',

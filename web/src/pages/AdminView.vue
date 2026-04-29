@@ -40,7 +40,7 @@
                 <strong>{{ app.trialName || app.trial_name || '未知试验' }}</strong>
                 <p style="margin:0.2rem 0;color:#6b7280;">
                   患者：{{ app.userName || app.user_name || '匿名' }} |
-                  {{ app.userPhone || app.user_phone || '' }}
+                  {{ maskPhone(app.userPhone || app.user_phone || '') }}
                 </p>
                 <p style="margin:0.2rem 0;color:#6b7280;">
                   诊断：{{ app.diagnosis || '未知' }} |
@@ -75,7 +75,7 @@
         <template v-else>
           <div class="card" v-for="u in usersList" :key="u.id" style="font-size:0.9rem;">
             <strong>{{ u.nickname || u.id }}</strong>
-            <span style="margin-left:0.5rem;color:#6b7280;">{{ u.phone || '' }}</span>
+            <span style="margin-left:0.5rem;color:#6b7280;">{{ maskPhone(u.phone || '') }}</span>
             <p style="margin:0.2rem 0;color:#6b7280;">
               病历 {{ u.recordCount || 0 }} 份 |
               申请 {{ u.applicationCount || 0 }} 次 |
@@ -149,6 +149,8 @@
 <script setup lang="ts">
 import { onMounted, ref, reactive, computed } from 'vue'
 import { api, http } from '../services/api'
+// PRD-2026Q2 §2.3：前端 PII 脱敏兜底。后端已默认脱敏，这里是保险丝。
+import { maskPhone } from '../utils/mask'
 
 const forbidden = ref(false)
 const activeTab = ref('overview')

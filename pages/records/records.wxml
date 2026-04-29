@@ -2,7 +2,7 @@
   <view class="page-header">
     <view class="page-title-group">
       <text class="page-title">我的病历</text>
-      <text class="page-subtitle">查看结构化结果、缺失项和对应试验入口。</text>
+      <text class="page-subtitle">我们从病历里看到的信息，哪里不对直接改。您改过的就是对的。</text>
     </view>
     <view class="add-btn" bindtap="goToUpload">
       <text class="add-icon">+</text>
@@ -11,7 +11,7 @@
   </view>
 
   <view class="loading" wx:if="{{loading}}">
-    <text>病历加载中...</text>
+    <text>马上好…</text>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && errorMessage}}">
@@ -19,7 +19,7 @@
   </view>
 
   <view class="records-list" wx:if="{{!loading && !errorMessage && records.length > 0}}">
-    <view class="record-card" wx:for="{{records}}" wx:key="id" bindtap="viewRecord" data-id="{{item.id}}">
+    <view class="record-card" wx:for="{{records}}" wx:key="id" bindtap="viewRecord" bindlongpress="longPressRecord" data-id="{{item.id}}">
       <view class="record-header">
         <view class="record-type">{{item.type}}</view>
         <view class="record-status {{item.status}}">{{item.statusText}}</view>
@@ -43,4 +43,5 @@
     <text>暂无病历记录</text>
     <button class="btn btn-primary mt-30" bindtap="goToUpload">立即上传</button>
   </view>
+  <help-fab />
 </view>

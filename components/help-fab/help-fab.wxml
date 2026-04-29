@@ -1,0 +1,33 @@
+<view class="help-fab-root">
+  <view class="help-fab-btn" bindtap="toggle" aria-label="{{fab.ariaLabel}}">
+    <text class="help-fab-icon">{{fab.icon}}</text>
+    <text class="help-fab-label">{{fab.label}}</text>
+  </view>
+
+  <view class="help-sheet" wx:if="{{open}}">
+    <view class="help-sheet-header">
+      <text class="help-sheet-title">需要我们帮哪一步？</text>
+      <view class="help-sheet-close" bindtap="close">×</view>
+    </view>
+    <view class="help-sheet-list">
+      <view
+        class="help-sheet-item"
+        wx:for="{{options}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bindtap="onSelect"
+      >
+        <text class="help-sheet-item-title">{{item.title}}</text>
+        <text class="help-sheet-item-sub">{{item.subtitle}}</text>
+      </view>
+    </view>
+    <view class="help-sheet-footer">{{promise}}</view>
+  </view>
+
+  <view class="help-modal-mask" wx:if="{{modalText}}" bindtap="closeModal">
+    <view class="help-modal-card" catchtap="noop">
+      <text class="help-modal-text">{{modalText}}</text>
+      <view class="help-modal-ok" bindtap="closeModal">我明白了</view>
+    </view>
+  </view>
+</view>

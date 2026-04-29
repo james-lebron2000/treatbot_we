@@ -191,3 +191,48 @@
   font-size: 22rpx;
   letter-spacing: 0.8rpx;
 }
+
+/* 数愈健康承诺卡 */
+.privacy-promise-card {
+  background: linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
+  border: 1rpx solid #d1fae5;
+  border-radius: 24rpx;
+  padding: 24rpx 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.privacy-promise-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 14rpx;
+}
+
+.privacy-promise-icon {
+  font-size: 32rpx;
+}
+
+.privacy-promise-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #065f46;
+}
+
+.privacy-promise-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.privacy-promise-bullet {
+  font-size: 26rpx;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.privacy-promise-link {
+  display: inline-block;
+  margin-top: 14rpx;
+  font-size: 26rpx;
+  color: #2563eb;
+}

@@ -3,10 +3,10 @@
     <!-- 顶部说明卡 -->
     <div class="card intro-card">
       <div class="badge">演示模式 · 无需登录</div>
-      <h2 style="margin:8px 0 6px;">30 秒看懂数愈健康怎么帮患者找到临床试验</h2>
+      <h2 style="margin:8px 0 6px;">30 秒看看 —— 别人家的病历，是怎么被看懂的</h2>
       <p style="font-size:0.9rem;color:#374151;line-height:1.6;margin:0;">
-        下面是两份脱敏的真实病历样本。选一份 → 系统会模拟完整的「上传 → OCR → 结构化 → 匹配」流程，
-        并给出和正式流程完全一致的结构化摘要和试验匹配结果。你也可以直接把摘要导出为 PDF 带给医生看。
+        下面是两份已脱敏的示例病历。选一份，我们就陪您走一遍「上传 → 看懂 → 找试验」的完整流程 —— 和真实流程一模一样。<br/>
+        <strong style="color:#065f46;">这是示例 · 我们不会动用您的数据，也不会在您的账户里留下任何痕迹。</strong>
       </p>
     </div>
 
@@ -14,11 +14,11 @@
     <div v-if="stage === 'picker'" class="grid">
       <div v-if="loadingSamples" class="card" style="text-align:center;padding:30px 16px;">
         <div class="pulse-dot"></div>
-        <p style="margin-top:12px;color:#6b7280;">正在加载演示样例…</p>
+        <p style="margin-top:12px;color:#6b7280;">马上好…</p>
       </div>
       <div v-else-if="samplesError" class="card" style="border-color:#fca5a5;background:#fef2f2;">
         <p style="color:#dc2626;margin:0 0 8px;">{{ samplesError }}</p>
-        <button class="btn primary" @click="loadSamples" style="width:100%;">重试</button>
+        <button class="btn primary" @click="loadSamples" style="width:100%;">再试一次</button>
       </div>
       <div
         v-for="sample in samples"
@@ -44,7 +44,7 @@
             <span v-if="sample.diagnosisHint" class="meta-tag">{{ sample.diagnosisHint }}</span>
           </div>
         </div>
-        <div class="sample-cta">开始演示 →</div>
+        <div class="sample-cta">看看怎么被看懂的 →</div>
       </div>
     </div>
 
@@ -62,10 +62,10 @@
           />
         </div>
         <p style="font-size:0.85rem;color:#6b7280;margin:10px 0 0;">
-          点下方按钮即可启动演示，我们不会真的调用 OCR、也不会写入任何数据。
+          这是一份已脱敏的示例 —— 我们不会动用您的数据，也不会在您的账户里留下任何痕迹。
         </p>
         <button class="btn primary" style="width:100%;margin-top:14px;padding:12px;" @click="startProgress">
-          开始演示（约 30 秒）
+          开始看（约 30 秒）
         </button>
       </div>
     </div>
@@ -74,16 +74,16 @@
     <div v-if="stage === 'progress'" class="grid">
       <DemoProgress @stage="onStage" @done="onProgressDone" />
       <div v-if="prefetchError" class="card" style="border-color:#fca5a5;background:#fef2f2;">
-        <p style="color:#dc2626;margin:0;">预取演示结果失败：{{ prefetchError }}</p>
+        <p style="color:#dc2626;margin:0;">示例加载时遇到小问题：{{ prefetchError }} —— 稍后再试一次？</p>
       </div>
     </div>
 
     <!-- Stage: 结果展示 -->
     <div v-if="stage === 'result' && parsedRecord" class="grid">
       <div class="card" style="background:#f0fdf4;border-color:#86efac;">
-        <h3 style="margin:0 0 6px;color:#166534;">识别完成</h3>
-        <p style="font-size:0.85rem;color:#374151;margin:0;">
-          以下是 AI 从样本病历中提取的关键信息（演示数据，100% 固定）。
+        <h3 style="margin:0 0 6px;color:#166534;">好了</h3>
+        <p style="font-size:0.85rem;color:#374151;margin:0;line-height:1.6;">
+          以下是我们从示例病历里看到的信息 —— 真实上传时，您也会看到同样的摘要，可以直接拿给医生看。
         </p>
       </div>
 
@@ -93,13 +93,13 @@
 
       <div class="card" style="display:grid;gap:10px;">
         <button class="btn primary" style="padding:12px;" @click="goMatches">
-          查看匹配的临床试验
+          看看找到的可能性
         </button>
         <button class="btn ghost" style="padding:12px;" :disabled="exporting" @click="exportPdf">
-          {{ exporting ? '正在生成 PDF…' : '下载结构化病历 PDF' }}
+          {{ exporting ? '正在为您打包 PDF…' : '下载病历摘要 PDF（可给医生看）' }}
         </button>
         <button class="btn ghost" style="padding:8px;" @click="backToPicker">
-          ← 返回演示首页
+          ← 回到示例列表
         </button>
         <p v-if="exportError" style="color:#dc2626;font-size:0.85rem;margin:0;">{{ exportError }}</p>
       </div>
@@ -108,17 +108,17 @@
     <!-- Stage: 匹配结果 -->
     <div v-if="stage === 'matches'" class="grid">
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;">匹配的临床试验</h3>
+        <h3 style="margin:0;">为 TA 找到的可能性</h3>
         <button class="btn ghost" @click="stage = 'result'">← 返回摘要</button>
       </div>
 
       <div v-if="loadingMatches" class="card" style="text-align:center;padding:20px 16px;">
         <div class="pulse-dot"></div>
-        <p style="margin-top:10px;color:#6b7280;">正在加载匹配结果…</p>
+        <p style="margin-top:10px;color:#6b7280;">马上好…</p>
       </div>
       <div v-else-if="matchesError" class="card" style="border-color:#fca5a5;background:#fef2f2;">
         <p style="color:#dc2626;margin:0 0 8px;">{{ matchesError }}</p>
-        <button class="btn primary" @click="loadMatches" style="width:100%;">重试</button>
+        <button class="btn primary" @click="loadMatches" style="width:100%;">再试一次</button>
       </div>
       <template v-else>
         <div
@@ -146,12 +146,13 @@
       </template>
 
       <div class="card demo-cta">
-        <h3 style="margin:0 0 6px;">想用自己的病历试试？</h3>
-        <p style="font-size:0.85rem;color:#4b5563;margin:0 0 12px;line-height:1.5;">
-          登录后上传真实病历，3 分钟就能拿到匹配结果。数据全程加密，您可随时删除。
+        <h3 style="margin:0 0 6px;">感觉对了的话，就用家人的病历试试</h3>
+        <p style="font-size:0.85rem;color:#4b5563;margin:0 0 12px;line-height:1.65;">
+          3 分钟出结果 · 数据完全由您掌管 · 随时可以删除。<br/>
+          <span style="color:#b45309;">我们不存储您的隐私数据，所有信息只在您的账户里。</span>
         </p>
         <button class="btn primary" style="width:100%;padding:12px;" @click="goLogin">
-          去登录 / 上传我的病历
+          用家人的病历试试 →
         </button>
       </div>
     </div>
@@ -226,6 +227,23 @@ function scoreClass(score: number | undefined) {
   return 'score-low'
 }
 
+// 把 axios / fetch 抛出的原始错误转成对用户友好的中文文案。
+// 保留可观测信息（err.code / status）便于排查，但不暴露 stack。
+function friendlyError(err: any, fallback: string): string {
+  if (!err) return fallback
+  // axios 的 Network Error：DNS / TLS / 跨域 preflight 失败 / 离线
+  if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+    return '网络好像没连上 —— 请检查 WiFi/数据流量后再试一次'
+  }
+  if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
+    return '加载有点慢 —— 网络不稳定，再试一次试试'
+  }
+  const status = err.response?.status
+  if (status === 404) return '示例暂时不在了 —— 我们正在补回来'
+  if (status && status >= 500) return '服务器临时打了个嗝 —— 稍后再试一次'
+  return err?.message || fallback
+}
+
 async function loadSamples() {
   loadingSamples.value = true
   samplesError.value = ''
@@ -233,7 +251,7 @@ async function loadSamples() {
     const res = await api.listDemoSamples()
     samples.value = Array.isArray(res) ? res : (res?.list || [])
   } catch (err: any) {
-    samplesError.value = err?.message || '样例加载失败，请稍后重试'
+    samplesError.value = friendlyError(err, '示例加载时遇到小问题 —— 稍后再试一次？')
   } finally {
     loadingSamples.value = false
   }
@@ -268,7 +286,7 @@ async function prefetchResult(id: string) {
     const result = res?.result || res?.structured?.entities || res
     parsedRecord.value = result as Record<string, unknown>
   } catch (err: any) {
-    prefetchError.value = err?.message || '结果加载失败'
+    prefetchError.value = friendlyError(err, '示例加载时遇到小问题')
   }
 }
 
@@ -289,7 +307,7 @@ function onProgressDone() {
       } else if (Date.now() - start < 3000) {
         setTimeout(poll, 200)
       } else if (!prefetchError.value) {
-        prefetchError.value = '结果加载超时，请重试'
+        prefetchError.value = '等了一会还没出来 —— 稍后再试一次？'
       }
     }
     poll()
@@ -305,7 +323,7 @@ async function loadMatches() {
     const list = Array.isArray(res) ? res : (res?.list || res?.matches || [])
     matches.value = list
   } catch (err: any) {
-    matchesError.value = err?.message || '匹配结果加载失败'
+    matchesError.value = friendlyError(err, '加载时遇到小问题 —— 稍后再试一次？')
   } finally {
     loadingMatches.value = false
   }
@@ -329,7 +347,7 @@ async function exportPdf() {
     const diagnosis = (parsedRecord.value.diagnosis as string) || '病历摘要'
     await exportElementAsPdf(pdfRoot.value, `病历摘要-${diagnosis}`)
   } catch (err: any) {
-    exportError.value = err?.message || 'PDF 生成失败，请重试'
+    exportError.value = err?.message || 'PDF 打包时遇到小问题 —— 稍后再试一次？'
   } finally {
     exporting.value = false
   }

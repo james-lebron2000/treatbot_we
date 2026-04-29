@@ -33,10 +33,11 @@ const getProfile = async (req, res, next) => {
 const getStats = async (req, res, next) => {
   try {
     const [records, applications, completedRecords, recruitingTrials] = await Promise.all([
-      MedicalRecord.count({ where: { user_id: req.userId } }),
+      // PRD-2026Q2 §3.5：用户统计只算未软删除的病历
+      MedicalRecord.count({ where: { user_id: req.userId, deleted_at: null } }),
       TrialApplication.count({ where: { user_id: req.userId } }),
       MedicalRecord.findAll({
-        where: { user_id: req.userId, status: 'completed' },
+        where: { user_id: req.userId, status: 'completed', deleted_at: null },
         attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'created_at'],
         order: [['created_at', 'DESC']]
       }),

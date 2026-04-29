@@ -11,7 +11,6 @@
  */
 
 const path = require('path');
-const { success, error, pagination } = require('../utils/response');
 const logger = require('../utils/logger');
 
 const FIXTURE_PATH = path.join(__dirname, '..', 'fixtures', 'demoSamples.json');
@@ -39,7 +38,7 @@ loadFixture();
 /** GET /api/demo/samples */
 const listSamples = (req, res) => {
   if (_cache.loadError) {
-    return res.status(503).json(error('demo 数据暂不可用', 503));
+    return res.fail('demo 数据暂不可用', 503);
   }
   const data = _cache.samples.map((s) => ({
     id: s.id,
@@ -51,44 +50,42 @@ const listSamples = (req, res) => {
     sex: s.meta.sex,
     diagnosisHint: s.meta.diagnosisHint
   }));
-  res.json(success(data));
+  res.ok(data);
 };
 
 /** GET /api/demo/samples/:id/result —— 结构与 /medical/parse-status 的 completed 响应对齐 */
 const getSampleResult = (req, res) => {
   const sample = _cache.byId.get(req.params.id);
-  if (!sample) return res.status(404).json(error('样例不存在', 404));
+  if (!sample) return res.fail('样例不存在', 404);
 
-  res.json(
-    success({
-      fileId: `demo-${sample.id}`,
-      recordId: `demo-${sample.id}`,
-      status: 'completed',
-      progress: 100,
-      result: sample.result,
-      // 前端 RecordSummaryCard 可能会读 structured.entities，暂用 result 兜底
-      structured: { entities: sample.result },
-      isDemo: true,
-      createdAt: _cache.loadedAt,
-      updatedAt: _cache.loadedAt
-    })
-  );
+  res.ok({
+    fileId: `demo-${sample.id}`,
+    recordId: `demo-${sample.id}`,
+    status: 'completed',
+    progress: 100,
+    result: sample.result,
+    // 前端 RecordSummaryCard 直接读 record（=result）拿到 12-section 富字段
+    // （timeline / molecular / vMTBPlans / ...）；同时镜像到 structured.entities 让旧
+    //  parse-status 消费者继续工作 —— 同一对象引用，新增字段自动透传，无需逐字段映射。
+    structured: { entities: sample.result },
+    isDemo: true,
+    createdAt: _cache.loadedAt,
+    updatedAt: _cache.loadedAt
+  });
 };
 
 /** GET /api/demo/samples/:id/matches —— 结构与 /api/matches 对齐 */
 const getSampleMatches = (req, res) => {
   const sample = _cache.byId.get(req.params.id);
-  if (!sample) return res.status(404).json(error('样例不存在', 404));
+  if (!sample) return res.fail('样例不存在', 404);
 
   const matches = Array.isArray(sample.matches) ? sample.matches : [];
-  res.json(
-    pagination(matches, {
-      page: 1,
-      pageSize: matches.length,
-      total: matches.length,
-      hasMore: false
-    })
-  );
+  res.paginated(matches, {
+    page: 1,
+    pageSize: matches.length,
+    total: matches.length,
+    hasMore: false
+  });
 };
 
 module.exports = {

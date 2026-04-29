@@ -114,6 +114,8 @@ const uploadFile = async (buffer, key, options = {}) => {
   }
 
   try {
+    // PRD-2026Q2 §2.2：COS 侧服务端加密（SSE-S3 / AES256）强制开启，配合存储桶策略
+    // "拒绝未加密上传" 做兜底。未来若启用 SSE-COS 托管 KMS，可改 ServerSideEncryption: 'cos/kms'。
     const result = await cos.putObject({
       Bucket: bucket,
       Region: region,
@@ -121,10 +123,11 @@ const uploadFile = async (buffer, key, options = {}) => {
       Body: buffer,
       ContentLength: buffer.length,
       ContentType: options.contentType || 'application/octet-stream',
-      Metadata: options.metadata || {}
+      Metadata: options.metadata || {},
+      ServerSideEncryption: 'AES256'
     });
 
-    logger.info('文件上传成功:', { key, etag: result.ETag });
+    logger.info('文件上传成功:', { key, etag: result.ETag, sse: 'AES256' });
     
     return {
       success: true,
@@ -140,8 +143,13 @@ const uploadFile = async (buffer, key, options = {}) => {
 
 /**
  * 获取临时下载链接
+ *
+ * PRD-2026Q2 §2.2：默认 TTL 从 3600s 收紧至 300s。调用方如果需要更长 TTL
+ * （如 Admin 导出给运营侧用），显式传 expires。
  */
-const getPresignedUrl = async (key, expires = 3600) => {
+const DEFAULT_PRESIGNED_EXPIRES = 300;
+
+const getPresignedUrl = async (key, expires = DEFAULT_PRESIGNED_EXPIRES) => {
   if (useLocalStorage) {
     const normalizedKey = normalizeLocalKey(key);
     return `${getPublicBaseUrl()}/uploads/${normalizedKey}`;
@@ -182,7 +190,68 @@ const getInternalUrl = async (key) => {
   return getPresignedUrl(key, 3600);
 };
 
-const getRequestAwareUrl = async (key, req, expires = 3600) => {
+/**
+ * 从 COS 拉回对象为 Buffer（用于后端代理下载 / 脱离浏览器直连）。
+ *
+ * PRD-2026Q2 §2.2：敏感路径的下载应走本函数，前端经 /api/medical/records/:id/file
+ * 拿到内容而不是直接访问 *.myqcloud.com。
+ */
+const getObjectBuffer = async (key) => {
+  if (useLocalStorage) {
+    const normalizedKey = normalizeLocalKey(key);
+    const fullPath = path.join(localUploadRoot, normalizedKey);
+    const buffer = await fsPromises.readFile(fullPath);
+    return {
+      buffer,
+      contentType: 'application/octet-stream',
+      etag: calculateMD5(buffer),
+      encrypted: false
+    };
+  }
+
+  const result = await cos.getObject({
+    Bucket: bucket,
+    Region: region,
+    Key: key
+  });
+
+  const headers = (result && result.headers) || {};
+  return {
+    buffer: result.Body,
+    contentType: result.ContentType || headers['content-type'] || 'application/octet-stream',
+    etag: result.ETag || headers.etag,
+    encrypted: Boolean(headers['x-cos-server-side-encryption'])
+  };
+};
+
+/**
+ * 用 COS 的 CopyObject 自拷贝一次，把未加密对象重写成带 SSE 的版本。
+ * 与 §2.2 migrateCosEncryption.js 配套。
+ */
+const ensureObjectEncrypted = async (key) => {
+  if (useLocalStorage) {
+    return { key, encrypted: false, skipped: true, reason: 'local_storage' };
+  }
+
+  const head = await cos.headObject({ Bucket: bucket, Region: region, Key: key });
+  const headHeaders = (head && head.headers) || {};
+  if (headHeaders['x-cos-server-side-encryption']) {
+    return { key, encrypted: true, skipped: true, reason: 'already_encrypted' };
+  }
+
+  await cos.putObjectCopy({
+    Bucket: bucket,
+    Region: region,
+    Key: key,
+    CopySource: `${bucket}.cos.${region}.myqcloud.com/${encodeURI(key)}`,
+    MetadataDirective: 'Copy',
+    ServerSideEncryption: 'AES256'
+  });
+
+  return { key, encrypted: true, skipped: false };
+};
+
+const getRequestAwareUrl = async (key, req, expires = DEFAULT_PRESIGNED_EXPIRES) => {
   if (useLocalStorage) {
     const normalizedKey = normalizeLocalKey(key);
     return `${getPublicBaseUrl(req)}/uploads/${normalizedKey}`;
@@ -266,6 +335,11 @@ const getSTS = async (userId) => {
   }
 };
 
+// Q3-红线 §A.2.3：注销账号事务里调 deleteObject(key) 删 COS 文件。
+// 与 deleteFile 同实现 —— 命名上给"按 key 物理删对象"一个语义清晰的别名，
+// 方便注销/数据清理路径上的 grep。失败由调用方决定吞掉或重抛。
+const deleteObject = (key) => deleteFile(key);
+
 module.exports = {
   generateKey,
   calculateMD5,
@@ -273,6 +347,10 @@ module.exports = {
   getPresignedUrl,
   getRequestAwareUrl,
   getInternalUrl,
+  getObjectBuffer,
+  ensureObjectEncrypted,
   deleteFile,
-  getSTS
+  deleteObject,
+  getSTS,
+  DEFAULT_PRESIGNED_EXPIRES
 };

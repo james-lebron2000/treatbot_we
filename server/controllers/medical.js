@@ -99,8 +99,9 @@ const handleUpload = async (req, res, next) => {
     const fileHash = ossService.calculateMD5(file.buffer);
 
     // 检查是否已存在相同文件
+    // PRD-2026Q2 §3.5：软删除的记录不参与去重，允许用户删了重传。
     const existingRecord = await MedicalRecord.findOne({
-      where: { user_id: userId, file_hash: fileHash }
+      where: { user_id: userId, file_hash: fileHash, deleted_at: null }
     });
 
     if (existingRecord) {
@@ -236,8 +237,9 @@ const getParseStatus = async (req, res, next) => {
       throw new BusinessError('缺少 fileId 参数', 400);
     }
 
+    // PRD-2026Q2 §3.5：查询解析状态也过滤软删除记录，防止前端卡在已删病历上轮询。
     const record = await MedicalRecord.findOne({
-      where: { id: fileId, user_id: req.userId }
+      where: { id: fileId, user_id: req.userId, deleted_at: null }
     });
 
     if (!record) {
@@ -293,7 +295,8 @@ const getRecords = async (req, res, next) => {
 
     const [recordResult, recruitingTrials] = await Promise.all([
       MedicalRecord.findAndCountAll({
-        where: { user_id: req.userId },
+        // PRD-2026Q2 §3.5：列表只返回未软删除的记录
+        where: { user_id: req.userId, deleted_at: null },
         order: [['created_at', 'DESC']],
         limit: pageSize,
         offset
@@ -310,7 +313,7 @@ const getRecords = async (req, res, next) => {
     const list = await Promise.all(rows.map(async (r) => {
       let imageUrl = null;
       try {
-        imageUrl = await ossService.getRequestAwareUrl(r.file_key, req, 3600);
+        imageUrl = await ossService.getRequestAwareUrl(r.file_key, req, 300);
       } catch (e) {
         logger.warn('获取图片URL失败:', { recordId: r.id, error: e.message });
       }
@@ -353,8 +356,9 @@ const getRecordDetail = async (req, res, next) => {
   try {
     const { id } = req.params;
 
+    // PRD-2026Q2 §3.5：软删除记录不返回详情
     const record = await MedicalRecord.findOne({
-      where: { id, user_id: req.userId }
+      where: { id, user_id: req.userId, deleted_at: null }
     });
 
     if (!record) {
@@ -364,7 +368,7 @@ const getRecordDetail = async (req, res, next) => {
     // 获取图片URL
     let images = [];
     try {
-      const url = await ossService.getRequestAwareUrl(record.file_key, req, 3600);
+      const url = await ossService.getRequestAwareUrl(record.file_key, req, 300);
       images = [url];
     } catch (e) {
       logger.warn('获取图片URL失败:', { recordId: id, error: e.message });
@@ -394,8 +398,9 @@ const getRecordDetail = async (req, res, next) => {
 const enrichRecord = async (req, res, next) => {
   try {
     const { id } = req.params;
+    // PRD-2026Q2 §3.5：软删除记录不允许补全
     const record = await MedicalRecord.findOne({
-      where: { id, user_id: req.userId }
+      where: { id, user_id: req.userId, deleted_at: null }
     });
 
     if (!record) {
@@ -464,14 +469,60 @@ const enrichRecord = async (req, res, next) => {
 };
 
 /**
+ * 通过后端代理下载病历原文件。
+ *
+ * PRD-2026Q2 §2.2：敏感路径不再把 COS 预签名 URL 暴露给浏览器；
+ * 前端走本接口，由后端鉴权 + 拉回 + stream 回去，保证只有 record.user_id
+ * 本人（或 admin，后续 W3 加）能访问。Cache-Control 私有，防止中间层缓存。
+ */
+const downloadRecordFile = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // PRD-2026Q2 §3.5：软删除后不再允许下载原文件
+    const record = await MedicalRecord.findOne({
+      where: { id, user_id: req.userId, deleted_at: null }
+    });
+
+    if (!record) {
+      return res.status(404).json({ code: 404, message: '病历不存在', data: null });
+    }
+
+    if (!record.file_key) {
+      return res.status(404).json({ code: 404, message: '原文件不存在', data: null });
+    }
+
+    let object;
+    try {
+      object = await ossService.getObjectBuffer(record.file_key);
+    } catch (e) {
+      logger.warn('代理下载失败:', { recordId: id, error: e.message });
+      return res.status(502).json({ code: 502, message: '对象存储读取失败', data: null });
+    }
+
+    const safeName = encodeURIComponent(record.file_name || `record-${id}.bin`);
+    res.setHeader('Content-Type', object.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${safeName}`);
+    res.setHeader('Cache-Control', 'private, max-age=0, no-store');
+    if (object.etag) {
+      res.setHeader('ETag', object.etag);
+    }
+    return res.end(object.buffer);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * 删除病历
  */
 const deleteRecord = async (req, res, next) => {
   try {
     const { id } = req.params;
 
+    // PRD-2026Q2 §3.5：旧硬删接口仅对未软删除记录生效
     const record = await MedicalRecord.findOne({
-      where: { id, user_id: req.userId }
+      where: { id, user_id: req.userId, deleted_at: null }
     });
 
     if (!record) {
@@ -497,6 +548,36 @@ const deleteRecord = async (req, res, next) => {
   }
 };
 
+/**
+ * PRD-2026Q2 §3.5：多病历管理页 —— 软删除接口。
+ *
+ * 仅做 deleted_at = now()，不触碰 COS 原文件，也不删申请记录快照，
+ * 保证误删可以后续人工恢复；真正的物理清理走运维定期任务。
+ * 鉴权要求：record.user_id === req.userId，否则统一返回 404 避免泄漏存在性。
+ */
+const softDeleteRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const record = await MedicalRecord.findOne({
+      where: { id, user_id: req.userId, deleted_at: null }
+    });
+
+    if (!record) {
+      return res.fail('记录不存在', 404);
+    }
+
+    const deletedAt = new Date();
+    await record.update({ deleted_at: deletedAt });
+
+    logger.info('病历软删除成功:', { recordId: id, userId: req.userId });
+
+    return res.ok({ id: record.id, deletedAt: deletedAt.toISOString() });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadMiddleware,
   handleUpload,
@@ -504,5 +585,7 @@ module.exports = {
   getRecords,
   getRecordDetail,
   enrichRecord,
-  deleteRecord
+  downloadRecordFile,
+  deleteRecord,
+  softDeleteRecord
 };

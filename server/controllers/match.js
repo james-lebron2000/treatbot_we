@@ -104,10 +104,12 @@ const getProfileRecordFromFilters = (filters) => {
 };
 
 const getUserCompletedRecords = async (userId) => {
+  // PRD-2026Q2 §3.5：匹配引擎只取用户"有效"的已完成病历
   return MedicalRecord.findAll({
     where: {
       user_id: userId,
-      status: 'completed'
+      status: 'completed',
+      deleted_at: null
     },
     attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'created_at'],
     order: [['created_at', 'DESC']]
@@ -161,10 +163,12 @@ const getMatches = async (req, res, next) => {
 
     let profileRecords = [];
     if (recordId) {
+      // PRD-2026Q2 §3.5：软删除后访问匹配列表视为 404
       const record = await MedicalRecord.findOne({
         where: {
           id: recordId,
-          user_id: req.userId
+          user_id: req.userId,
+          deleted_at: null
         },
         attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
       });
@@ -201,7 +205,7 @@ const getMatches = async (req, res, next) => {
       city: filters.city || ''
     });
 
-    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion'];
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion', 'last_verified_at', 'freshness_score'];
 
     let trials = await Trial.findAll({
       where: coarseWhere,
@@ -367,10 +371,12 @@ const findMatches = async (req, res, next) => {
 
     let profileRecord = null;
     if (recordId) {
+      // PRD-2026Q2 §3.5：findMatches 也排除软删除
       profileRecord = await MedicalRecord.findOne({
         where: {
           id: recordId,
-          user_id: req.userId
+          user_id: req.userId,
+          deleted_at: null
         },
         attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
       });
@@ -391,7 +397,7 @@ const findMatches = async (req, res, next) => {
       city: filters.city || ''
     });
 
-    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion'];
+    const trialAttrs = ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'contact_phone', 'status', 'updated_at', 'disease_tags', 'treatment_lines', 'study_cities', 'treatment_approach', 'brief_inclusion', 'structured_inclusion', 'last_verified_at', 'freshness_score'];
 
     let trials = await Trial.findAll({
       where: coarseWhere,

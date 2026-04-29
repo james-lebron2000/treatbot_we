@@ -53,10 +53,14 @@ const clearTransientState = () => {
 
 const normalizeSessionPayload = (payload = {}) => {
   const token = payload.token || payload.accessToken || wx.getStorageSync('token') || ''
+  // Q3-红线 §A.1：把 server/controllers/auth.js 下发的 refreshToken 也拎出来。
+  // 之前小程序拿到后直接丢弃，导致 401 = 立即登出。
+  const refreshToken = payload.refreshToken || payload.refresh_token || ''
   const sourceUserInfo = payload.userInfo || payload.profile || {}
 
   return {
     token,
+    refreshToken,
     userInfo: {
       id: sourceUserInfo.id || payload.id || '',
       nickName: sourceUserInfo.nickName || sourceUserInfo.nickname || payload.nickName || payload.nickname || '微信用户',
@@ -78,6 +82,11 @@ const setSession = (payload) => {
 
   if (normalized.token) {
     wx.setStorageSync('token', normalized.token)
+  }
+  // Q3-红线 §A.1：refreshToken 必须落本地，否则 utils/api.js 的 single-flight
+  // refresh 拿不到凭证，401 仍然会直接登出。
+  if (normalized.refreshToken) {
+    wx.setStorageSync('refreshToken', normalized.refreshToken)
   }
   if (normalized.userInfo) {
     wx.setStorageSync('userInfo', normalized.userInfo)
@@ -148,6 +157,8 @@ const ensureLogin = async () => {
 
 const clearSession = () => {
   wx.removeStorageSync('token')
+  // Q3-红线 §A.1：refreshToken 必须一同清，避免后续 401 又用旧的去刷
+  wx.removeStorageSync('refreshToken')
   wx.removeStorageSync('userInfo')
   wx.removeStorageSync('activeUserId')
   clearTransientState()
@@ -157,9 +168,15 @@ const clearSession = () => {
   app.globalData.userInfo = null
 }
 
+// Q3-红线 §A.2：注销账号或主动登出，profile 页 / 注销流程使用。
+const logout = () => {
+  clearSession()
+}
+
 module.exports = {
   ensureLogin,
   ensureBaseLogin,
   setSession,
-  clearSession
+  clearSession,
+  logout
 }

@@ -1,6 +1,6 @@
 <template>
   <section class="grid">
-    <h2>我的申请</h2>
+    <h2>正在联络的试验</h2>
 
     <!-- 状态筛选标签 -->
     <div class="filter-tabs">
@@ -14,18 +14,21 @@
       </button>
     </div>
 
-    <div class="card" v-if="loading">加载中...</div>
+    <div class="card" v-if="loading">马上好…</div>
     <div class="card" v-else-if="error">{{ error }}</div>
 
     <!-- 空状态 -->
     <div class="card empty-state" v-else-if="filteredList.length === 0">
       <div style="font-size:2.5rem;margin-bottom:0.5rem;">📋</div>
       <p v-if="activeTab" style="color:#6b7280;margin:0 0 0.5rem;">
-        没有{{ tabs.find(t => t.value === activeTab)?.label }}的申请
+        这里还没有{{ tabs.find(t => t.value === activeTab)?.label }}的记录
       </p>
-      <p v-else style="color:#6b7280;margin:0 0 0.5rem;">暂无申请记录</p>
-      <p style="margin:0;">
-        <router-link to="/matches" class="link-btn">去匹配试验 →</router-link>
+      <p v-else style="color:#6b7280;margin:0 0 0.5rem;line-height:1.6;">
+        您还没有提交过申请。<br/>
+        <span style="font-size:0.85rem;color:#9ca3af;">不着急，等您看好试验再说，随时都可以。</span>
+      </p>
+      <p style="margin:8px 0 0;">
+        <router-link to="/matches" class="link-btn">去看看为家人找到的可能性 →</router-link>
       </p>
     </div>
 
@@ -66,13 +69,22 @@
 
         <!-- 试验状态警告 -->
         <div v-if="app.trialStatus && app.trialStatus !== 'recruiting' && app.status !== 'cancelled'" class="trial-warning">
-          ⚠️ 该试验当前状态：{{ app.trialStatusText || app.trialStatus }}
+          小提示 · 该试验当前状态：{{ app.trialStatusText || app.trialStatus }}
+        </div>
+
+        <!-- 待联系（pending）状态 -->
+        <div v-if="app.status === 'pending'" class="contact-tip" style="background:#fffbeb;color:#854d0e;">
+          <p style="margin:0;font-size:0.88rem;line-height:1.65;">
+            ⏳ 已递交 —— 研究团队通常 1-3 个工作日内联系您。<br/>
+            <span style="color:#a16207;">这段时间您不用做什么，有消息会短信通知。</span>
+          </p>
         </div>
 
         <!-- 已联系状态下的联系信息提示 -->
         <div v-if="app.status === 'contacted'" class="contact-tip">
-          <p style="margin:0;font-size:0.88rem;">
-            🔔 研究人员已与您取得联系，请留意来电并配合提供相关资料。
+          <p style="margin:0;font-size:0.88rem;line-height:1.65;">
+            📞 研究团队已联系过您。请留意后续电话、尽量接听 —— 他们会告诉您下一步怎么做。<br/>
+            <span style="color:#1e40af;">有问题随时问我们。</span>
           </p>
           <p v-if="app.contactPhone" style="margin:4px 0 0;font-size:0.85rem;color:#1e40af;">
             联系电话：{{ app.contactPhone }}
@@ -81,24 +93,25 @@
 
         <!-- 已入组提示 -->
         <div v-if="app.status === 'enrolled'" class="enrolled-tip">
-          <p style="margin:0;font-size:0.88rem;">
-            🎉 恭喜！您已成功入组。请按照研究中心的要求按时参加随访。
+          <p style="margin:0;font-size:0.88rem;line-height:1.65;">
+            🌱 太好了，您成功入组。这是重要的一步。<br/>
+            <span style="color:#15803d;">接下来的治疗细节请听主治医生安排，我们会把您的资料安全归档，随时可以找回。</span>
           </p>
         </div>
 
         <!-- 未通过说明 -->
         <div v-if="app.status === 'rejected'" class="rejected-tip">
-          <p style="margin:0;font-size:0.88rem;">
-            此次筛选未通过，可能是因为不完全符合入排标准。您可以继续匹配其他合适的试验。
+          <p style="margin:0;font-size:0.88rem;line-height:1.65;">
+            这个试验和您当前情况不完全匹配 —— <strong>别担心</strong>，我们已经在找更合适的选择。
           </p>
         </div>
 
         <!-- 操作按钮 -->
         <div class="app-actions" v-if="canCancel(app.status)">
           <button @click="cancelApp(app.id)" :disabled="cancelling === app.id" class="cancel-btn">
-            {{ cancelling === app.id ? '取消中...' : '取消申请' }}
+            {{ cancelling === app.id ? '马上好…' : '先不参加了' }}
           </button>
-          <span class="action-hint">提交后 3 个工作日内将收到联系</span>
+          <span class="action-hint">研究团队通常 1-3 个工作日内联系您</span>
         </div>
       </div>
 
@@ -131,10 +144,10 @@ const activeTab = ref('')
 // 筛选标签
 const tabs = [
   { label: '全部', value: '' },
-  { label: '待联系', value: 'pending' },
-  { label: '已联系', value: 'contacted' },
+  { label: '等待联系', value: 'pending' },
+  { label: '已联系上', value: 'contacted' },
   { label: '已入组', value: 'enrolled' },
-  { label: '已取消', value: 'cancelled' },
+  { label: '不参加了', value: 'cancelled' },
 ]
 
 // 状态进度
@@ -172,10 +185,10 @@ const filteredList = computed(() => {
 })
 
 const statusLabels: Record<string, string> = {
-  pending: '待联系',
-  contacted: '已联系',
-  enrolled: '已入组',
-  rejected: '未通过',
+  pending: '等待研究团队联系',
+  contacted: '研究团队已联系',
+  enrolled: '已成功入组',
+  rejected: '这次不太合适',
   cancelled: '已取消',
 }
 
@@ -208,7 +221,7 @@ const loadList = async () => {
     list.value = payload
     total.value = res?.total || res?.pagination?.total || payload.length
   } catch {
-    error.value = '加载申请列表失败'
+    error.value = '加载时遇到小问题 —— 稍后再试一次？您的数据没丢。'
   } finally {
     loading.value = false
   }
@@ -225,7 +238,7 @@ const goPage = (p: number) => {
 }
 
 const cancelApp = async (id: string) => {
-  if (!confirm('确定取消此申请？取消后如需重新报名需再次提交。')) return
+  if (!confirm('确定先不参加这个试验了吗？以后想再报名需要重新提交。')) return
   cancelling.value = id
   try {
     await api.cancelApplication(id)
@@ -235,7 +248,7 @@ const cancelApp = async (id: string) => {
       item.statusText = '已取消'
     }
   } catch (e: any) {
-    alert(e?.response?.data?.message || '取消失败')
+    alert(e?.response?.data?.message || '取消时遇到小问题 —— 稍后再试一次？')
   } finally {
     cancelling.value = ''
   }

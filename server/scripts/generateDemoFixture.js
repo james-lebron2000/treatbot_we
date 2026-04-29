@@ -43,6 +43,14 @@ const generate = () => {
   const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf-8'));
 
   fixture.samples.forEach((sample) => {
+    // 2026Q3：部分样例的 matches 是手工策展（含 trials_data.json 暂未收录的真实 NCT 试验，
+    // 如 sample-3-sba 的 NCT05185947 / NCT04753203 / FAPI-RNT-001）。这类样例显式标记
+    // `curatedMatches: true`，跳过自动重算，避免被本地试验库收窄掉。
+    if (sample.curatedMatches) {
+      console.log(`[demo-fixture] ${sample.id} → curated, skip auto-regen (matches kept as-is)`);
+      return;
+    }
+
     const input = sample.matchInput;
     const scored = trials
       .map((trial) => ({ trial, scored: scoreRecordAgainstTrial(input, trial) }))

@@ -1,10 +1,34 @@
 <view class="container">
+  <!-- PRD-2026Q3 §U5：首屏期望管理 banner —— 30 秒了解我们；点过「我看过了」就不再展示 -->
+  <view class="onboarding-banner" wx:if="{{!onboardingSeen}}">
+    <view class="onboarding-banner-head">
+      <text class="onboarding-banner-title">{{ onboarding.title }}</text>
+      <view class="onboarding-banner-toggle" bindtap="toggleOnboarding">
+        <text>{{ onboardingExpanded ? '收起 ▴' : '展开 ▾' }}</text>
+      </view>
+    </view>
+    <view class="onboarding-banner-body" wx:if="{{onboardingExpanded}}">
+      <view class="onboarding-step" wx:for="{{onboarding.steps}}" wx:key="icon">
+        <view class="onboarding-step-icon">{{item.icon}}</view>
+        <view class="onboarding-step-body">
+          <text class="onboarding-step-title">{{item.title}}</text>
+          <text class="onboarding-step-text">{{item.body}}</text>
+        </view>
+      </view>
+      <view class="onboarding-promise">{{onboarding.promise}}</view>
+      <view class="onboarding-actions">
+        <view class="onboarding-cta-primary" bindtap="dismissOnboarding">{{onboarding.ctaPrimary}}</view>
+        <view class="onboarding-cta-secondary" bindtap="dismissOnboarding">{{onboarding.ctaSecondary}}</view>
+      </view>
+    </view>
+  </view>
+
   <view class="hero-section">
     <view class="hero-content">
-      <text class="hero-eyebrow">数愈健康 · 智能预筛</text>
-      <text class="hero-title">真心对待每一人</text>
-      <text class="hero-title">多看看这个世界</text>
-      <text class="hero-subtitle">把病历整理、结构化预筛和试验匹配，压缩到一次上传里完成。</text>
+      <text class="hero-eyebrow">数愈健康 · 您的数据您做主</text>
+      <text class="hero-title">让每一份病历</text>
+      <text class="hero-title">都找到属于它的答案</text>
+      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、对接临床试验。数据完全由您掌管。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
@@ -19,21 +43,21 @@
       <text class="stat-label">成功匹配人数</text>
     </view>
     <view class="stat-item">
-      <text class="stat-number">99%</text>
-      <text class="stat-label">准确率</text>
+      <text class="stat-number">零</text>
+      <text class="stat-label">隐私数据留存</text>
     </view>
   </view>
 
   <view class="feature-section">
-    <view class="section-title">快速开始</view>
-    <view class="section-subtitle">从上传、病历管理到试验筛选，全部在一个流里完成。</view>
+    <view class="section-title">从这里开始</view>
+    <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到可能性」全程。</view>
 
     <view class="feature-grid">
       <view class="feature-card primary" bindtap="goToUpload">
         <view class="feature-icon">录</view>
         <view class="feature-info">
-          <text class="feature-title">上传病历</text>
-          <text class="feature-desc">拍照、相册或 PDF，一次进入后台整理</text>
+          <text class="feature-title">把病历交给我们</text>
+          <text class="feature-desc">拍照、相册或 PDF 都行，几分钟就帮您看懂</text>
         </view>
         <view class="feature-arrow">›</view>
       </view>
@@ -42,7 +66,7 @@
         <view class="feature-icon">档</view>
         <view class="feature-info">
           <text class="feature-title">我的病历</text>
-          <text class="feature-desc">查看结构化结果和补全项</text>
+          <text class="feature-desc">看看我们从病历里读到了什么，哪里不对直接改</text>
         </view>
         <view class="feature-arrow">›</view>
       </view>
@@ -50,8 +74,8 @@
       <view class="feature-card" bindtap="goToMatches">
         <view class="feature-icon">筛</view>
         <view class="feature-info">
-          <text class="feature-title">匹配结果</text>
-          <text class="feature-desc">查看当前病历对应的试验推荐</text>
+          <text class="feature-title">找到的可能性</text>
+          <text class="feature-desc">为家人找到的临床试验 —— 每一项都说清楚为什么</text>
         </view>
         <view class="feature-arrow">›</view>
       </view>
@@ -60,7 +84,7 @@
 
   <view class="processing-card" wx:if="{{activeParseTask}}">
     <view class="processing-card-head">
-      <text class="processing-card-title">病历正在后台整理</text>
+      <text class="processing-card-title">我们正在看懂这份病历</text>
       <text class="processing-card-progress">{{activeParseTask.progress}}%</text>
     </view>
     <text class="processing-card-text">{{activeParseTask.text}}</text>
@@ -68,13 +92,13 @@
       <view class="processing-card-fill" style="width: {{activeParseTask.progress}}%;"></view>
     </view>
     <view class="processing-card-actions">
-      <text class="processing-card-link" bindtap="goToRecords">查看病历</text>
-      <text class="processing-card-link" bindtap="goToMatches">查看匹配</text>
+      <text class="processing-card-link" bindtap="goToRecords">看病历</text>
+      <text class="processing-card-link" bindtap="goToMatches">看可能性</text>
     </view>
   </view>
 
   <view class="loading" wx:if="{{loading}}">
-    <text>加载匹配中...</text>
+    <text>马上好…</text>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && errorMessage}}">
@@ -83,8 +107,8 @@
 
   <view class="recent-section" wx:if="{{!loading && recentMatches.length > 0}}">
     <view class="section-header">
-      <text class="section-title">最近匹配</text>
-      <text class="view-all" bindtap="goToMatches">查看全部</text>
+      <text class="section-title">最近找到的可能性</text>
+      <text class="view-all" bindtap="goToMatches">看全部</text>
     </view>
 
     <view class="match-list">
@@ -109,31 +133,33 @@
   </view>
 
   <view class="process-section">
-    <view class="section-title">3步完成试验初筛</view>
-    <view class="section-subtitle">上传病历后，系统会先整理关键信息，再输出更可解释的匹配建议。</view>
+    <view class="section-title">三步就能用</view>
+    <view class="section-subtitle">几分钟走完全程，每一步都说人话，不留任何数据。</view>
     <view class="process-steps">
       <view class="step">
         <view class="step-number">1</view>
-        <text class="step-title">上传病历</text>
-        <text class="step-desc">拍照或选择病历照片</text>
+        <text class="step-title">交给我们</text>
+        <text class="step-desc">拍照或选病历</text>
       </view>
       <view class="step-arrow">→</view>
       <view class="step">
         <view class="step-number">2</view>
-        <text class="step-title">AI解析</text>
-        <text class="step-desc">自动提取关键信息</text>
+        <text class="step-title">帮您看懂</text>
+        <text class="step-desc">找到关键信息</text>
       </view>
       <view class="step-arrow">→</view>
       <view class="step">
         <view class="step-number">3</view>
-        <text class="step-title">智能匹配</text>
-        <text class="step-desc">推荐适合试验</text>
+        <text class="step-title">找到可能</text>
+        <text class="step-desc">对接合适试验</text>
       </view>
     </view>
   </view>
 
   <view class="safety-tips">
     <text class="tips-icon">🔒</text>
-    <text class="tips-text">您的资料仅用于试验评估与人工联系，严格保密</text>
+    <text class="tips-text">隐私零存储 · 信息只在您账户里 · 随时可带走或删除</text>
   </view>
+
+  <help-fab />
 </view>

@@ -79,7 +79,26 @@ const DISEASE_PROFILES = [
   }
 ];
 
-const GENERIC_CANCER_ALIASES = ['实体瘤', '实体性肿瘤', '恶性肿瘤', '晚期实体瘤', '进展期实体瘤', '实体肿瘤'];
+// PRD-2026Q2 §3.1：扩充泛瘤种口径词典。来源见 docs/trial-vocabulary.md。
+// 命中任一别名即视为「泛实体瘤/不限癌种」信号。保守原则：仅收录明确表达
+// 「多瘤种 / 全实体瘤 / MSI-H/dMMR/TMB-H/PD-L1 阳性」这类广谱入组口径，
+// 不纳入 NSCLC / 乳腺癌等具体癌种词，避免收窄词被误判为泛瘤种。
+const GENERIC_CANCER_ALIASES = [
+  // 既有中文口径
+  '实体瘤', '实体性肿瘤', '恶性肿瘤', '晚期实体瘤', '进展期实体瘤', '实体肿瘤',
+  // 新增中文泛实体瘤口径（PRD-2026Q2 §3.1）
+  '泛实体瘤', '泛實體瘤', '转移性实体瘤', '多瘤种', '多种实体瘤', '全部实体瘤', '任何实体瘤',
+  // 英文常见 NCT 入组口径
+  'solid tumor', 'solid tumors', 'solid tumour', 'solid tumours',
+  'advanced solid tumor', 'advanced solid tumors',
+  'metastatic solid tumor', 'metastatic solid tumors',
+  'all solid tumors', 'any solid tumor', 'any solid tumors',
+  'advanced malignancies', 'advanced malignancy',
+  // 生物标志物驱动、不限癌种的入组口径（FDA/NMPA 泛瘤种适应症常见表述）
+  'msi-h', 'msih', 'dmmr', 'mmr deficient', 'mismatch repair deficient',
+  'tmb-h', 'tmbh', 'tmb high', 'high tumor mutational burden',
+  'pd-l1 positive', 'pd-l1 高表达', 'pd-l1≥1%', 'pd-l1 ≥ 1%', 'pd-l1≥1', 'pd-l1 ≥1%'
+];
 
 // 已知基因列表，用于精确基因名匹配（避免子串假阳性）
 // NOTE: 保留此列表仅为向后兼容；内部使用 geneParser 的 GENE_DEFINITIONS（长度降序、去重）。
@@ -96,10 +115,21 @@ const { parsePatientGenes, parseTrialGeneRequirements, matchGenesAgainstTrial } 
 const { evaluatePdl1Match } = require('./pdl1Parser');
 
 // 表示试验对基因检测"豁免"的关键词：出现任一即视为无需基因检测
+// PRD-2026Q2 §3.1：扩充泛瘤种/免基因入组口径（来源见 docs/trial-vocabulary.md）
 const GENE_AGNOSTIC_HINTS = [
+  // 既有：显式「不限 / 不要求基因」中文
   '不限基因', '不限制基因', '不限突变', '无需基因检测', '无需基因检查',
   '不要求基因', '不要求检测', '基因检测非必需', '基因非必需',
-  'any mutation', 'regardless of mutation', 'biomarker-agnostic'
+  'any mutation', 'regardless of mutation', 'biomarker-agnostic',
+  // 新增：泛实体瘤入组口径（与 GENERIC_CANCER_ALIASES 有重叠，
+  // 此处保留是因为 inferGeneRequired 仅查询该数组）
+  'advanced solid tumor', 'advanced solid tumors',
+  'metastatic solid tumor', 'metastatic solid tumors',
+  'solid tumors', 'all solid tumors', 'any solid tumor',
+  '泛实体瘤', '泛實體瘤', '晚期实体瘤', '转移性实体瘤', '多瘤种',
+  // 新增：生物标志物驱动、不限癌种（FDA/NMPA 泛瘤种适应症常见表述）
+  'pd-l1 高表达', 'pd-l1 positive', 'pd-l1≥1%', 'pd-l1 ≥ 1%',
+  'msi-h', 'dmmr', 'tmb-h', 'tmb high'
 ];
 
 /**
@@ -180,7 +210,47 @@ const getDiseaseProfile = (text) => {
   return best;
 };
 
-const hasGenericCancerSignal = (text) => containsAlias(text, GENERIC_CANCER_ALIASES);
+/**
+ * PRD-2026Q2 §3.1：多源聚合泛瘤种命中。
+ * 接受两种入参：
+ *  - 字符串：按原语义在文本里查泛瘤种别名（向后兼容 criterionMatcher / matchDiseaseText 等调用）
+ *  - trial 对象：聚合 inclusion_criteria / structured_inclusion / disease_tags 三路文本
+ *    任一命中即判 true。大小写不敏感（containsAlias 已 normalize）。
+ */
+const hasGenericCancerSignal = (input) => {
+  if (input == null) return false;
+  // 字符串 / 数字：原路径
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    const text = Array.isArray(input) ? input.join(' ') : input;
+    return containsAlias(text, GENERIC_CANCER_ALIASES);
+  }
+  // Trial 对象：三路聚合
+  const parts = [];
+  // 1) inclusion_criteria（可能是数组 / JSON 字符串 / 字符串）
+  const inclusion = parseArrayField(input.inclusion_criteria);
+  if (inclusion.length) parts.push(inclusion.join(' '));
+  // 2) structured_inclusion（对象 → JSON 字符串，便于一次性扫描字段值）
+  if (input.structured_inclusion && typeof input.structured_inclusion === 'object') {
+    try {
+      parts.push(JSON.stringify(input.structured_inclusion));
+    } catch (e) {
+      // 循环引用等极端情况，忽略
+    }
+  } else if (typeof input.structured_inclusion === 'string') {
+    parts.push(input.structured_inclusion);
+  }
+  // 3) disease_tags（数组 join 空格）
+  if (Array.isArray(input.disease_tags)) {
+    parts.push(input.disease_tags.join(' '));
+  } else if (typeof input.disease_tags === 'string') {
+    parts.push(input.disease_tags);
+  }
+  // 兜底：如果三路都空，退回到 getTrialInclusionText 的传统全文
+  if (parts.length === 0) {
+    return containsAlias(getTrialInclusionText(input), GENERIC_CANCER_ALIASES);
+  }
+  return containsAlias(parts.join(' '), GENERIC_CANCER_ALIASES);
+};
 
 /**
  * 分期等价表：将各种中英文表达归一到标准键
@@ -342,6 +412,99 @@ const getTrialPrep = (trial) => {
 /** 缓存统计接口（供 /health/detailed 使用） */
 const getTrialPrepStats = () => ({ ...(_trialPrepStats) });
 
+// ---- Cancer-type consistency hard-exclusion helpers (PRD-2026Q2) ----
+// 目标：在硬过滤阶段挡掉以下三类不一致：
+//   1) 适应症明确为癌种 Y 的试验，但患者癌种 X≠Y 且 X 别名都不命中、且 trial 无泛瘤种信号
+//   2) 试验明确要求"驱动基因阴性 / driver-negative"，但患者携带具体驱动突变
+//   3) 试验明确以 "${gene} 突变阳性 / 野生型" 作为入组要求，与患者状态相反
+// 仅在高置信度时触发，避免误伤真正合规的试验。
+
+// 驱动基因阴性入组口径（中英文）
+const DRIVER_NEGATIVE_PATTERNS = [
+  /(驱动基因|驱动突变).{0,10}?(阴性|野生|wild)/i,
+  /无驱动基因突变/,
+  /驱动基因野生型/,
+  /driver[\s-]*(negative|wildtype|wild type|wild-type)/i,
+  /no driver mutation/i,
+  /without driver mutation/i
+];
+
+const hasDriverNegativeRequirement = (text) => {
+  if (!text) return false;
+  return DRIVER_NEGATIVE_PATTERNS.some((re) => re.test(text));
+};
+
+/**
+ * 在试验文本中判断「${gene} 突变/野生」是否作为入组要求出现（而非提及/排除）。
+ * 返回 'mutant' / 'wild' / null
+ */
+const isStrictGeneRequirement = (trialText, gene) => {
+  if (!trialText || !gene) return null;
+  const g = gene.replace(/[-]/g, '\\-?');
+  // 突变/阳性/敏感突变/positive
+  const mutantRe = new RegExp(`${g}\\s*[^a-z0-9\\u4e00-\\u9fff]{0,4}(突变(阳性|敏感|阳)?|阳性|敏感突变|positive|mutant|mutation)`, 'i');
+  const wildRe = new RegExp(`${g}\\s*[^a-z0-9\\u4e00-\\u9fff]{0,4}(野生|阴性|wild[\\s-]?type|wt|negative)`, 'i');
+  if (wildRe.test(trialText)) return 'wild';
+  if (mutantRe.test(trialText)) return 'mutant';
+  return null;
+};
+
+/**
+ * 检查 trial 是否能从 disease_tags / inclusion text 推出「另一癌种」profile
+ * 且患者癌种 profile 在该 trial 文本里完全不命中 → 视为癌种不一致。
+ *
+ * 返回 { mismatch: bool, patientProfile, trialProfile, reason } 形式，
+ * 当 mismatch=true 时调用方应硬排除。
+ */
+const isCancerTypeMismatch = (patient, trial) => {
+  const result = { mismatch: false, patientProfile: null, trialProfile: null, reason: null };
+  if (!patient || !trial) return result;
+  const patientText = patient.diagnosis || patient.structured?.entities?.diagnosis || '';
+  const patientProfile = getDiseaseProfile(patientText);
+  result.patientProfile = patientProfile;
+  if (!patientProfile) {
+    // 无法识别患者癌种（例如小肠腺癌等罕见癌种）→ 不在硬排除范围内，避免误杀
+    return result;
+  }
+
+  // 泛瘤种 trial 直接放行
+  if (hasGenericCancerSignal(trial)) return result;
+
+  const inclusionText = getTrialInclusionText(trial);
+  const normalizedInclusion = normalizeText(inclusionText);
+
+  // 1) disease_tags 优先：如果 tags 包含明确的「其他特定癌种」别名
+  const diseaseTags = Array.isArray(trial.disease_tags) ? trial.disease_tags : [];
+  const tagText = diseaseTags.join(' ');
+
+  // 患者癌种是否在试验文本/标签中命中？
+  const patientHitInTrial = containsAlias(inclusionText, patientProfile.aliases)
+    || (tagText && containsAlias(tagText, patientProfile.aliases));
+
+  if (patientHitInTrial) return result; // 命中即视为同癌种，放行
+
+  // 2) 在 disease_tags / inclusion text 里找另一具体癌种 profile
+  let otherProfile = null;
+  for (const candidate of DISEASE_PROFILES) {
+    if (candidate.id === patientProfile.id) continue;
+    const hitInTags = tagText && containsAlias(tagText, candidate.aliases);
+    const hitInInclusion = containsAlias(inclusionText, candidate.aliases);
+    if (hitInTags || hitInInclusion) {
+      otherProfile = candidate;
+      break;
+    }
+  }
+
+  if (otherProfile) {
+    result.mismatch = true;
+    result.trialProfile = otherProfile;
+    result.reason = `试验适应症（${otherProfile.label}）与患者癌种（${patientProfile.label}）不一致`;
+    return result;
+  }
+
+  return result;
+};
+
 /**
  * 从患者诊断文本中提取用于粗筛的疾病关键词
  */
@@ -479,6 +642,54 @@ const scoreRecordAgainstTrial = (record, trial) => {
   const trialText = _prep.trialText;
   const diagnosis = safeLower(record.diagnosis);
   const diseaseMatch = matchDiseaseText(diagnosis, trialText);
+
+  // ---- 癌种一致性硬排除（PRD-2026Q2）----
+  // 仅在高置信度时触发：泛瘤种 trial / 罕见癌种患者 / 同癌种命中均会放行。
+  // 1) 跨癌种不一致（HER2+ 乳腺癌 trial vs 肝癌患者 等）
+  const ctMismatch = isCancerTypeMismatch(record, trial);
+  if (ctMismatch.mismatch) {
+    return { score: 0, reasons: [ctMismatch.reason], excluded: true };
+  }
+
+  // 2) 试验明确要求驱动基因阴性，而患者携带具体驱动突变 → 硬排除
+  const _patientGeneRawForExc = record.gene_mutation || record.structured?.entities?.geneMutation || '';
+  const _patientGeneMapForExc = parsePatientGenes(_patientGeneRawForExc);
+  const _hasMutantGene = Array.from(_patientGeneMapForExc.values()).some((v) => v && v.status === 'mutant');
+  if (_hasMutantGene && hasDriverNegativeRequirement(_prep.inclusionText)) {
+    const mutantGenes = Array.from(_patientGeneMapForExc.entries())
+      .filter(([, v]) => v && v.status === 'mutant')
+      .map(([k]) => k);
+    return {
+      score: 0,
+      reasons: [`试验要求驱动基因阴性，但患者携带 ${mutantGenes.join('、')} 突变`],
+      excluded: true
+    };
+  }
+
+  // 3) 严格基因要求与患者状态明确反向 → 硬排除
+  //    仅当 trial 文本以 "${gene} 突变/阳性/野生" 形式作为入组要求时触发，避免误伤
+  //    "${gene}抑制剂研究" 等仅作背景提及的情况。
+  if (_patientGeneMapForExc.size > 0) {
+    for (const [gene, info] of _patientGeneMapForExc.entries()) {
+      if (!info || (info.status !== 'mutant' && info.status !== 'wild')) continue;
+      const strictReq = isStrictGeneRequirement(_prep.inclusionText, gene);
+      if (!strictReq) continue;
+      if (strictReq === 'mutant' && info.status === 'wild') {
+        return {
+          score: 0,
+          reasons: [`试验要求 ${gene} 突变阳性，但患者为野生型`],
+          excluded: true
+        };
+      }
+      if (strictReq === 'wild' && info.status === 'mutant') {
+        return {
+          score: 0,
+          reasons: [`试验要求 ${gene} 野生型，但患者为突变阳性`],
+          excluded: true
+        };
+      }
+    }
+  }
 
   // ---- 疾病匹配（文本级）----
   if (diseaseMatch.specific) {
@@ -665,8 +876,18 @@ const scoreRecordAgainstTrial = (record, trial) => {
     reasons.push('已根据病历基础信息进行规则匹配');
   }
 
+  // PRD-2026Q2 §2.4：试验新鲜度软乘子（0.7~1.0）。
+  // 过期 trial 会被 decayStaleTrials 自动 close，这里只对 recruiting 做软性降权。
+  // 懒加载避免 trialFreshness ↔ matchEngine 循环依赖。
+  const { normalizeScore: _normalizeFreshness } = require('./trialFreshness');
+  const freshnessMultiplier = _normalizeFreshness(trial.freshness_score);
+  let finalScore = score * freshnessMultiplier;
+  if (freshnessMultiplier < 0.95 && trial.freshness_score != null) {
+    reasons.push(`试验信息较长时间未更新，新鲜度 ${trial.freshness_score} 分`);
+  }
+
   return {
-    score: Math.min(99, Math.max(0, score)),
+    score: Math.min(99, Math.max(0, Math.round(finalScore))),
     reasons
   };
 };
@@ -686,6 +907,34 @@ const buildMatchItem = (trial, scored) => ({
   reasons: scored.reasons
 });
 
+// PRD-2026Q2 §4.1：matchScore 分桶（0-99 score → 归一化到 0-1）
+const _scoreBucket = (normalized) => {
+  if (normalized < 0.3) return '<0.3';
+  if (normalized < 0.6) return '0.3-0.6';
+  if (normalized < 0.8) return '0.6-0.8';
+  return '>=0.8';
+};
+
+// 懒加载 metrics，避免 metrics.js ↔ services/queue.js ↔ matchEngine 的循环链路。
+// 若 metrics 模块加载失败（例如在 CI 裁剪依赖），静默跳过采样。
+let _metrics = null;
+try {
+  _metrics = require('../middleware/metrics');
+} catch (e) {
+  _metrics = null;
+}
+
+// Q3-红线 §A.3：matchEngine 异常分支显式上报 Sentry（DSN 未配置则 noop）
+let _sentry = null;
+try {
+  _sentry = require('../observability/sentry');
+} catch (e) {
+  _sentry = null;
+}
+const captureException = (_sentry && _sentry.captureException)
+  ? _sentry.captureException
+  : () => {};
+
 const matchRecordsToTrials = (records, trials, minScore = SCORE_MIN) => {
   const matches = [];
   for (const trial of trials) {
@@ -701,6 +950,21 @@ const matchRecordsToTrials = (records, trials, minScore = SCORE_MIN) => {
     }
   }
   matches.sort((a, b) => b.score - a.score);
+
+  // PRD-2026Q2 §4.1：对最终返回的 match 结果按 10% 概率抽样写入 matchScoreSummary。
+  if (_metrics && _metrics.matchScoreSummary) {
+    for (const m of matches) {
+      if (Math.random() < 0.1) {
+        const normalized = Math.max(0, Math.min(1, (Number(m.score) || 0) / 99));
+        try {
+          _metrics.matchScoreSummary.labels(_scoreBucket(normalized)).observe(normalized);
+        } catch (e) {
+          // 埋点失败不影响匹配主流程
+        }
+      }
+    }
+  }
+
   return matches;
 };
 
@@ -743,6 +1007,8 @@ const getDecomposedCriteria = () => {
         loadError: e.message || String(e),
         loadedAt: new Date().toISOString()
       };
+      // Q3-红线 §A.3：上报到 Sentry，便于排查 decomposed_criteria.json 缺失/损坏
+      captureException(e, { tags: { component: 'matchEngine', stage: 'load_decomposed_criteria' } });
     }
   }
   return _decomposedCriteria;
@@ -825,6 +1091,9 @@ module.exports = {
   parseArrayField,
   scoreRecordAgainstTrial,
   scoreRecordHybrid,
+  isCancerTypeMismatch,
+  hasDriverNegativeRequirement,
+  isStrictGeneRequirement,
   matchRecordsToTrials,
   buildCoarseFilter,
   extractDiseaseKeywords,

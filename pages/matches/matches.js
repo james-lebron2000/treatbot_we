@@ -2,6 +2,17 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const matchExplainer = require('../../utils/match-explainer')
 const parseTask = require('../../utils/parse-task')
+// Q3-红线 §B.2：match_view / trial_apply 漏斗事件
+const { track } = require('../../utils/track')
+// U4：把后端返回的英文/术语 reasons 翻译成普通人能读懂的一句话。
+const glossary = require('../../shared/copy/glossary.json')
+
+const humanizeReasons = (reasons) => {
+  if (!Array.isArray(reasons) || reasons.length === 0) return glossary.matchReasons.fallback
+  const map = glossary.matchReasons || {}
+  const sentences = reasons.slice(0, 2).map((k) => map[k] || map.fallback).filter(Boolean)
+  return sentences.join('；') + '。'
+}
 
 const pickList = (res) => {
   const payload = api.normalizePayload(res)
@@ -15,10 +26,10 @@ const pickList = (res) => {
 }
 
 const ACTIVE_TASK_TEXT_MAP = {
-  uploading: '文件已上传，等待识别任务启动',
-  parsing: '正在后台识别病历文字',
-  analyzing: '正在抽取诊断、分期和治疗信息',
-  structuring: '正在生成结构化病历并预取匹配结果'
+  uploading: '文件上传好了，马上开始看',
+  parsing: '在后台看清病历写了什么',
+  analyzing: '找诊断、分期、治疗等关键信息',
+  structuring: '整理成病历卡片，同时为您预取可能的试验'
 }
 
 const normalizeActiveTask = (task) => {
@@ -64,7 +75,10 @@ Page({
     return list.map((item) => ({
       ...item,
       expanded: !!expandedMap[`${item.id}`],
-      subCenters: splitSubCenters(item.location)
+      subCenters: splitSubCenters(item.location),
+      // U4：人话理由 —— 用 glossary 把 reasons 翻成普通人能看的一句话；
+      // 没有 reasons 时走 fallback「与您家人的情况比较接近」。
+      humanReason: humanizeReasons(item.reasons)
     }))
   },
 
@@ -175,6 +189,16 @@ Page({
         fallbackMessage: res.message || '',
         activeParseTask
       })
+
+      // Q3-红线 §B.2：列表加载完成 = 漏斗 match_view（5s 去重防 onShow 重复）
+      try {
+        track('match_view', {
+          count: matches.length,
+          highMatches,
+          fallback: !!res.fallback
+        })
+      } catch (e) { /* ignore */ }
+
       if (recordId) {
         parseTask.setCachedMatches(recordId, {
           list: rawMatches,
@@ -242,6 +266,10 @@ Page({
       wx.showToast({ title: '试验信息缺失', icon: 'none' })
       return
     }
+
+    // Q3-红线 §B.2：报名按钮被点击 = 漏斗 trial_apply（提交成功的 application_submitted
+    // 在 apply 页 / utils/api.js applyTrial 调用方那里再埋一次）。
+    try { track('trial_apply', { trialId: trial.id }) } catch (e2) { /* ignore */ }
 
     wx.setStorageSync('selectedApplyTrial', trial)
     wx.navigateTo({

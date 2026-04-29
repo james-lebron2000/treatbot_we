@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>数愈健康 · 上传病历，帮您找到合适的治疗方案</title>
-  <meta name="description" content="数愈健康：把病历拍照上传，我们帮您看懂它，给出参考建议，还能找到可能适合您的免费新药临床试验。免费 · 安全 · 几分钟就能用。" />
-  <meta name="keywords" content="临床试验,癌症,肝癌,肺癌,AI 匹配,病历解析,治疗建议,新药试验,CSCO,NCCN,ESMO,数愈健康" />
-  <meta property="og:title" content="数愈健康 · 上传病历，帮您找到合适的治疗方案" />
-  <meta property="og:description" content="把病历拍照上传 → 看懂它 → 给出参考方案 → 匹配新药试验。几分钟，免费。" />
+  <title>数愈健康 · 让每一份病历，都找到属于它的答案</title>
+  <meta name="description" content="数愈健康：把病历放心交给我们 —— 一次上传，AI 帮您看懂关键指标、对接最新临床试验。数据不留在我们服务器，完全由您掌管，随时可以删除。" />
+  <meta name="keywords" content="临床试验,癌症,肝癌,肺癌,AI 匹配,病历解析,治疗建议,新药试验,CSCO,NCCN,ESMO,隐私零存储,数愈健康" />
+  <meta property="og:title" content="数愈健康 · 让每一份病历，都找到属于它的答案" />
+  <meta property="og:description" content="把病历放心交给我们。AI 帮您看懂关键指标、对接最新临床试验。数据不留在我们服务器，完全由您掌管。" />
   <meta property="og:type" content="website" />
   <style>
     :root {
@@ -198,6 +198,46 @@
       .steps-grid { grid-template-columns: 1fr; }
     }
 
+    /* ===== 您的数据主权 (lilac bg) ===== */
+    .sovereignty-bg {
+      background: linear-gradient(135deg, #f5f3ff 0%, #ecfdf5 100%);
+    }
+    .sov-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+      margin-bottom: 20px;
+    }
+    .sov-card {
+      background: #fff; border: 1px solid #e9e5ff;
+      border-radius: 16px; padding: 26px 22px;
+      transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+    }
+    .sov-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(139, 92, 246, 0.1);
+      border-color: #c7bff8;
+    }
+    .sov-icon {
+      font-size: 32px; margin-bottom: 12px; display: inline-block;
+    }
+    .sov-card h4 {
+      margin: 0 0 8px; font-size: 17px; font-weight: 600; color: var(--text);
+    }
+    .sov-card p {
+      margin: 0; font-size: 14px; color: var(--text-dim); line-height: 1.75;
+    }
+    .sov-details {
+      text-align: center; font-size: 14px; color: var(--text-dim);
+      margin: 18px 0 0;
+    }
+    .sov-details a {
+      color: var(--brand); font-weight: 500;
+      border-bottom: 1px solid var(--brand-soft); padding-bottom: 1px;
+    }
+    .sov-details a:hover { border-color: var(--brand); }
+    @media (max-width: 760px) {
+      .sov-grid { grid-template-columns: 1fr; }
+    }
+
     /* ===== 上传前准备 (cream bg) ===== */
     .cream-bg { background: var(--bg-cream); }
 
@@ -342,8 +382,9 @@
       <nav class="nav-links" aria-label="主导航">
         <a href="#home">首页</a>
         <a href="#how">怎么用</a>
+        <a href="#sovereignty">您的数据</a>
         <a href="#about">关于我们</a>
-        <a class="nav-cta" href="/h5/quick-match">开始匹配</a>
+        <a class="nav-cta" href="/h5/quick-match" data-cta="start-match">开始</a>
       </nav>
     </div>
   </header>
@@ -351,22 +392,22 @@
   <!-- ===== Hero ===== -->
   <section class="hero">
     <div class="container">
-      <div class="eyebrow">免费 · 安全 · 几分钟就能用</div>
-      <h1>上传病历，<br/>帮您找到<span class="accent">合适的治疗方案</span></h1>
+      <div class="eyebrow">您的数据始终是您的 · 免费使用 · 几分钟出结果</div>
+      <h1>我们理解您现在的心情<span class="accent">。</span><br/>让我们一起，帮家人找到下一步</h1>
       <p class="hero-sub">
-        把病历拍照上传。<br/>
-        我们帮您看懂它，给出参考建议，还能找到可能适合您的新药临床试验。
+        把病历放心交给我们 —— 一次上传，AI 帮您看懂关键指标、对接最新临床试验。<br/>
+        <strong style="color:#0f172a;">数据不留在我们服务器，完全由您掌管。</strong>
       </p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="/h5/quick-match" aria-label="开始匹配">
-          开始匹配 <span aria-hidden="true">→</span>
+        <a class="btn btn-primary" href="/h5/quick-match" data-cta="start-match" aria-label="开始匹配">
+          开始，帮家人找下一步 <span aria-hidden="true">→</span>
         </a>
         <a class="btn btn-ghost" href="/treatbot/demo" aria-label="先看演示，无需登录">
-          先看演示
+          先看看别人家的例子
         </a>
       </div>
       <div class="hero-trust">
-        您的病历全程加密 <span class="sep">·</span> 仅供参考，不代替医生看病
+        <strong style="color:#065f46;">隐私零存储</strong> <span class="sep">·</span> 全程加密 <span class="sep">·</span> 随时一键删除 <span class="sep">·</span> 仅供参考不代替医生
       </div>
       <div class="desktop-hint">
         在电脑上使用？<a href="/treatbot/">打开网页版上传入口 →</a>
@@ -378,24 +419,52 @@
   <section class="section" id="how">
     <div class="container">
       <h2 class="section-title">三步就能用</h2>
-      <p class="section-sub">整个过程不超过五分钟，全程免费</p>
+      <p class="section-sub">整个过程不超过五分钟，全程免费，数据完全由您掌管</p>
       <div class="steps-grid">
         <div class="step-card">
           <span class="num-pill num-1">1</span>
-          <h3>拍照上传病历</h3>
-          <p>手机拍一拍就行。<br/>看不清也没关系，我们帮您识别。</p>
+          <h3>把病历交给我们</h3>
+          <p>手机拍一拍就行。<br/>看不清也没关系，我们帮您看懂。</p>
         </div>
         <div class="step-card">
           <span class="num-pill num-2">2</span>
-          <h3>获得治疗建议</h3>
-          <p>按照权威诊疗指南，<br/>给您一份能看懂的方案。</p>
+          <h3>看懂下一步可能</h3>
+          <p>对照权威诊疗指南，<br/>给您一份能看懂的参考。</p>
         </div>
         <div class="step-card">
           <span class="num-pill num-3">3</span>
-          <h3>匹配新药试验</h3>
-          <p>找到可能适合您的<br/>免费新药临床试验。</p>
+          <h3>找到可能的试验</h3>
+          <p>把您和最新临床试验对接，<br/>大多数都是免费参加的。</p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- ===== 您的数据主权 ===== -->
+  <section class="section sovereignty-bg" id="sovereignty">
+    <div class="container">
+      <h2 class="section-title">您的数据，您说了算</h2>
+      <p class="section-sub">我们做的是陪伴您看懂病历，不是收集您的数据</p>
+      <div class="sov-grid">
+        <div class="sov-card">
+          <span class="sov-icon" aria-hidden="true">🔒</span>
+          <h4>隐私零存储</h4>
+          <p>我们不把您的隐私数据留在服务器上。<br/>所有信息，只在您的账户里为您整理。</p>
+        </div>
+        <div class="sov-card">
+          <span class="sov-icon" aria-hidden="true">📤</span>
+          <h4>随时带走或删除</h4>
+          <p>一键导出您在这里的全部数据（PDF+JSON），<br/>或一键注销，彻底清空。</p>
+        </div>
+        <div class="sov-card">
+          <span class="sov-icon" aria-hidden="true">🚫</span>
+          <h4>不外传营销</h4>
+          <p>手机号只用来给您发短信。<br/>不卖给药企、不推保险、不做广告。</p>
+        </div>
+      </div>
+      <p class="sov-details">
+        想了解具体怎么做？<a href="/privacy" target="_blank" rel="noopener">查看完整隐私政策 →</a>
+      </p>
     </div>
   </section>
 
@@ -472,7 +541,7 @@
   <section class="section mint-bg">
     <div class="container">
       <h2 class="section-title">为什么可以信任我们</h2>
-      <p class="section-sub">权威指南、专家审核、合规认证、法律合规</p>
+      <p class="section-sub">权威指南背书、三甲医生审核、您的数据您做主</p>
       <div class="trust-grid">
         <div class="trust-item">
           <span class="trust-check" aria-hidden="true">✓</span>
@@ -488,7 +557,7 @@
         </div>
         <div class="trust-item">
           <span class="trust-check" aria-hidden="true">✓</span>
-          <span>严格遵守《个人信息保护法》</span>
+          <span>不存储隐私数据，您随时可以带走或删除</span>
         </div>
       </div>
     </div>
@@ -497,11 +566,11 @@
   <!-- ===== 底部 CTA ===== -->
   <section class="bottom-cta">
     <div class="container">
-      <h2>准备好了吗？</h2>
-      <p>几分钟，就能拿到您的第一份参考方案。完全免费。</p>
+      <h2>这一步，不用您承诺什么</h2>
+      <p>看完再决定。几分钟，完全免费，不留任何数据。</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="/h5/quick-match">开始匹配 <span aria-hidden="true">→</span></a>
-        <a class="btn btn-ghost" href="/treatbot/demo">先看演示</a>
+        <a class="btn btn-primary" href="/h5/quick-match" data-cta="start-match">开始，帮家人找下一步 <span aria-hidden="true">→</span></a>
+        <a class="btn btn-ghost" href="/treatbot/demo">先看看别人家的例子</a>
       </div>
     </div>
   </section>
@@ -509,11 +578,12 @@
   <!-- ===== Footer ===== -->
   <footer>
     <div class="container">
-      <div class="foot-main">© 数愈科技 · 数愈健康 · 本平台只供参考，不能代替医生看病</div>
+      <div class="foot-main">© 数愈科技 · 数愈健康 · 陪您一起，帮家人找到下一步。本平台仅供参考，不代替医生。</div>
       <div class="foot-links">
         <a href="/h5/quick-match">手机端快速匹配</a>
         <a href="/treatbot/">网页版上传</a>
         <a href="/treatbot/demo">样例演示</a>
+        <a href="/privacy">您的数据主权</a>
       </div>
     </div>
   </footer>
@@ -530,6 +600,23 @@
         window.scrollTo({ top: top, behavior: 'smooth' });
       });
     });
+
+    // Q3-红线 §B.4：「开始匹配」CTA UA + viewport 分流
+    // - href 默认 /h5/quick-match：保证无 JS / 爬虫降级到 H5（移动场景占多数，正确）
+    // - 桌面浏览器（≥768px 且非移动 UA）改写到 /treatbot/，进 Vue SPA 主入口
+    // - 兜底：iPadOS 13+ UA 伪装成 Mac，纯 UA 检测会误判，所以叠加 viewport 宽度
+    // - iPad 关键字故意从 mobileUa 正则剔除：iPad 大屏走桌面，小 iPad 由 narrow 兜底
+    (function () {
+      var ua = navigator.userAgent || '';
+      var mobileUa = /Mobi|Android|iPhone|iPod|Mobile|Phone/i.test(ua);
+      var narrow = window.innerWidth < 768;
+      var isMobile = mobileUa || narrow;
+      if (isMobile) return;
+      var els = document.querySelectorAll('[data-cta="start-match"]');
+      for (var i = 0; i < els.length; i++) {
+        els[i].setAttribute('href', '/treatbot/');
+      }
+    })();
   </script>
 </body>
 </html>

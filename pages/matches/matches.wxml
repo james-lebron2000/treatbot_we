@@ -1,8 +1,8 @@
 <view class="container">
   <view class="page-header">
     <view class="page-title-group">
-      <text class="page-title">试验匹配</text>
-      <text class="page-subtitle">围绕当前病历生成更可解释的临床试验推荐。</text>
+      <text class="page-title">为家人找到的可能性</text>
+      <text class="page-subtitle">围绕您上传的病历，为家人找到可能适合的临床试验 —— 每一项都说清楚为什么。</text>
     </view>
     <view class="filter-btn" bindtap="loadMatches">
       <text>刷新</text>
@@ -12,29 +12,29 @@
   <view class="match-stats">
     <view class="stat-item">
       <text class="stat-value">{{matches.length}}</text>
-      <text class="stat-label">匹配试验</text>
+      <text class="stat-label">找到的可能性</text>
     </view>
     <view class="stat-item">
       <text class="stat-value">{{highMatches}}</text>
-      <text class="stat-label">高匹配度(>=80%)</text>
+      <text class="stat-label">高度匹配</text>
     </view>
     <view class="stat-item">
       <text class="stat-value">{{readyMatches}}</text>
-      <text class="stat-label">可优先预筛</text>
+      <text class="stat-label">值得优先看</text>
     </view>
   </view>
 
   <view class="score-rule-tip">
-    <text>默认优先展示匹配分数 ≥ 40 的试验；若无40分以上结果，将自动展示低分候选。</text>
+    <text>我们先展示最匹配的几项 · 数量少会自动放宽标准让您多几个选择。</text>
   </view>
 
   <view class="score-fallback-tip" wx:if="{{lowScoreMode}}">
-    <text>当前暂无40分以上结果，已展示低分候选供人工预筛。</text>
+    <text>暂时没有高度匹配的结果 —— 我们放宽了标准，下面是还值得一看的候选。</text>
   </view>
 
   <view class="processing-banner" wx:if="{{activeParseTask}}">
     <view class="processing-banner-head">
-      <text class="processing-banner-title">病历仍在后台整理</text>
+      <text class="processing-banner-title">病历还在帮您看懂中</text>
       <text class="processing-banner-progress">{{activeParseTask.progress}}%</text>
     </view>
     <text class="processing-banner-text">{{activeParseTask.text}}</text>
@@ -44,16 +44,16 @@
   </view>
 
   <view class="supplement-tip" wx:if="{{!loading && needSupplement > 0}}">
-    <text class="supplement-text">有 {{needSupplement}} 个试验因“缺失证据”较多，建议先补全病历再评估。</text>
-    <button class="supplement-btn" bindtap="goToUpload">去补全病历</button>
+    <text class="supplement-text">再补一点病历信息，{{needSupplement}} 个试验会评得更准。</text>
+    <button class="supplement-btn" bindtap="goToUpload">去补一补</button>
   </view>
 
   <view class="fallback-tip" wx:if="{{usingFallback}}">
-    <text>{{fallbackMessage || '当前使用本地推荐结果（后端匹配接口未就绪）'}}</text>
+    <text>{{fallbackMessage || '先给您看一个参考版本，正式结果马上就好'}}</text>
   </view>
 
   <view class="loading" wx:if="{{loading}}">
-    <text>正在加载临床试验...</text>
+    <text>正在为家人找合适的试验…</text>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && errorMessage}}">
@@ -62,6 +62,8 @@
 
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
+      <!-- U4：人话理由 —— 置顶一行解释「为什么这个研究适合」，不取代下面的 score / decisionHint。 -->
+      <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
       <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
         <view class="match-content">
           <text class="match-title">{{item.name}}</text>
@@ -71,7 +73,7 @@
             <text class="score">{{item.score}}%</text>
             <text class="label">匹配度</text>
           </view>
-          <text class="match-expand-indicator">{{item.expanded ? '收起' : '展开'}}</text>
+          <text class="match-expand-indicator">{{item.expanded ? '收起' : '看详情'}}</text>
         </view>
       </view>
 
@@ -86,7 +88,7 @@
 
       <view wx:if="{{item.expanded}}" class="match-card-expanded">
         <view class="decision-banner tone-{{item.decisionTone}}">
-          <text class="decision-label">综合建议</text>
+          <text class="decision-label">我们的看法</text>
           <text class="decision-text">{{item.decisionHint}}</text>
         </view>
 
@@ -96,7 +98,7 @@
             <text class="sub-center-chip" wx:for="{{item.subCenters}}" wx:for-item="center" wx:key="index">{{center}}</text>
           </view>
           <view class="column-empty" wx:else>
-            <text>暂未提供分中心信息</text>
+            <text>分中心信息还没拿到，我们会继续跟进</text>
           </view>
         </view>
 
@@ -124,15 +126,16 @@
         </view>
 
         <view class="match-actions">
-          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">查看详情</button>
-          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">立即报名</button>
+          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看详情</button>
+          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">想让研究团队联系我</button>
         </view>
       </view>
     </view>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && !errorMessage && matches.length === 0}}">
-    <text>当前病历暂无可匹配试验</text>
-    <button class="btn btn-default mt-30" bindtap="loadMatches">重新获取</button>
+    <text>目前没找到完全贴合的试验 —— 这不代表没有，我们每周更新试验库。</text>
+    <button class="btn btn-default mt-30" bindtap="loadMatches">再找一次</button>
   </view>
+  <help-fab />
 </view>

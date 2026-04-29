@@ -1,0 +1,244 @@
+<template>
+  <!--
+    PRD-2026Q3 §U5：全局求助 FAB。
+
+    患者教育原则（与 shared/copy/help.json 一致）：
+    - 任何时候都能找到「真人」「教学」「常见问题」三类入口；
+    - 不在帮助里塞医学术语；
+    - 退出按钮在右上角醒目可点。
+
+    数据源：shared/copy/help.json（通过 web/src/copy/help.ts 转 ESM）。
+  -->
+  <div class="help-fab-root">
+    <button
+      class="help-fab-btn"
+      type="button"
+      :aria-label="fab.ariaLabel"
+      @click="open = !open"
+    >
+      <span class="help-fab-icon" aria-hidden="true">{{ fab.icon }}</span>
+      <span class="help-fab-label">{{ fab.label }}</span>
+    </button>
+
+    <transition name="help-fab-pop">
+      <div v-if="open" class="help-sheet" role="dialog" aria-modal="true" :aria-label="fab.ariaLabel">
+        <header class="help-sheet-header">
+          <span class="help-sheet-title">需要我们帮哪一步？</span>
+          <button class="help-sheet-close" type="button" aria-label="关闭" @click="open = false">×</button>
+        </header>
+        <ul class="help-sheet-list">
+          <li v-for="opt in options" :key="opt.key">
+            <button class="help-sheet-item" type="button" @click="onSelect(opt)">
+              <span class="help-sheet-item-title">{{ opt.title }}</span>
+              <span class="help-sheet-item-sub">{{ opt.subtitle }}</span>
+            </button>
+          </li>
+        </ul>
+        <footer class="help-sheet-footer">
+          <span>{{ promise }}</span>
+        </footer>
+      </div>
+    </transition>
+
+    <transition name="help-fab-pop">
+      <div v-if="modalText" class="help-modal-mask" @click.self="modalText = ''">
+        <div class="help-modal-card" role="dialog" aria-modal="true">
+          <p class="help-modal-text">{{ modalText }}</p>
+          <button class="help-modal-ok" type="button" @click="modalText = ''">我明白了</button>
+        </div>
+      </div>
+    </transition>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import help, { expectations } from '../copy/help'
+
+interface HelpOption {
+  key: string
+  title: string
+  subtitle: string
+  actionType: 'tel' | 'modal' | 'route'
+  actionPayload: string
+}
+
+const fab = (help as { fab: { label: string; ariaLabel: string; icon: string } }).fab
+const options = (help as { options: HelpOption[] }).options
+const promise = expectations?.promise ?? '全程免费 · 您的数据您说了算'
+
+const open = ref(false)
+const modalText = ref('')
+
+const onSelect = (opt: HelpOption) => {
+  open.value = false
+  if (opt.actionType === 'tel') {
+    // H5 端用 tel: 协议；浏览器拦截则降级展示电话号码
+    const tel = opt.actionPayload.replace(/[^0-9+\-]/g, '')
+    if (tel) {
+      window.location.href = `tel:${tel}`
+    } else {
+      modalText.value = opt.subtitle
+    }
+    return
+  }
+  if (opt.actionType === 'modal') {
+    modalText.value = opt.actionPayload
+    return
+  }
+  if (opt.actionType === 'route') {
+    window.location.hash = opt.actionPayload
+  }
+}
+</script>
+
+<style scoped>
+.help-fab-root {
+  position: fixed;
+  right: 16px;
+  bottom: 88px; /* 让出底部 tab-bar 高度 */
+  z-index: 1100;
+}
+.help-fab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 999px;
+  background: #1F5AC7;
+  color: #fff;
+  font-size: 0.95rem;
+  box-shadow: 0 6px 18px rgba(31, 90, 199, 0.32);
+  cursor: pointer;
+}
+.help-fab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.help-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 60px;
+  width: 280px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+.help-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 8px;
+  font-weight: 600;
+}
+.help-sheet-title {
+  font-size: 0.95rem;
+  color: #0F172A;
+}
+.help-sheet-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: #F1F5F9;
+  color: #475569;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.help-sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+}
+.help-sheet-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.help-sheet-item:hover {
+  background: #F8FAFC;
+}
+.help-sheet-item-title {
+  color: #0F172A;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.help-sheet-item-sub {
+  color: #64748B;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.help-sheet-footer {
+  padding: 8px 16px 14px;
+  font-size: 0.78rem;
+  color: #1F5AC7;
+  background: #F0F6FF;
+}
+.help-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+  padding: 20px;
+}
+.help-modal-card {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px 18px 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+}
+.help-modal-text {
+  margin: 0 0 16px;
+  white-space: pre-line;
+  color: #0F172A;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+.help-modal-ok {
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  background: #1F5AC7;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.help-fab-pop-enter-active, .help-fab-pop-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.help-fab-pop-enter-from, .help-fab-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* CRO 大屏 / 桌面端不需要这么靠下 */
+@media (min-width: 768px) {
+  .help-fab-root {
+    bottom: 24px;
+  }
+}
+</style>

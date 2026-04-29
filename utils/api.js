@@ -467,6 +467,51 @@ const extractApplicationList = (payload) => {
   return payload.list || payload.items || payload.applications || payload.data || []
 }
 
+// Q3-红线 §A.1：双 token 续签 single-flight。多个并发请求同时撞 401 时，只
+// 让第一个发起 /api/auth/refresh，其它共享同一个 Promise，避免 refreshToken
+// 被 Redis (single-use) 端连续消费导致全员登出。H5 web/src/utils/api.ts 同语义。
+let refreshing = null
+
+const clearAuth = () => {
+  wx.removeStorageSync('token')
+  wx.removeStorageSync('refreshToken')
+}
+
+const tryRefreshToken = () => {
+  if (refreshing) return refreshing
+  const refreshToken = wx.getStorageSync('refreshToken')
+  if (!refreshToken) {
+    return Promise.reject(new Error('no_refresh_token'))
+  }
+  refreshing = new Promise((resolve, reject) => {
+    wx.request({
+      url: `${getRuntimeBaseUrl()}/api/auth/refresh`,
+      method: 'POST',
+      data: { refreshToken },
+      header: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+      success: (res) => {
+        // 兼容 envelope { success, data: { token, refreshToken } } 与 旧版裸字段两种
+        const data = (res.data && res.data.data) || res.data || {}
+        const nextToken = data.token
+        if (res.statusCode === 200 && nextToken) {
+          wx.setStorageSync('token', nextToken)
+          if (data.refreshToken) {
+            wx.setStorageSync('refreshToken', data.refreshToken)
+          }
+          resolve(nextToken)
+        } else {
+          reject(new Error('refresh_failed'))
+        }
+      },
+      fail: (err) => reject(err)
+    })
+  }).finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
 const request = (options) => {
   return new Promise((resolve, reject) => {
     const token = wx.getStorageSync('token')
@@ -489,8 +534,21 @@ const request = (options) => {
           return
         }
 
+        if (res.statusCode === 401 && !options._retried) {
+          // single-flight：触发刷新；成功后用新 token 重放原请求一次（_retried 防递归）
+          tryRefreshToken()
+            .then(() => request({ ...options, _retried: true }).then(resolve, reject))
+            .catch(() => {
+              clearAuth()
+              wx.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+              reject(buildHttpError('Unauthorized', { statusCode: 401, response: res.data }))
+            })
+          return
+        }
+
         if (res.statusCode === 401) {
-          wx.removeStorageSync('token')
+          // 已重放过仍 401：彻底放弃
+          clearAuth()
           wx.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
           reject(buildHttpError('Unauthorized', { statusCode: 401, response: res.data }))
           return
@@ -628,6 +686,45 @@ const getProfile = async () => {
 
   throw lastError || new Error('获取用户信息失败')
 }
+
+// ==================== Q3-红线 §A.2：用户合规自助 API ====================
+// 后端在 server/routes/index.js:49-53 已就绪；小程序此前没有调用方，所以
+// 用户在 WeApp 端无法行使「同意管理 / 数据导出 / 注销」三项权益。
+// 这里照 H5 web/src/api/me.ts 的命名复刻，便于以后做 codegen 共享。
+
+const getMyConsent = () =>
+  request({ url: '/api/me/consent', method: 'GET' })
+
+const recordConsent = (scope, policyVersion) =>
+  request({
+    url: '/api/me/consent',
+    method: 'POST',
+    data: { scope, policyVersion }
+  })
+
+const exportMyData = () =>
+  request({ url: '/api/me/export', method: 'GET', timeout: 30000 })
+
+const deleteMyAccount = (reason) =>
+  request({
+    url: '/api/me/delete-account',
+    method: 'POST',
+    data: { reason: reason || '' }
+  })
+
+const changeMyPassword = (oldPassword, newPassword) =>
+  request({
+    url: '/api/me/change-password',
+    method: 'POST',
+    data: { oldPassword, newPassword }
+  })
+
+// PRD-2026Q2 §3.5：多病历软删除（后端 DELETE /medical/records/:id 已是软删）。
+const softDeleteMedicalRecord = (id) =>
+  request({
+    url: `/api/medical/records/${encodeURIComponent(id)}`,
+    method: 'DELETE'
+  })
 
 // ==================== 病历相关 API ====================
 
@@ -1039,11 +1136,9 @@ const buildApplyIdempotencyKey = (payload = {}) => {
   if (isPresent(payload.idempotencyKey)) {
     return safeText(payload.idempotencyKey).slice(0, 64)
   }
-
-  const recordSignature = Array.isArray(payload.recordIds) && payload.recordIds.length
-    ? payload.recordIds.map((item) => `${item}`).join('_')
-    : 'none'
-  const source = `apply_${safeText(payload.trialId)}_${recordSignature}_${safeText(payload.phone).slice(-4)}`
+  // PRD-2026Q2 §2.5：与 H5 对齐 —— 仅用 trialId 作幂等作用域，
+  // 后端已按 userId+route 包一层；带 recordIds/phone 会让同一人刷单。
+  const source = `apply_${safeText(payload.trialId)}`
   return source.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || `apply_${Date.now()}`
 }
 
@@ -1226,6 +1321,17 @@ module.exports = {
   login,
   loginWithTestAccount,
   getProfile,
+  // Q3-红线 §A.1：refresh token + 登出
+  clearAuth,
+  tryRefreshToken,
+  // Q3-红线 §A.2：用户合规自助
+  getMyConsent,
+  recordConsent,
+  exportMyData,
+  deleteMyAccount,
+  changeMyPassword,
+  // PRD-2026Q2 §3.5：病历软删除
+  softDeleteMedicalRecord,
   uploadMedicalRecord,
   getParseStatus,
   getMedicalRecords,

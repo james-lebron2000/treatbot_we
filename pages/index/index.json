@@ -1,5 +1,7 @@
 {
-  "usingComponents": {},
+  "usingComponents": {
+    "help-fab": "/components/help-fab/help-fab"
+  },
   "enablePullDownRefresh": true,
   "backgroundColor": "#f5f5f5"
 }

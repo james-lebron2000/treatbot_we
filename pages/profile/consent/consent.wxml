@@ -1,0 +1,26 @@
+<view class="container">
+  <view class="header">
+    <text class="title">我的同意记录</text>
+    <text class="subtitle">您在使用过程中授权过的所有项目都会列在这里。</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="state-card">加载中…</view>
+
+  <view wx:elif="{{errorMessage}}" class="state-card error">{{errorMessage}}</view>
+
+  <view wx:elif="{{list.length === 0}}" class="state-card empty">
+    暂无同意记录。当您首次上传病历或开通匹配推荐时，授权会被记录在这里。
+  </view>
+
+  <view wx:else class="consent-list">
+    <view wx:for="{{list}}" wx:key="*this" class="consent-item">
+      <view class="consent-row">
+        <text class="consent-scope">{{item.scopeLabel}}</text>
+        <text class="consent-version">v{{item.policyVersion}}</text>
+      </view>
+      <view class="consent-row meta">
+        <text class="consent-time">授权时间：{{item.recordedAt}}</text>
+      </view>
+    </view>
+  </view>
+</view>

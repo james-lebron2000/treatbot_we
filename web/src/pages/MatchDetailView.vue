@@ -75,6 +75,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../services/api'
+// Q3-红线 §B.2：业务漏斗埋点
+import { track } from '../utils/track'
 
 const route = useRoute()
 const loading = ref(false)
@@ -123,9 +125,13 @@ const loadDetail = async () => {
 const applyTrial = async () => {
   if (!trial.value) return
   applying.value = true
+  // Q3-红线 §B.2：trial_apply —— 详情页报名按钮点击
+  track('trial_apply', { trialId: trial.value.id, source: 'detail' })
   try {
     await api.applyTrial({ trialId: trial.value.id })
     applied.value = true
+    // Q3-红线 §B.2：application_submitted —— 后端 200 后才算转化
+    track('application_submitted', { trialId: trial.value.id, source: 'detail' })
   } catch (e: any) {
     const msg = e?.response?.data?.message || e?.message || '申请失败'
     alert(msg)

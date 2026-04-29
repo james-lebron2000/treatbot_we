@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@sentry/vue": "^10.50.0",
     "axios": "^1.8.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
@@ -17,6 +20,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "^5.8.2",
     "vite": "^6.2.1",

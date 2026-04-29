@@ -5,6 +5,29 @@ const path = require('path');
 const pdfParse = require('pdf-parse');
 const tencentcloud = require('tencentcloud-sdk-nodejs');
 const logger = require('../utils/logger');
+// Q3-红线 §A.1：所有 LLM 调用走 llmClient（schema 校验 + 重试），原文先经 piiScrubber 脱敏。
+const { scrubForLlm, restoreFromLlm } = require('../utils/piiScrubber');
+const { chatJson } = require('./llmClient');
+const { OcrExtractionSchema } = require('./llmSchemas');
+// Q3-红线 §B.1：所有 LLM prompt 走版本化 registry，禁止散落硬编码字符串。
+const { getPrompt } = require('./promptRegistry');
+// Q3-红线 §A.3.2：LLM 调用可观测性（计时 / token / 错误分类）。
+// 软依赖：模块缺失（CI 裁剪）时退化为透传，不影响业务。
+let _llmObs = null;
+try {
+  _llmObs = require('./llmObservability');
+} catch (e) {
+  _llmObs = null;
+}
+const instrumentLlmCall = (_llmObs && _llmObs.instrumentLlmCall)
+  ? _llmObs.instrumentLlmCall
+  : async (_ctx, fn) => fn();
+const recordLlmFallback = (_llmObs && _llmObs.recordFallback)
+  ? _llmObs.recordFallback
+  : () => {};
+const classifyLlmError = (_llmObs && _llmObs.classifyLlmError)
+  ? _llmObs.classifyLlmError
+  : () => 'other';
 
 const OCR_PROVIDER = (process.env.OCR_PROVIDER || 'auto').toLowerCase();
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
@@ -42,30 +65,8 @@ const MIME_BY_EXT = {
 };
 const LOCAL_UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
 
-const cleanJsonContent = (content) => {
-  if (!content) {
-    return '';
-  }
-
-  const trimmed = String(content).trim();
-  if (!trimmed.startsWith('```')) {
-    return trimmed;
-  }
-
-  return trimmed
-    .replace(/^```[a-zA-Z]*\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim();
-};
-
-const parseJsonSafe = (content) => {
-  const cleaned = cleanJsonContent(content);
-  try {
-    return JSON.parse(cleaned);
-  } catch (error) {
-    return null;
-  }
-};
+// Q3-红线 §A.1.2：原 cleanJsonContent / parseJsonSafe 已迁移至 services/llmClient.js，
+// 所有 LLM JSON 解析均经 chatJson → cleanJsonContent → JSON.parse → zod.safeParse 完成。
 
 const getImageMimeType = (imageUrl, contentType = '') => {
   if (contentType && contentType.includes('/')) {
@@ -104,6 +105,36 @@ const isPrivateOrIpUrl = (imageUrl) => {
   }
 };
 
+// SSRF 防护：仅允许 http(s) + 非内网 + 命中 host 白名单的 URL。
+// 白名单通过 OCR_IMAGE_HOST_ALLOWLIST（逗号分隔的 host 后缀）配置，默认放行腾讯云 COS。
+const DEFAULT_IMAGE_HOST_ALLOWLIST = ['.myqcloud.com'];
+const getImageHostAllowlist = () => {
+  const raw = process.env.OCR_IMAGE_HOST_ALLOWLIST;
+  if (!raw) return DEFAULT_IMAGE_HOST_ALLOWLIST;
+  return raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+};
+
+const assertSafeImageUrl = (imageUrl) => {
+  let parsed;
+  try {
+    parsed = new URL(imageUrl);
+  } catch (error) {
+    throw new Error('invalid_url');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('protocol_not_allowed');
+  }
+  if (isPrivateOrIpUrl(imageUrl)) {
+    throw new Error('blocked_private_host');
+  }
+  const host = (parsed.hostname || '').toLowerCase();
+  const allowlist = getImageHostAllowlist();
+  const passed = allowlist.some((suffix) => host === suffix.replace(/^\./, '') || host.endsWith(suffix));
+  if (!passed) {
+    throw new Error('host_not_allowed');
+  }
+};
+
 const normalizeLocalKey = (fileKey = '') => `${fileKey}`.replace(/^\/+/, '').replace(/^uploads\//, '');
 
 const getLocalFilePath = (fileKey = '') => {
@@ -127,9 +158,13 @@ const readLocalFileAsDataUrl = async (fileKey, mimeType = '') => {
 };
 
 const fetchImageAsDataUrl = async (imageUrl) => {
+  assertSafeImageUrl(imageUrl);
   const response = await axios.get(imageUrl, {
     responseType: 'arraybuffer',
-    timeout: 15000
+    timeout: 5000,
+    maxContentLength: 15 * 1024 * 1024,
+    maxBodyLength: 15 * 1024 * 1024,
+    maxRedirects: 0
   });
   const mimeType = getImageMimeType(imageUrl, response.headers['content-type']);
   const base64 = Buffer.from(response.data).toString('base64');
@@ -260,6 +295,7 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
       ? contentResp.data
       : contentResp.data?.content || contentResp.data?.text || ''
     ).trim();
+    // Q3-红线 §A.1.1：日志只记长度，不记原文。
     logger.info('Kimi 文件内容提取成功', { fileId, textLength: extractedText.length });
   } catch (contentErr) {
     logger.warn('Kimi 文件内容获取失败，将直接在消息中引用文件', { fileId, error: contentErr.message });
@@ -267,67 +303,39 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
 
   // Step 2: 发送聊天消息（若提取到文本则直接用文本，否则引用 file_id）
   let result = null;
+  // Q3-红线 §A.1.1：在 LLM 调用前做 PII 脱敏；mapping 严格活到本函数返回，从不入日志/库。
+  const { scrubbed, mapping } = scrubForLlm(extractedText.substring(0, 4000));
   try {
-    const extractionPrompt = [
-      '请从以下病历文件中识别并提取字段，返回 JSON：',
-      '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "confidence": 0.0 }',
-      '字段说明：',
-      '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"/"肺腺癌"/"胰腺导管腺癌"，不存在填null',
-      '2) stage：AJCC分期（如"IVA期"）或临床描述（如"晚期"/"局部晚期"/"转移性"），不存在填null',
-      '3) geneMutation：基因变异（如"KRAS G12V突变"），多个用分号分隔，不存在填null',
-      '4) pdl1：PD-L1表达（如"TPS 80%"或"CPS 15"或"TPS 0%"），不存在填null',
-      '5) treatment：既往治疗史（如"吉西他滨+白蛋白紫杉醇一线化疗"），不存在填null',
-      '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
-      '7) ecog：体能状态评分，0~4整数，不存在填null',
-      '8) confidence：识别整体置信度，0~1',
-      '9) rawText：保留核心原文，不超过2000字符'
-    ].join('\n');
+    // Q3-红线 §B.1：从 prompts/v1/ocr-pdf.md 读取版本化 prompt。
+    // 文本路径直接拼到 user 段；扫描件（无文本）则取 system + 仅 prompt 头，把 file_id 与提示一起放进 multipart user。
+    const pdfPrompt = getPrompt('ocr-pdf', 'v1', { extractedText: scrubbed || '' });
+    // 用于 file_id 视觉模式时只取 prompt 头（去掉 "病历文本：{{...}}" 段尾）
+    const promptHeadOnly = getPrompt('ocr-pdf', 'v1', { extractedText: '' })
+      .user
+      .replace(/\n*病历文本：\s*$/, '')
+      .trim();
 
     let userContent;
-    if (extractedText) {
-      // 文本已提取：直接发文本消息（更快）
-      userContent = `${extractionPrompt}\n\n病历文本：\n${extractedText.substring(0, 4000)}`;
+    if (scrubbed) {
+      userContent = pdfPrompt.user;
     } else {
       // 文本为空（扫描件）：引用 file_id，由 Kimi 视觉处理
       userContent = [
         { type: 'file', file_id: fileId },
-        { type: 'text', text: extractionPrompt }
+        { type: 'text', text: promptHeadOnly }
       ];
     }
 
     const messages = [
-      {
-        role: 'system',
-        content: '你是医疗病历OCR与信息抽取助手。必须返回JSON对象，不要输出其他文本。'
-      },
-      {
-        role: 'user',
-        content: userContent
-      }
+      { role: 'system', content: pdfPrompt.system },
+      { role: 'user', content: userContent }
     ];
 
-    const chatResp = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: KIMI_MODEL,
-        temperature: 1,
-        messages,
-        response_format: { type: 'json_object' }
-      },
-      {
-        timeout: KIMI_TIMEOUT_MS,
-        headers: {
-          Authorization: `Bearer ${KIMI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+    // Q3-红线 §A.3.2：LLM 调用埋点（PDF File API 模式）
+    const parsed = await instrumentLlmCall(
+      { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_pdf' },
+      () => chatJson('kimi', messages, OcrExtractionSchema)
     );
-
-    const content = chatResp?.data?.choices?.[0]?.message?.content || '';
-    const parsed = parseJsonSafe(content);
-    if (!parsed) {
-      throw new Error('Kimi PDF 模式返回内容无法解析为 JSON');
-    }
 
     const ecogRaw = parsed.ecog;
     const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
@@ -344,15 +352,18 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
       treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null
     };
 
+    // Q3-红线 §A.1.1：把 entities 里残留的占位符还原（保险动作；rawText 维持脱敏态）。
+    const restoredEntities = restoreFromLlm(entities, mapping);
+
     const normalizedConfidence = Number(parsed.confidence);
     result = {
       success: true,
       provider: 'kimi_pdf',
       text: (parsed.rawText || '').toString(),
-      entities,
+      entities: restoredEntities,
       confidence: Number.isFinite(normalizedConfidence)
         ? Math.max(0, Math.min(1, normalizedConfidence))
-        : estimateConfidence(entities),
+        : estimateConfidence(restoredEntities),
       detections: []
     };
   } finally {
@@ -625,69 +636,26 @@ const parseKimiEntities = (parsed) => {
 };
 
 const requestKimi = async (imageRef) => {
+  // Q3-红线 §A.1：图片模式没有客户端可见的「原文」，但 LLM 输出仍走 schema 校验。
+  // imageRef 是 data URL 或公网 URL，本身不需要脱敏（PII 在像素里，由 provider 处理）。
+  // Q3-红线 §B.1：从 prompts/v1/ocr-image.md 读取版本化 prompt。
+  const imagePrompt = getPrompt('ocr-image', 'v1', {});
   const messages = [
-    {
-      role: 'system',
-      content: '你是医疗病历OCR与信息抽取助手。必须返回JSON对象，不要输出其他文本。'
-    },
+    { role: 'system', content: imagePrompt.system },
     {
       role: 'user',
       content: [
-        {
-          type: 'text',
-          text: [
-            '请从图片中识别病历文本并提取以下字段，返回 JSON：',
-            '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "age": null, "weight": null, "height": null, "comorbidities": [], "priorTherapies": [], "labValues": {}, "bloodCounts": {}, "fertilityStatus": null, "confidence": 0.0 }',
-            '字段说明：',
-            '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"/"肺腺癌"/"肝细胞癌"，不存在填null',
-            '2) stage：AJCC分期（如"IVA期"）或临床描述（如"晚期"/"局部晚期"/"转移性"），不存在填null',
-            '3) geneMutation：基因变异（如"EGFR 19del阳性"），多个用分号分隔，不存在填null',
-            '4) pdl1：PD-L1表达（如"TPS 80%"或"CPS 15"），不存在填null',
-            '5) treatment：既往治疗史（如"铂类化疗2周期+培美曲塞"），不存在填null',
-            '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
-            '7) ecog：体能状态评分，0~4整数，不存在填null',
-            '8) age：患者年龄（整数），不存在填null',
-            '9) weight：体重(kg)，不存在填null',
-            '10) height：身高(cm)，不存在填null',
-            '11) comorbidities：合并症数组，如["脑转移","高血压","糖尿病"]，无则填[]',
-            '12) priorTherapies：既往具体治疗方案数组，如["曲妥珠单抗","卡铂+培美曲塞"]，无则填[]',
-            '13) labValues：肝肾功能指标对象，如{"ALT":{"value":35,"unit":"U/L"},"creatinine":{"value":68,"unit":"μmol/L"}}，无则填{}',
-            '14) bloodCounts：血常规对象，如{"WBC":{"value":5.2,"unit":"×10⁹/L"},"PLT":{"value":180,"unit":"×10⁹/L"}}，无则填{}',
-            '15) fertilityStatus：生育状态（如"绝经"/"妊娠试验阴性"），不存在填null',
-            '16) confidence：识别整体置信度，0~1',
-            '17) rawText：保留核心原文，不超过2000字符'
-          ].join('\n')
-        },
-        {
-          type: 'image_url',
-          image_url: { url: imageRef }
-        }
+        { type: 'text', text: imagePrompt.user },
+        { type: 'image_url', image_url: { url: imageRef } }
       ]
     }
   ];
 
-  const response = await axios.post(
-    `${KIMI_BASE_URL}/chat/completions`,
-    {
-      model: KIMI_MODEL,
-      temperature: 1,
-      messages,
-      response_format: { type: 'json_object' }
-    },
-    {
-      timeout: KIMI_TIMEOUT_MS,
-      headers: {
-        Authorization: `Bearer ${KIMI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
+  // Q3-红线 §A.3.2：LLM 调用埋点（图片/视觉模式）
+  const parsed = await instrumentLlmCall(
+    { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_image' },
+    () => chatJson('kimi', messages, OcrExtractionSchema)
   );
-
-  const content = response?.data?.choices?.[0]?.message?.content || '';
-  const parsed = parseJsonSafe(content);
-  if (!parsed) {
-    throw new Error('Kimi 返回内容无法解析为 JSON');
-  }
 
   const entities = parseKimiEntities(parsed);
 
@@ -714,10 +682,14 @@ const requestKimiText = async (text) => {
     throw new Error('Kimi API Key 未配置');
   }
 
+  // Q3-红线 §A.1.1：在文本进入 LLM 前做 PII 脱敏，mapping 仅在本函数栈内活到 restoreFromLlm。
+  const safeInput = (text || '').substring(0, 4000);
+  const { scrubbed, mapping } = scrubForLlm(safeInput);
+
   const messages = [
     {
       role: 'system',
-      content: '你是医疗病历信息抽取助手。必须返回JSON对象，不要输出其他文本。'
+      content: '你是医疗病历信息抽取助手。必须返回JSON对象，不要输出其他文本。文本中的 <PHONE_x>/<NAME_x>/<ID_x> 是占位符，请原样保留在 rawText 中，不要尝试推断真实值。'
     },
     {
       role: 'user',
@@ -745,46 +717,35 @@ const requestKimiText = async (text) => {
         '所有字段不存在则填null/[]/{} 对应类型',
         '',
         '病历文本：',
-        text.substring(0, 4000)
+        scrubbed
       ].join('\n')
     }
   ];
 
-  const response = await axios.post(
-    `${KIMI_BASE_URL}/chat/completions`,
-    {
-      model: KIMI_MODEL,
-      temperature: 1,
-      messages,
-      response_format: { type: 'json_object' }
-    },
-    {
-      timeout: KIMI_TIMEOUT_MS,
-      headers: {
-        Authorization: `Bearer ${KIMI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
+  // Q3-红线 §A.3.2：LLM 调用埋点（纯文本/Markdown 抽取模式）
+  const parsed = await instrumentLlmCall(
+    { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_text' },
+    () => chatJson('kimi', messages, OcrExtractionSchema)
   );
-
-  const content = response?.data?.choices?.[0]?.message?.content || '';
-  const parsed = parseJsonSafe(content);
-  if (!parsed) {
-    throw new Error('Kimi 文本模式返回内容无法解析为 JSON');
-  }
 
   const entities = parseKimiEntities(parsed);
 
   const normalizedConfidence = Number(parsed.confidence);
 
+  // 仅对前端展示字段做占位符还原，rawText 保留占位符（避免再次落库时 PII 泄露）。
+  // 当前 entities 内字段都已是结构化值（diagnosis/stage 等），不太会包含 <NAME_x>，
+  // 但仍走一遍 restoreFromLlm 做 belt-and-suspenders。
+  const restoredEntities = restoreFromLlm(entities, mapping);
+
   return {
     success: true,
     provider: 'kimi_text',
-    text: (parsed.rawText || text).toString(),
-    entities,
+    // text 字段保留 scrubbed 形式，避免病历原文 PII 经响应回写到调用方日志/数据库。
+    text: (parsed.rawText || scrubbed).toString(),
+    entities: restoredEntities,
     confidence: Number.isFinite(normalizedConfidence)
       ? Math.max(0, Math.min(1, normalizedConfidence))
-      : estimateConfidence(entities),
+      : estimateConfidence(restoredEntities),
     detections: []
   };
 };
@@ -849,11 +810,15 @@ const recognizeByRule = async ({ imageUrl, fileKey, mimeType }) => {
   }
 
   // 若本地读取无内容，尝试从公网 URL 抓取纯文本
-  if (!text && imageUrl && !isPrivateOrIpUrl(imageUrl)) {
+  if (!text && imageUrl) {
     try {
+      assertSafeImageUrl(imageUrl);
       const response = await axios.get(imageUrl, {
         responseType: 'text',
-        timeout: 10000,
+        timeout: 5000,
+        maxContentLength: 15 * 1024 * 1024,
+        maxBodyLength: 15 * 1024 * 1024,
+        maxRedirects: 0,
         headers: { Accept: 'text/plain, */*' }
       });
       if (typeof response.data === 'string') {
@@ -896,9 +861,13 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
       provider: providerPreference,
       error: error.message
     });
+    // Q3-红线 §A.3.2：标记 fallback 触发（计入 llm_fallback_triggered_total）
+    const fromProvider = [...attemptedProviders][0] || providerPreference || 'unknown';
+    const fallbackReason = classifyLlmError(error);
 
     if (hasKimiCredential && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
+        recordLlmFallback(fromProvider, 'kimi', fallbackReason);
         return await recognizeByKimi({ imageUrl, fileKey, mimeType });
       } catch (e) {
         logger.warn('Kimi 回退失败', { error: e.message });
@@ -907,12 +876,14 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
 
     if (hasTencentCredential && providerPreference !== 'tencent' && !attemptedProviders.has('tencent')) {
       try {
+        recordLlmFallback(fromProvider, 'tencent', fallbackReason);
         return await recognizeByTencent(imageUrl);
       } catch (e) {
         logger.warn('Tencent 回退失败', { error: e.message });
       }
     }
 
+    recordLlmFallback(fromProvider, 'rule', fallbackReason);
     return recognizeByRule({ imageUrl, fileKey, mimeType });
   }
 };
@@ -1100,5 +1071,11 @@ module.exports = {
   extractMedicalEntities,
   processMedicalImage,
   requestKimiText,
-  requestKimiPdf
+  requestKimiPdf,
+  // exposed for unit tests
+  __testables: {
+    isPrivateOrIpUrl,
+    assertSafeImageUrl,
+    fetchImageAsDataUrl
+  }
 };

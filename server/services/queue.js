@@ -1,7 +1,24 @@
 const Queue = require('bull');
 const logger = require('../utils/logger');
 const { processMedicalImage } = require('./ocr');
-const { MedicalRecord } = require('../models');
+const { MedicalRecord, OcrJobFailure } = require('../models');
+// Q3-红线 §A.3：Sentry 软依赖（DSN 未配置时退化为 noop）
+let _sentry = null;
+try {
+  _sentry = require('../observability/sentry');
+} catch (e) {
+  _sentry = null;
+}
+const captureException = (_sentry && _sentry.captureException)
+  ? _sentry.captureException
+  : () => {};
+
+// PRD-2026Q2 §3.2：OCR DLQ 调度参数
+// - 共 5 次尝试（含首次），指数退避 delay=8s，但 Bull 原生没有 maxDelay，
+//   因此 attempts * delay 的指数段若超过 90s 就会把后续延迟手动封顶。
+const OCR_JOB_ATTEMPTS = 5;
+const OCR_JOB_BACKOFF_DELAY = 8000;
+const OCR_JOB_BACKOFF_MAX = 90000;
 
 // Redis 连接配置
 const redisConfig = {
@@ -13,6 +30,23 @@ const redisConfig = {
 // 创建队列
 const ocrQueue = new Queue('ocr processing', { redis: redisConfig });
 const notificationQueue = new Queue('notifications', { redis: redisConfig });
+
+// PRD-2026Q2 §3.2：自定义指数退避策略，带 90s 封顶
+// Bull 通过 settings.backoffStrategies 支持命名策略，在 job options 中用
+// `backoff: { type: 'ocrExponential', delay: OCR_JOB_BACKOFF_DELAY }` 引用。
+ocrQueue.setMaxListeners(50);
+try {
+  ocrQueue.settings = ocrQueue.settings || {};
+  ocrQueue.settings.backoffStrategies = Object.assign({}, ocrQueue.settings.backoffStrategies, {
+    ocrExponential: (attemptsMade) => {
+      const raw = OCR_JOB_BACKOFF_DELAY * Math.pow(2, Math.max(0, attemptsMade - 1));
+      return Math.min(raw, OCR_JOB_BACKOFF_MAX);
+    }
+  });
+} catch (e) {
+  // 测试环境 mock 的 Queue 实现可能不带 settings，忽略即可。
+  logger.debug?.('queue: 无法注册 ocrExponential 策略（可能在测试 mock 下）');
+}
 
 ocrQueue.on('error', (err) => {
   logger.error('OCR队列连接错误:', { error: err.message });
@@ -93,7 +127,12 @@ ocrQueue.process(async (job) => {
     return { success: true, recordId };
   } catch (error) {
     logger.error('OCR处理失败:', { recordId, error: error.message });
-    
+    // Q3-红线 §A.3：上报到 Sentry（DSN 未配置时静默 noop）
+    captureException(error, {
+      tags: { component: 'ocr_queue', stage: 'process' },
+      extra: { recordId, jobId: job?.id }
+    });
+
     // 更新失败状态
     await MedicalRecord.update({
       status: 'error',
@@ -101,7 +140,7 @@ ocrQueue.process(async (job) => {
     }, {
       where: { id: recordId }
     });
-    
+
     throw error;
   }
 });
@@ -123,6 +162,8 @@ notificationQueue.process(async (job) => {
  * 添加 OCR 任务
  */
 const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
+  // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
+  // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
   const job = await ocrQueue.add({
     recordId,
     imageUrl,
@@ -130,13 +171,13 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
     mimeType: options.mimeType || null,
     fileKey: options.fileKey || null
   }, {
-    attempts: 3,  // 重试3次
+    attempts: OCR_JOB_ATTEMPTS,
     backoff: {
-      type: 'exponential',
-      delay: 5000  // 首次重试延迟5秒
+      type: 'ocrExponential',
+      delay: OCR_JOB_BACKOFF_DELAY
     },
-    removeOnComplete: 10,  // 保留最近10个已完成任务
-    removeOnFail: 5        // 保留最近5个失败任务
+    removeOnComplete: 10,
+    removeOnFail: false
   });
   
   logger.info('OCR任务已添加:', { recordId, jobId: job.id });
@@ -171,13 +212,84 @@ ocrQueue.on('completed', (job, result) => {
   logger.info('任务完成:', { jobId: job.id, result });
 });
 
-ocrQueue.on('failed', (job, err) => {
-  logger.error('任务失败:', { jobId: job.id, error: err.message });
-});
+// PRD-2026Q2 §3.2：DLQ 落库 - 只在 attemptsMade 达到 opts.attempts 时写入，
+// 中途 transient 失败只记日志不写表，避免污染 DLQ。
+const classifyError = (err = {}) => {
+  const msg = `${err.message || err}`.toLowerCase();
+  if (msg.includes('timeout')) return 'timeout';
+  if (msg.includes('未识别') || msg.includes('ocr')) return 'ocr_empty';
+  if (msg.includes('network') || msg.includes('econn') || msg.includes('fetch')) return 'network';
+  return 'other';
+};
+
+const handleOcrJobFailed = async (job, err) => {
+  const attemptsMade = job?.attemptsMade || 0;
+  const maxAttempts = job?.opts?.attempts || 0;
+
+  logger.error('任务失败:', {
+    jobId: job?.id,
+    attemptsMade,
+    maxAttempts,
+    error: err?.message
+  });
+
+  // attempts 未耗尽 → 交给 Bull 继续重试，不写 DLQ
+  if (!maxAttempts || attemptsMade < maxAttempts) {
+    return;
+  }
+
+  try {
+    await OcrJobFailure.create({
+      job_id: String(job.id),
+      record_id: job.data?.recordId || '',
+      error_type: classifyError(err),
+      error_message: err?.message ? err.message.slice(0, 2000) : null,
+      payload: job.data || null,
+      retried: 0
+    });
+    logger.warn('OCR 任务进入 DLQ:', { jobId: job.id, recordId: job.data?.recordId });
+  } catch (dbErr) {
+    logger.error('写入 ocr_job_failures 失败:', { error: dbErr.message, jobId: job?.id });
+  }
+};
+
+ocrQueue.on('failed', handleOcrJobFailed);
+
+/**
+ * PRD-2026Q2 §3.2：手动重试 DLQ 中的任务。
+ * 读一条 ocr_job_failures → 用原 payload 重新 add → 更新 retried/last_retried_at。
+ * 不删除 DLQ 行，保留审计痕迹；若重试仍失败会再次写一条新的 DLQ 记录。
+ */
+const retryFailure = async (failureId) => {
+  const failure = await OcrJobFailure.findByPk(failureId);
+  if (!failure) {
+    const err = new Error('failure_not_found');
+    err.code = 404;
+    throw err;
+  }
+
+  const payload = failure.payload || {};
+  const job = await ocrQueue.add(payload, {
+    attempts: OCR_JOB_ATTEMPTS,
+    backoff: { type: 'ocrExponential', delay: OCR_JOB_BACKOFF_DELAY },
+    removeOnComplete: 10,
+    removeOnFail: false
+  });
+
+  await failure.update({
+    retried: (failure.retried || 0) + 1,
+    last_retried_at: new Date()
+  });
+
+  logger.info('DLQ 手动重试已入队:', { failureId, newJobId: job.id });
+  return { jobId: job.id, retried: failure.retried + 1 };
+};
 
 module.exports = {
   ocrQueue,
   notificationQueue,
   addOCRTask,
-  getJobStatus
+  getJobStatus,
+  retryFailure,
+  __testables: { handleOcrJobFailed, classifyError }
 };

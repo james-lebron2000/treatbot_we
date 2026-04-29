@@ -1,0 +1,143 @@
+name: Nightly Routine (auto-iterate)
+
+# 每晚 UTC 18:00 = 北京 02:00 跑；也可手动触发。
+# 这个 workflow 自己就是 routine agent：READ → DO → WRITE 全在一个 job 里。
+# 成功并产生 diff 时会 bot 回写 main（受 paths-ignore 保护不会死循环）。
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'pr = open PR for review; push = commit directly to main'
+        required: false
+        default: 'pr'
+        type: choice
+        options: [pr, push]
+
+env:
+  # 默认走 PR 模式（安全），观察一周后改成 push 可以切到自动推 main
+  ROUTINE_MODE: ${{ github.event.inputs.mode || 'pr' }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nightly-routine
+  cancel-in-progress: false
+
+jobs:
+  auto-iterate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install deps
+        working-directory: ./server
+        run: npm ci
+
+      # ──────────────────────────────────────────────────────────
+      # TASK 1: demo fixture 漂移自动修复（确定性，无 LLM 参与）
+      # 当 matchEngine 改了 buildDetailedMatchItem 字段，重跑脚本就会在 JSON 上看到 diff
+      # ──────────────────────────────────────────────────────────
+      - name: Regenerate demo fixture
+        working-directory: ./server
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+        run: node scripts/generateDemoFixture.js
+
+      # ──────────────────────────────────────────────────────────
+      # TASK 2: lint --fix（只吃 auto-fixable 规则，不碰逻辑）
+      # ──────────────────────────────────────────────────────────
+      - name: ESLint auto-fix
+        working-directory: ./server
+        run: npx eslint --fix --ext .js . || true
+
+      # ──────────────────────────────────────────────────────────
+      # 硬门槛：所有自动改动必须先跑通 lint + test，才允许 commit
+      # ──────────────────────────────────────────────────────────
+      - name: Lint gate
+        working-directory: ./server
+        run: npm run lint
+
+      - name: Test gate
+        working-directory: ./server
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+        run: npm test -- --runInBand --forceExit
+
+      # ──────────────────────────────────────────────────────────
+      # WRITE: 只有有 diff 且门槛全绿才 commit
+      # 受限白名单：只允许 routine 碰这几个路径
+      # ──────────────────────────────────────────────────────────
+      - name: Stage whitelisted changes
+        id: stage
+        run: |
+          set -e
+          git add server/fixtures/demoSamples.json || true
+          git add 'server/**/*.js' || true
+          if git diff --cached --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "nightly routine: no changes, nothing to do."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --stat
+          fi
+
+      - name: Commit directly to main (push mode)
+        if: steps.stage.outputs.has_changes == 'true' && env.ROUTINE_MODE == 'push'
+        run: |
+          set -e
+          git config user.name  "routine-bot"
+          git config user.email "routine-bot@users.noreply.github.com"
+          DATE=$(date -u +%Y-%m-%d)
+          SHORT_DIFF=$(git diff --cached --stat | tail -1)
+          git commit -m "chore(routine): nightly cycle $DATE — $SHORT_DIFF
+
+          Auto-iterated by nightly-routine.yml (push mode).
+          Gates passed: lint + jest.
+
+          Co-Authored-By: routine-bot <noreply@github.com>"
+          git push origin HEAD:main
+
+      - name: Open PR for review (pr mode)
+        if: steps.stage.outputs.has_changes == 'true' && env.ROUTINE_MODE == 'pr'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name  "routine-bot"
+          git config user.email "routine-bot@users.noreply.github.com"
+
+          DATE=$(date -u +%Y-%m-%d)
+          BRANCH="routine/nightly-$DATE-$GITHUB_RUN_ID"
+          git checkout -b "$BRANCH"
+
+          SHORT_DIFF=$(git diff --cached --stat | tail -1)
+          git commit -m "chore(routine): nightly cycle $DATE — $SHORT_DIFF
+
+          Auto-iterated by nightly-routine.yml (pr mode).
+          Gates passed: lint + jest.
+
+          Co-Authored-By: routine-bot <noreply@github.com>"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "routine: nightly auto-iterate $DATE" \
+            --body "自动迭代产出。变更白名单：fixtures + server/**/*.js (lint --fix)。lint + jest 已全绿。$SHORT_DIFF"

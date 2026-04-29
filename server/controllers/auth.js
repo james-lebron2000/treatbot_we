@@ -7,6 +7,7 @@ const { success, error } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const { redisClient } = require('../middleware/rateLimit');
 const smsService = require('../services/sms');
+const captchaService = require('../services/captcha');
 const { JWT_SECRET } = require('../utils/jwtSecret');
 
 const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN) || 1800;  // 30 分钟
@@ -42,22 +43,72 @@ const normalizePhone = (value) => {
   return '';
 };
 
-const buildTokenPayload = (user) => ({
-  token: jwt.sign(
-    { userId: user.id, openid: user.openid },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
-  ),
-  refreshToken: jwt.sign(
-    { userId: user.id, openid: user.openid, type: 'refresh' },
-    JWT_SECRET,
-    { expiresIn: JWT_REFRESH_EXPIRES_IN }
-  ),
-  expiresIn: JWT_EXPIRES_IN
-});
+// PRD-2026Q2 §3.4：refresh token 带 jti，登录/刷新时把 jti 写到 Redis
+// （key = refresh:{userId}:{jti}，TTL = refresh 过期秒数）。刷新时必须命中白名单；
+// 命中后立刻删除旧 jti，写入新 jti → 滚动式一次性使用，防止旧 refresh 被重放。
+const REFRESH_TOKEN_PREFIX = 'refresh:';
+const refreshTokenRedisKey = (userId, jti) => `${REFRESH_TOKEN_PREFIX}${userId}:${jti}`;
 
-const buildLoginResponse = (user) => {
-  const tokenPayload = buildTokenPayload(user);
+const generateJti = () => crypto.randomBytes(16).toString('hex');
+
+const persistRefreshJti = async (userId, jti) => {
+  try {
+    await redisClient.setex(refreshTokenRedisKey(userId, jti), JWT_REFRESH_EXPIRES_IN, '1');
+  } catch (err) {
+    logger.warn('refresh jti 写入 Redis 失败，继续但失去滚动黑名单能力', {
+      userId,
+      error: err.message
+    });
+  }
+};
+
+const revokeRefreshJti = async (userId, jti) => {
+  try {
+    await redisClient.del(refreshTokenRedisKey(userId, jti));
+  } catch (err) {
+    logger.warn('refresh jti 撤销失败', { userId, error: err.message });
+  }
+};
+
+const isRefreshJtiValid = async (userId, jti) => {
+  try {
+    const hit = await redisClient.get(refreshTokenRedisKey(userId, jti));
+    return Boolean(hit);
+  } catch (err) {
+    // Redis 挂了不应该直接踢下线 —— 记录 warn 并放行（与当前 session_key 策略一致）
+    logger.warn('refresh jti 校验失败，Redis 异常回退到放行', { userId, error: err.message });
+    return true;
+  }
+};
+
+const buildTokenPayload = (user) => {
+  const jti = generateJti();
+  const payload = {
+    token: jwt.sign(
+      { userId: user.id, openid: user.openid },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    ),
+    refreshToken: jwt.sign(
+      { userId: user.id, openid: user.openid, type: 'refresh', jti },
+      JWT_SECRET,
+      { expiresIn: JWT_REFRESH_EXPIRES_IN }
+    ),
+    expiresIn: JWT_EXPIRES_IN,
+    _refreshJti: jti
+  };
+  return payload;
+};
+
+const issueLoginTokens = async (user) => {
+  const payload = buildTokenPayload(user);
+  await persistRefreshJti(user.id, payload._refreshJti);
+  const { _refreshJti, ...clientPayload } = payload;
+  return clientPayload;
+};
+
+const buildLoginResponse = async (user) => {
+  const tokenPayload = await issueLoginTokens(user);
   return {
     ...tokenPayload,
     userInfo: {
@@ -268,8 +319,8 @@ const weappLogin = async (req, res, next) => {
       logger.warn('微信登录未返回 session_key，后续手机号解密可能失败', { userId: user.id });
     }
 
-    res.json(success(buildLoginResponse(user)));
-    
+    res.json(success(await buildLoginResponse(user)));
+
   } catch (err) {
     next(err);
   }
@@ -281,26 +332,42 @@ const weappLogin = async (req, res, next) => {
 const refreshToken = async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
-    
+
     if (!refreshToken) {
       return res.status(400).json(error('缺少刷新令牌', 400));
     }
-    
+
     const decoded = jwt.verify(refreshToken, JWT_SECRET);
-    
+
     if (decoded.type !== 'refresh') {
       return res.status(401).json(error('无效的刷新令牌', 401));
     }
-    
+
+    // PRD-2026Q2 §3.4：jti 必须在 Redis 白名单里。老 token（登录时未分配 jti）
+    // 走兼容路径，但会建议客户端下一次必须用新 refresh。
+    if (decoded.jti) {
+      const valid = await isRefreshJtiValid(decoded.userId, decoded.jti);
+      if (!valid) {
+        return res.status(401).json(error('刷新令牌已失效，请重新登录', 401));
+      }
+    }
+
     const user = await User.findByPk(decoded.userId);
-    
+
     if (!user) {
       return res.status(404).json(error('用户不存在', 404));
     }
-    
-    const tokenPayload = buildTokenPayload(user);
-    res.json(success(tokenPayload));
-    
+
+    // 旧 jti 一次性消耗 → 立即撤销，写入新 jti。
+    if (decoded.jti) {
+      await revokeRefreshJti(decoded.userId, decoded.jti);
+    }
+    const fresh = buildTokenPayload(user);
+    await persistRefreshJti(user.id, fresh._refreshJti);
+
+    const { _refreshJti, ...clientPayload } = fresh;
+    res.json(success(clientPayload));
+
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json(error('刷新令牌已过期', 401));
@@ -352,7 +419,7 @@ const h5Login = async (req, res, next) => {
       await user.update({ phone: normalizedPhone });
     }
 
-    res.json(success(buildLoginResponse(user)));
+    res.json(success(await buildLoginResponse(user)));
   } catch (err) {
     next(err);
   }
@@ -400,20 +467,50 @@ const bindPhone = async (req, res, next) => {
 
 /**
  * 发送短信验证码
+ * PRD-2026Q2 §3.6：
+ *  - 可选 captcha（ticket/randstr）前置校验，未配置腾讯 captcha 时自动放行
+ *  - 三重风控由 smsService 落地，命中返回 429 + res.fail('sms_abuse_*', 429, { retryAfter })
  */
 const sendVerificationCode = async (req, res, next) => {
   try {
-    const { phone } = req.body || {};
+    const { phone, ticket, randstr, captchaAppId } = req.body || {};
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) {
+      if (typeof res.fail === 'function') {
+        return res.fail('请输入有效手机号', 400);
+      }
       return res.status(400).json(error('请输入有效手机号', 400));
     }
 
-    const result = await smsService.sendCode(normalizedPhone);
-    if (!result.success) {
-      return res.status(429).json(error(result.message, 429));
+    // PRD-2026Q2 §3.6：captcha 软集成——未配置则 verify 恒真
+    const captchaResult = await captchaService.verify({
+      ticket,
+      randstr,
+      userIp: req.ip,
+      captchaAppId
+    });
+    if (!captchaResult.valid) {
+      if (typeof res.fail === 'function') {
+        return res.fail('captcha_invalid', 400, { reason: captchaResult.reason });
+      }
+      return res.status(400).json(error('captcha_invalid', 400, { reason: captchaResult.reason }));
     }
 
+    const result = await smsService.sendCode(normalizedPhone, req.ip);
+    if (!result.success) {
+      // 风控命中：code 形如 sms_abuse_*；否则是老的 60s lock 文案
+      const abuseCode = result.code || 'sms_abuse_locked';
+      const retryAfter = result.retryAfter || 60;
+      if (typeof res.fail === 'function') {
+        return res.fail(abuseCode, 429, { retryAfter, message: result.message });
+      }
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json(error(result.message, 429, { retryAfter }));
+    }
+
+    if (typeof res.ok === 'function') {
+      return res.ok({ message: result.message });
+    }
     res.json(success({ message: result.message }));
   } catch (err) {
     next(err);

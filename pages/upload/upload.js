@@ -2,13 +2,49 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const schema = require('../../utils/schema')
 const parseTask = require('../../utils/parse-task')
+// Q3-红线 §B.2：upload_start / upload_success 漏斗事件
+const { track } = require('../../utils/track')
+// PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.json`）。
+// 小程序工具链支持对 JSON 直接 require；统一 error / status / cta 三类 key。
+const copy = require('../../shared/copy/upload.json')
+
+// PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
+const classifyUploadError = (error) => {
+  if (!error) {
+    return 'unknown'
+  }
+  const status = Number(error.statusCode || 0)
+  if (status === 429) {
+    return 'rate_limit'
+  }
+  if (status === 0 || /网络|network|timeout/i.test(String(error.message || ''))) {
+    return 'network'
+  }
+  if (status >= 400 && status < 600) {
+    return 'parse'
+  }
+  return 'unknown'
+}
+
+const ERROR_COPY_KEY_MAP = {
+  rate_limit: 'rate_limit',
+  parse: 'parse_failed',
+  network: 'network',
+  unknown: 'unknown'
+}
+
+const resolveErrorCopy = (error) => {
+  const kind = classifyUploadError(error)
+  const key = ERROR_COPY_KEY_MAP[kind] || 'unknown'
+  return copy.error[key] || copy.error.unknown
+}
 
 const STATUS_TEXT_MAP = {
-  uploading: { progress: 10, uiTarget: 18, step: 0, text: '文件上传中...' },
-  parsing: { progress: 45, uiTarget: 58, step: 1, text: '正在识别文字...' },
-  analyzing: { progress: 75, uiTarget: 82, step: 2, text: '正在抽取医疗实体...' },
-  structuring: { progress: 90, uiTarget: 96, step: 3, text: '正在生成结构化病历...' },
-  completed: { progress: 100, uiTarget: 100, step: 3, text: '解析完成' }
+  uploading: { progress: 10, uiTarget: 18, step: 0, text: copy.status.pending },
+  parsing: { progress: 45, uiTarget: 58, step: 1, text: copy.status.parsing },
+  analyzing: { progress: 75, uiTarget: 82, step: 2, text: '找诊断、分期、基因这些关键信息…' },
+  structuring: { progress: 90, uiTarget: 96, step: 3, text: '整理成一份能看懂的摘要…' },
+  completed: { progress: 100, uiTarget: 100, step: 3, text: copy.status.completed }
 }
 
 const PDF_HINT_FIELDS = ['diagnosis', 'stage', 'geneMutation']
@@ -16,18 +52,18 @@ const TRANSIENT_STORAGE_KEYS = ['currentRecordId', 'structuredRecordDraft', 'sel
 const PROCESS_STEPS = [
   {
     key: 'ocr',
-    title: 'OCR文字识别',
-    desc: '抽取病历正文、检查结论和报告内容'
+    title: '看清病历写了什么',
+    desc: '读取病历正文、检查结论和报告内容'
   },
   {
     key: 'medical',
-    title: '医疗信息抽取',
-    desc: '识别诊断、分期、治疗和关键检查值'
+    title: '找到关键信息',
+    desc: '认出诊断、分期、治疗方案和重要检查值'
   },
   {
     key: 'struct',
-    title: '结构化病历',
-    desc: '整理成可匹配的患者画像并准备试验筛选'
+    title: '整理成病历卡片',
+    desc: '为您画一份清晰的概况，可以直接拿给医生看'
   }
 ]
 
@@ -42,10 +78,12 @@ Page({
   data: {
     currentStep: 1,
     processSteps: PROCESS_STEPS,
+    // PRD-2026Q2 §3.7：把共享文案挂到 data 上，wxml 直接 {{copy.cta.upload}} 等读取。
+    copy,
     tempFiles: [],
     remark: '',
     uploading: false,
-    processingStatus: '正在识别文字...',
+    processingStatus: copy.status.parsing,
     parseProgress: 0,
     progressTarget: 0,
     parseProgressStyle: 'width: 0%;',
@@ -194,7 +232,8 @@ Page({
     const supported = normalized.filter((file) => file.fileType !== 'other')
     if (supported.length < normalized.length) {
       wx.showToast({
-        title: '仅支持图片和PDF文件',
+        // PRD-2026Q2 §3.7：统一格式不支持提示走 shared copy.error.unsupported_format
+        title: copy.error.unsupported_format,
         icon: 'none'
       })
     }
@@ -311,7 +350,7 @@ Page({
       progressTarget: 0,
       parseProgressStyle: 'width: 0%;',
       parseStep: 0,
-      processingStatus: '文件上传中...',
+      processingStatus: copy.status.pending,
       parseFallbackNotified: false,
       pdfQualityHintShown: false
     })
@@ -332,11 +371,20 @@ Page({
     this.setData({
       uploading: true,
       currentStep: 2,
-      processingStatus: '正在上传病历文件...',
+      // PRD-2026Q2 §3.7：上传起步态沿用 shared status.pending
+      processingStatus: copy.status.pending,
       parseStep: 0
     })
     this.updateProgressBar(0)
     this.setProgressTarget('uploading', 2)
+
+    // Q3-红线 §B.2：用户点击「开始上传」即视为漏斗 upload_start
+    try {
+      track('upload_start', {
+        fileCount: this.data.tempFiles.length,
+        hasPdf: this.data.tempFiles.some((f) => f.fileType === 'pdf')
+      })
+    } catch (e) { /* ignore */ }
 
     try {
       await auth.ensureBaseLogin()
@@ -385,8 +433,9 @@ Page({
       this.startPolling()
     } catch (error) {
       console.error('上传失败:', error)
+      // PRD-2026Q2 §3.7：按三类错误（rate_limit / parse / network）+ unknown 映射到 shared copy
       wx.showToast({
-        title: error.message || '上传失败，请重试',
+        title: resolveErrorCopy(error),
         icon: 'none'
       })
       this.setData({ uploading: false })
@@ -448,7 +497,8 @@ Page({
           currentStep: 1
         })
         wx.showToast({
-          title: payload.errorMsg || '解析失败，请重试',
+          // PRD-2026Q2 §3.7：解析态失败统一到 copy.error.parse_failed
+          title: payload.errorMsg || copy.error.parse_failed,
           icon: 'none'
         })
       }
@@ -490,6 +540,13 @@ Page({
     this.completionHandled = true
     this.clearPollTimer()
     this.setProgressTarget('completed', 100)
+
+    // Q3-红线 §B.2：解析完成 = 漏斗 upload_success
+    try {
+      track('upload_success', {
+        recordId: this.data.recordId || this.data.fileId || ''
+      })
+    } catch (e) { /* ignore */ }
 
     const parsedData = {
       diagnosis: result.diagnosis || '',
@@ -597,7 +654,8 @@ Page({
       wx.switchTab({ url: '/pages/matches/matches' })
     } catch (error) {
       wx.showToast({
-        title: error.message || '进入匹配失败，请重试',
+        // PRD-2026Q2 §3.7：进入匹配失败归为 network/unknown，走 shared copy.
+        title: resolveErrorCopy(error),
         icon: 'none'
       })
     } finally {
@@ -608,6 +666,11 @@ Page({
 
   goToRecords() {
     wx.switchTab({ url: '/pages/records/records' })
+  },
+
+  // PRD-2026Q2 §3.7：手动录入入口（与 H5 /matches?manualEntry=1 对等）
+  goToManualEntry() {
+    wx.navigateTo({ url: '/pages/manualEntry/manualEntry' })
   },
 
   goToMatchesPage() {

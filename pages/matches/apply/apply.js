@@ -1,5 +1,7 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
+// Q3-红线 §B.2：报名提交成功 = 漏斗 application_submitted
+const { track } = require('../../../utils/track')
 
 const PHONE_REG = /^1\d{10}$/
 
@@ -110,6 +112,14 @@ Page({
       if (phone) {
         wx.setStorageSync('patientPhone', phone)
       }
+
+      // Q3-红线 §B.2：服务端 200 即记 application_submitted（fallback 也算一次完整漏斗）
+      try {
+        track('application_submitted', {
+          trialId: this.data.trialId,
+          fallback: !!(res && res.fallback)
+        })
+      } catch (e) { /* ignore */ }
 
       if (res && res.fallback) {
         const fallbackMessage =

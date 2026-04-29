@@ -2,6 +2,8 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const parseTask = require('../../utils/parse-task')
 const matchExplainer = require('../../utils/match-explainer')
+// PRD-2026Q3 §U5：首屏期望管理 banner 的文案 = shared/copy/help.json 的 expectations 段
+const help = require('../../shared/copy/help.json')
 
 const pickList = (res) => {
   if (!res) {
@@ -30,10 +32,10 @@ const normalizeMatch = (item) => {
 }
 
 const ACTIVE_TASK_TEXT_MAP = {
-  uploading: '文件已上传，准备开始识别',
-  parsing: '正在识别病历文字',
-  analyzing: '正在提取诊断、分期和治疗信息',
-  structuring: '正在整理结构化病历并生成匹配'
+  uploading: '文件上传好了，马上开始看',
+  parsing: '在看清病历上写的什么',
+  analyzing: '找诊断、分期和治疗信息',
+  structuring: '整理成病历卡片，一并准备匹配'
 }
 
 const normalizeActiveTask = (task) => {
@@ -53,11 +55,30 @@ Page({
     recentMatches: [],
     loading: false,
     errorMessage: '',
-    activeParseTask: null
+    activeParseTask: null,
+    // PRD-2026Q3 §U5
+    onboarding: help.expectations || null,
+    onboardingSeen: false,
+    onboardingExpanded: true
   },
 
   async onLoad() {
+    // 读取本地「我看过了」状态；同 H5 用 localStorage('onboardingSeenAt')
+    const seenAt = wx.getStorageSync('onboardingSeenAt')
+    this.setData({
+      onboardingSeen: Boolean(seenAt),
+      onboardingExpanded: !seenAt
+    })
     await this.bootstrap()
+  },
+
+  toggleOnboarding() {
+    this.setData({ onboardingExpanded: !this.data.onboardingExpanded })
+  },
+
+  dismissOnboarding() {
+    wx.setStorageSync('onboardingSeenAt', Date.now())
+    this.setData({ onboardingSeen: true, onboardingExpanded: false })
   },
 
   async onShow() {

@@ -3,12 +3,18 @@ const path = require('path');
 const dayjs = require('dayjs');
 const { Op, fn, col } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { User, MedicalRecord, TrialApplication, Trial, CroCompany, sequelize } = require('../models');
+const { User, MedicalRecord, TrialApplication, Trial, CroCompany, AdminAuditLog, OcrJobFailure, sequelize } = require('../models');
+// PRD-2026Q2 §3.2：OCR DLQ 管理 API 调 queue.retryFailure 做手动重试
+const queueService = require('../services/queue');
 const { success, pagination } = require('../utils/response');
 const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const { sanitizeTrial, safeText, escapeLike } = require('../utils/text');
 const { parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('../services/matchEngine');
+// PRD-2026Q2 §2.4：试验新鲜度健康度视图
+const trialFreshness = require('../services/trialFreshness');
+// PRD-2026Q2 §2.3：PII 脱敏。list 响应出门前走一道 mask，reveal 单字段走审计日志旁路。
+const { maskPhone, maskIdCard, maskName } = require('../utils/mask');
 
 const APPLICATION_STATUS_TEXT = {
   pending: '待联系',
@@ -201,8 +207,8 @@ const buildRecordPayload = async (record, req, options = {}) => {
     uploadTime: record.created_at,
     parseStatus: record.status,
     userId: record.user_id,
-    userNickname: safeText(record.User?.nickname),
-    userPhone: safeText(record.User?.phone),
+    userNickname: maskName(safeText(record.User?.nickname)),
+    userPhone: maskPhone(safeText(record.User?.phone)),
     fileType: safeText(record.type),
     fileKey: safeText(record.file_key),
     fileUrl,
@@ -378,15 +384,16 @@ const getUserList = async (req, res, next) => {
     const appCountMap = appCounts.reduce((m, r) => { m[r.user_id] = Number(r.cnt); return m; }, {});
     const latestRecordMap = latestRecords.reduce((m, r) => { m[r.user_id] = r; return m; }, {});
 
+    // PRD-2026Q2 §2.3：list 响应中 phone 必须脱敏，明文只走 revealField 旁路。
     const usersWithStats = rows.map((user) => {
       const rs = recordStatsMap[user.id] || {};
       const lr = latestRecordMap[user.id];
       return {
         userId: user.id,
         openid: user.openid,
-        nickname: safeText(user.nickname),
+        nickname: maskName(safeText(user.nickname)),
         avatarUrl: safeText(user.avatar_url),
-        phone: safeText(user.phone),
+        phone: maskPhone(safeText(user.phone)),
         createdAt: user.created_at,
         recordCount: Number(rs.total) || 0,
         completedRecordCount: Number(rs.completed) || 0,
@@ -510,8 +517,9 @@ const getApplicationList = async (req, res, next) => {
       return {
         id: app.id,
         userId: app.user_id,
-        userName: safeText(app.User?.nickname) || '未知用户',
-        userPhone: safeText(app.User?.phone),
+        // PRD-2026Q2 §2.3：list 响应必须脱敏
+        userName: maskName(safeText(app.User?.nickname)) || '未知用户',
+        userPhone: maskPhone(safeText(app.User?.phone)),
         trialId: app.trial_id,
         trialName: safeText(app.Trial?.name),
         institution: safeText(app.Trial?.institution),
@@ -741,9 +749,10 @@ const exportUsers = async (req, res, next) => {
       return {
         userId: user.id,
         openid: user.openid,
-        nickname: safeText(user.nickname),
+        // PRD-2026Q2 §2.3：export 导出也要默认脱敏，reveal 通过 revealField 旁路按字段授权
+        nickname: maskName(safeText(user.nickname)),
         avatarUrl: safeText(user.avatar_url),
-        phone: safeText(user.phone),
+        phone: maskPhone(safeText(user.phone)),
         createdAt: user.created_at,
         recordCount: userRecords.length,
         completedRecordCount: userRecords.filter((item) => item.status === 'completed').length,
@@ -822,9 +831,10 @@ const exportApplications = async (req, res, next) => {
         trialSponsor: safeText(app.Trial?.sponsor),
         status: app.status,
         statusText: APPLICATION_STATUS_TEXT[app.status] || app.status,
-        patientName: safeText(meta.name || app.contact_name),
-        patientPhone: safeText(meta.phone || app.contact_phone || app.User?.phone),
-        patientNickname: safeText(app.User?.nickname),
+        // PRD-2026Q2 §2.3：export 默认脱敏
+        patientName: maskName(safeText(meta.name || app.contact_name)),
+        patientPhone: maskPhone(safeText(meta.phone || app.contact_phone || app.User?.phone)),
+        patientNickname: maskName(safeText(app.User?.nickname)),
         diagnosis: safeText(primaryRecord?.diagnosis || meta.disease || app.disease_snapshot),
         stage: safeText(primaryRecord?.stage),
         geneMutation: safeText(primaryRecord?.gene_mutation),
@@ -992,9 +1002,141 @@ const updateCro = async (req, res, next) => {
   }
 };
 
+/**
+ * PRD-2026Q2 §2.3：按字段揭示明文 PII。
+ *
+ * GET /admin/users/:id/reveal?field=phone
+ * - 默认仅支持 phone / real_name / id_card 三个字段
+ * - 通过 env `ADMIN_MFA_BYPASS=true` 放行（MFA 真集成 TODO）
+ * - 即使命中成功也会通过 auditLog middleware 写一条 reveal_field_phone 记录，
+ *   外加此函数内部单独记一条 action 级审计行（防 middleware 被摘掉仍留痕）。
+ */
+const REVEAL_ALLOWED_FIELDS = new Set(['phone', 'real_name', 'id_card']);
+
+const revealField = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const field = safeText(req.query.field);
+
+    if (!REVEAL_ALLOWED_FIELDS.has(field)) {
+      return res.status(400).json({ code: 400, message: '字段不支持揭示', data: null });
+    }
+
+    // TODO(PRD-2026Q2 §2.3 后续)：接入邮箱 OTP / TOTP MFA，移除 ADMIN_MFA_BYPASS。
+    const mfaBypass = process.env.ADMIN_MFA_BYPASS === 'true';
+    if (!mfaBypass) {
+      return res.status(403).json({ code: 403, message: '需要 MFA 验证', data: null });
+    }
+
+    const user = await User.findByPk(id, { attributes: ['id', 'phone', 'nickname'] });
+    if (!user) {
+      return res.status(404).json({ code: 404, message: '用户不存在', data: null });
+    }
+
+    // 额外写一条带 target 的审计行（防 middleware 漏记）
+    try {
+      await AdminAuditLog.create({
+        admin_id: req.adminUser?.id || req.userId || 'unknown',
+        action: `reveal_field_${field}`,
+        target_type: 'user',
+        target_id: id,
+        query_summary: JSON.stringify({ field }),
+        ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim().slice(0, 64),
+        user_agent: (req.headers['user-agent'] || '').toString().slice(0, 255)
+      });
+    } catch (auditError) {
+      logger.warn('[revealField] 审计写入失败', { error: auditError.message });
+    }
+
+    let value = '';
+    if (field === 'phone') value = safeText(user.phone);
+    else if (field === 'real_name') value = safeText(user.nickname);
+    else if (field === 'id_card') value = '';
+
+    return res.json(success({ userId: id, field, value }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ===== PRD-2026Q2 §3.2：OCR DLQ 管理 =====
+
+const listOcrFailures = async (req, res, next) => {
+  try {
+    const page = toPositiveInt(req.query.page, 1);
+    const pageSize = Math.min(toPositiveInt(req.query.pageSize, 20), 100);
+    const errorType = safeText(req.query.error_type);
+
+    const where = {};
+    if (errorType) {
+      where.error_type = errorType;
+    }
+
+    const { count, rows } = await OcrJobFailure.findAndCountAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit: pageSize,
+      offset: (page - 1) * pageSize
+    });
+
+    const list = rows.map((row) => ({
+      id: Number(row.id),
+      jobId: row.job_id,
+      recordId: row.record_id,
+      errorType: row.error_type,
+      errorMessage: row.error_message,
+      payload: row.payload,
+      retried: row.retried,
+      createdAt: row.created_at,
+      lastRetriedAt: row.last_retried_at
+    }));
+
+    return res.paginated(list, {
+      page,
+      pageSize,
+      total: count,
+      hasMore: page * pageSize < count
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const retryOcrFailure = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await queueService.retryFailure(id);
+    logger.info('[Admin] DLQ 手动重试:', { failureId: id, operator: req.userId, ...result });
+    return res.ok({ queued: true, ...result });
+  } catch (err) {
+    if (err && err.code === 404) {
+      return res.fail('DLQ 记录不存在', 404);
+    }
+    next(err);
+  }
+};
+
+/**
+ * PRD-2026Q2 §2.4：试验新鲜度健康度视图。
+ *
+ * GET /admin/trials/health →
+ *   { stale14d, stale30d, autoClosedLast24h, lastRun }
+ *
+ * 前端 AdminView 的 UI 展示留给 W4，这里只提供数据接口。
+ */
+const getTrialsHealth = async (req, res, next) => {
+  try {
+    const snapshot = await trialFreshness.getHealthSnapshot();
+    return res.ok(snapshot);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getUserList,
+  revealField,
   getRecordList,
   getApplicationList,
   updateApplicationStatus,
@@ -1006,5 +1148,8 @@ module.exports = {
   addApplicationNote,
   getCroList,
   createCro,
-  updateCro
+  updateCro,
+  listOcrFailures,
+  retryOcrFailure,
+  getTrialsHealth
 };

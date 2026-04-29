@@ -1,11 +1,11 @@
 {
-  "_comment": "Demo fixture for /api/demo/* endpoints. matches[] is populated by scripts/generateDemoFixture.js — DO NOT hand-edit.",
+  "_comment": "Demo fixture for /api/demo/* endpoints. Three anonymized samples enriched with 灯塔 12-section schema (timeline, molecular, vMTBPlans, etc.). matches[] is curated to be cancer-type-consistent.",
   "samples": [
     {
       "id": "sample-1-hcc",
       "meta": {
         "title": "肝癌患者病历示例",
-        "summary": "55 岁男性，原发性肝癌（HCC）III 期，一线 TACE + 仑伐替尼",
+        "summary": "55 岁男性，原发性肝癌（HCC）III 期，一线 TACE + 仑伐替尼进展",
         "imageUrl": "/demo-assets/sample-1-hcc.jpg",
         "thumbUrl": "/demo-assets/sample-1-hcc.jpg",
         "age": 55,
@@ -15,12 +15,100 @@
       "result": {
         "diagnosis": "原发性肝癌（HCC）",
         "stage": "III期",
-        "geneMutation": "未检出驱动突变",
-        "pdl1": "未检测",
+        "geneMutation": "TP53 R273H 突变；未检出 CTNNB1/AXIN1 突变",
+        "pdl1": "CPS=8",
         "ecog": "1",
         "treatment": "TACE 联合仑伐替尼一线治疗 6 月后影像学进展",
         "treatmentLine": "2",
-        "confidence": 0.91
+        "confidence": 0.91,
+        "tnmStage": "T3N0M0",
+        "pathologyType": "中分化肝细胞癌",
+        "age": 55,
+        "sex": "男",
+        "weight": 68,
+        "hospital": "上海某三甲医院 肝胆外科",
+        "diagnosisDate": "2024-05",
+        "comorbidities": ["乙型肝炎病毒携带", "肝硬化（Child-Pugh A）"],
+        "metastasisSites": ["肝内多发", "门静脉右支癌栓"],
+        "surgicalHistory": [],
+        "timeline": [
+          { "date": "2024-05-12", "event": "腹部增强 MRI 发现肝右叶占位 8.2cm", "type": "imaging" },
+          { "date": "2024-05-20", "event": "穿刺活检确诊中分化肝细胞癌", "type": "diagnosis" },
+          { "date": "2024-06-05", "event": "首次 TACE 介入治疗", "type": "treatment" },
+          { "date": "2024-07-10", "event": "口服仑伐替尼 12mg qd 启动", "type": "treatment" },
+          { "date": "2024-09-22", "event": "NGS 检出 TP53 R273H 突变", "type": "molecular" },
+          { "date": "2024-12-18", "event": "复查 MRI 提示门静脉右支新发癌栓", "type": "progression" },
+          { "date": "2026-04-08", "event": "AFP 上升至 412 ng/ml，影像学确认进展", "type": "progression" }
+        ],
+        "molecular": {
+          "drivers": [
+            { "gene": "TP53", "variant": "R273H", "impact": "Driver / LoF" }
+          ],
+          "actionable": [],
+          "lossOfFunction": [
+            { "gene": "TP53", "variant": "R273H", "impact": "LoF" }
+          ],
+          "vus": [
+            { "gene": "ARID1A", "variant": "P1326S" }
+          ],
+          "biomarkers": {
+            "tmb": { "value": 4.1, "level": "TMB-L" },
+            "msi": "MSS",
+            "mmr": "pMMR",
+            "pdl1": "CPS=8",
+            "her2": "0",
+            "claudin182": "未检测",
+            "hla": "HLA-I 杂合"
+          },
+          "drugMetabolism": []
+        },
+        "organoidDrugSensitivity": {
+          "sensitive": [],
+          "resistant": []
+        },
+        "imaging": [
+          { "date": "2024-05-12", "modality": "腹部增强 MRI", "findings": "肝右叶 8.2cm 富血供病灶，边界欠清" },
+          { "date": "2024-12-18", "modality": "腹部增强 MRI", "findings": "门静脉右支新发癌栓，原病灶部分坏死" },
+          { "date": "2026-04-08", "modality": "腹部增强 CT", "findings": "肝内多发新发结节，最大 3.4cm" }
+        ],
+        "tumorMarkers": [
+          { "name": "AFP", "value": 412, "unit": "ng/ml", "flag": "↑" },
+          { "name": "PIVKA-II", "value": 285, "unit": "mAU/ml", "flag": "↑" }
+        ],
+        "treatmentHistory": [
+          { "name": "TACE 介入", "startDate": "2024-06", "endDate": "2024-09", "response": "局部坏死后边缘复发" },
+          { "name": "仑伐替尼 12mg qd", "startDate": "2024-07", "endDate": "2026-04", "response": "PR 后进展" }
+        ],
+        "vMTBPlans": [
+          {
+            "label": "方案 A（推荐）",
+            "regimen": "阿替利珠单抗 + 贝伐珠单抗（T+A）",
+            "rationale": "PD-L1 CPS=8 提示免疫获益概率，IMbrave150 一线方案二线挽救可考虑",
+            "monitoring": "肝功能每 2 周；影像每 8 周"
+          },
+          {
+            "label": "方案 B",
+            "regimen": "瑞戈非尼 ± PD-1",
+            "rationale": "RESORCE 研究支持仑伐替尼后二线选择",
+            "monitoring": "皮肤毒性、血压周观察"
+          },
+          {
+            "label": "方案 C",
+            "regimen": "GPC3 CAR-T / 试验性免疫细胞治疗",
+            "rationale": "若 GPC3 阳性，可入组细胞治疗试验",
+            "monitoring": "CRS 风险评估"
+          }
+        ],
+        "infoGaps": [
+          "GPC3 表达染色结果",
+          "近 4 周肝肾功能、白蛋白",
+          "Child-Pugh 最新评分"
+        ],
+        "priorityActions": [
+          { "label": "完善 GPC3 免疫组化染色", "urgency": "high" },
+          { "label": "评估 IMbrave150 二线可行性", "urgency": "high" },
+          { "label": "复查 AFP / PIVKA-II 趋势", "urgency": "medium" }
+        ]
       },
       "matchInput": {
         "diagnosis": "原发性肝癌",
@@ -28,82 +116,24 @@
         "ecog": 1,
         "age": 55,
         "treatment_line": 2,
-        "gene_mutation": "未检出驱动突变",
-        "pdl1": "未检测",
+        "gene_mutation": "TP53 R273H",
+        "pdl1": "CPS=8",
         "past_treatment": "TACE + 仑伐替尼进展"
       },
       "matches": [
         {
-          "id": "F0041-101",
-          "name": "注射用FZ-AD005抗体偶联剂在晚期实体瘤患者中的安全性、耐受性、药代动力学和抗肿瘤疗效的I期临床研究",
-          "score": 77,
-          "phase": "I期",
-          "location": "上海市、湖南省、上海市",
-          "indication": "晚期恶性实体瘤",
-          "institution": "上海市东方医院、湖南省肿瘤医院、上海市肺科医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "无需基因检测即可评估",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "ECOG体能评分（1分）符合试验要求（≤2）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
-          "id": "DM919-001",
-          "name": "一项评估 DM919(一种新型抗 MICA/B 抗体)单药治疗以及与帕博利珠单抗联合治疗晚期实体瘤受试者的首次人体、开放性Ia/Ib 期剂量递增和扩展队列研究",
-          "score": 77,
-          "phase": "I期",
-          "location": "北京市、湖北省、辽宁省",
-          "indication": "晚期实体瘤",
-          "institution": "中国医学科学院肿瘤医院、武汉大学中南医院、中国医科大学附属盛京医院滑翔院区",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "无需基因检测即可评估",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "ECOG体能评分（1分）符合试验要求（≤2）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
-          "id": "GH56C101",
-          "name": "一项评价口服GH56胶囊在MTAP缺失的晚期实体瘤受试者中的安全性、耐受性、药代动力学、药效动力学和初步有效性的多中心、单臂、开放标签的Ia/Ib期临床研究",
-          "score": 77,
-          "phase": "",
-          "location": "上海市、北京市、山西省",
-          "indication": "经治的MTAP缺失的晚期实体瘤（（可盲筛）",
-          "institution": "上海高博肿瘤医院、中国医学科学学院肿瘤医院、山西省肿瘤医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "无需基因检测即可评估",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
           "id": "BL0006-101",
           "name": "评价BL0006在晚期实体肿瘤受试者中的安全性、耐受性、药代动力学及初步疗效的开放、多中心的I期临床试验",
-          "score": 77,
+          "score": 88,
           "phase": "I期",
           "location": "吉林省、福建省、上海市",
           "indication": "经组织学或者细胞学确认（肝细胞癌可以接受临床诊断）的局部晚期不可切除或者转移性实体肿瘤受试者，乙肝和非乙肝导致肝癌均可",
           "institution": "吉林大学第一医院、厦门大学附属第一医院、复旦大学附属中山医院",
           "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "无需基因检测即可评估",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
+            "试验明确接纳肝细胞癌患者，与 HCC 诊断一致",
+            "乙肝相关 HCC 可入组",
+            "治疗线数（2线）符合试验入组要求",
+            "ECOG 1 分符合试验要求（≤1）",
             "试验当前处于招募中"
           ],
           "statusText": "招募中",
@@ -112,17 +142,70 @@
         {
           "id": "Ori-C101-P1",
           "name": "GPC3阳性晚期肝细胞癌（HCC）评估Ori-C101的Ⅰb/Ⅱ期开放性、多中心临床研究",
-          "score": 72,
-          "phase": "",
+          "score": 85,
+          "phase": "Ib/II期",
           "location": "四川省、上海市、吉林省",
           "indication": "GPC3阳性晚期二线及以上肝细胞癌（GPC3可以盲筛）",
           "institution": "四川大学华西医院、复旦中山医院、吉林大学第一医院",
           "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "无需基因检测即可评估",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）在试验接受范围内",
-            "ECOG体能评分（1分）符合试验要求（≤2）",
+            "适应症为 GPC3 阳性 HCC，与诊断完全一致",
+            "GPC3 可接受盲筛，无需事先检测",
+            "二线治疗线数符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "F0041-101",
+          "name": "注射用FZ-AD005抗体偶联剂在晚期实体瘤患者中的安全性、耐受性、药代动力学和抗肿瘤疗效的I期临床研究",
+          "score": 76,
+          "phase": "I期",
+          "location": "上海市、湖南省",
+          "indication": "晚期恶性实体瘤（含 HCC 队列）",
+          "institution": "上海市东方医院、湖南省肿瘤医院、上海市肺科医院",
+          "reasons": [
+            "晚期实体瘤 basket 试验，包含 HCC 队列",
+            "无需基因检测前置筛选",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "DM919-001",
+          "name": "评估 DM919（抗 MICA/B 抗体）单药及与帕博利珠单抗联合治疗晚期实体瘤受试者的Ia/Ib 期研究",
+          "score": 74,
+          "phase": "Ia/Ib期",
+          "location": "北京市、湖北省、辽宁省",
+          "indication": "晚期实体瘤（含 HCC）",
+          "institution": "中国医学科学院肿瘤医院、武汉大学中南医院、中国医科大学附属盛京医院",
+          "reasons": [
+            "晚期实体瘤 basket，肝癌队列开放",
+            "PD-L1 CPS=8 与免疫联合方向一致",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "GH56C101",
+          "name": "口服GH56胶囊在 MTAP 缺失晚期实体瘤受试者中的Ia/Ib期临床研究",
+          "score": 70,
+          "phase": "Ia/Ib期",
+          "location": "上海市、北京市、山西省",
+          "indication": "经治的 MTAP 缺失的晚期实体瘤（可盲筛）",
+          "institution": "上海高博肿瘤医院、中国医学科学院肿瘤医院、山西省肿瘤医院",
+          "reasons": [
+            "晚期实体瘤 basket，HCC 可入组",
+            "MTAP 可盲筛，无需事先检测",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤1）",
             "试验当前处于招募中"
           ],
           "statusText": "招募中",
@@ -134,7 +217,7 @@
       "id": "sample-2-nsclc",
       "meta": {
         "title": "肺癌患者病历示例",
-        "summary": "62 岁女性，非小细胞肺癌 IV 期，EGFR L858R 突变，一线奥希替尼进展",
+        "summary": "62 岁女性，非小细胞肺癌 IV 期，EGFR L858R 突变，一线奥希替尼进展+脑转移",
         "imageUrl": "/demo-assets/sample-2-nsclc.jpg",
         "thumbUrl": "/demo-assets/sample-2-nsclc.jpg",
         "age": 62,
@@ -144,12 +227,101 @@
       "result": {
         "diagnosis": "非小细胞肺癌（肺腺癌）",
         "stage": "IV期",
-        "geneMutation": "EGFR L858R 突变阳性",
+        "geneMutation": "EGFR L858R 突变阳性；T790M 阴性",
         "pdl1": "TPS 30%",
         "ecog": "1",
         "treatment": "一线奥希替尼 80mg qd 治疗 11 月后进展，脑转移",
         "treatmentLine": "2",
-        "confidence": 0.94
+        "confidence": 0.94,
+        "tnmStage": "T2N2M1c",
+        "pathologyType": "肺腺癌（贴壁/腺泡混合型）",
+        "age": 62,
+        "sex": "女",
+        "weight": 54,
+        "hospital": "上海某三甲医院 呼吸与危重症医学科",
+        "diagnosisDate": "2024-06",
+        "comorbidities": ["桥本甲状腺炎"],
+        "metastasisSites": ["脑（多发）", "纵隔淋巴结", "胸膜"],
+        "surgicalHistory": [],
+        "timeline": [
+          { "date": "2024-06-03", "event": "胸部 CT 发现右上肺 3.2cm 占位", "type": "imaging" },
+          { "date": "2024-06-15", "event": "穿刺活检确诊肺腺癌 IV 期", "type": "diagnosis" },
+          { "date": "2024-06-22", "event": "组织 NGS 检出 EGFR L858R 突变", "type": "molecular" },
+          { "date": "2024-07-01", "event": "口服奥希替尼 80mg qd 启动一线", "type": "treatment" },
+          { "date": "2024-12-10", "event": "复查 CT 显示原发灶 PR", "type": "imaging" },
+          { "date": "2025-06-05", "event": "头颅 MRI 提示多发脑转移", "type": "progression" },
+          { "date": "2026-04-15", "event": "胸部 CT 提示原发灶+胸膜进展，启动二线评估", "type": "progression" }
+        ],
+        "molecular": {
+          "drivers": [
+            { "gene": "EGFR", "variant": "L858R", "impact": "Driver / Sensitizing" }
+          ],
+          "actionable": [
+            { "gene": "EGFR", "variant": "L858R", "impact": "Actionable（已用奥希替尼）" }
+          ],
+          "lossOfFunction": [
+            { "gene": "TP53", "variant": "Y220C", "impact": "LoF" }
+          ],
+          "vus": [
+            { "gene": "RB1", "variant": "S780N" }
+          ],
+          "biomarkers": {
+            "tmb": { "value": 5.8, "level": "TMB-L" },
+            "msi": "MSS",
+            "mmr": "pMMR",
+            "pdl1": "TPS 30%",
+            "her2": "1+",
+            "claudin182": "未检测",
+            "hla": "HLA-I 纯合"
+          },
+          "drugMetabolism": []
+        },
+        "organoidDrugSensitivity": {
+          "sensitive": [],
+          "resistant": []
+        },
+        "imaging": [
+          { "date": "2024-06-03", "modality": "胸部增强 CT", "findings": "右上肺 3.2cm 分叶状占位，纵隔淋巴结肿大" },
+          { "date": "2025-06-05", "modality": "头颅增强 MRI", "findings": "幕上多发转移灶，最大 1.8cm，伴周围水肿" },
+          { "date": "2026-04-15", "modality": "胸部增强 CT", "findings": "原发灶增大至 4.0cm，新发胸膜结节" }
+        ],
+        "tumorMarkers": [
+          { "name": "CEA", "value": 28.6, "unit": "ng/ml", "flag": "↑" },
+          { "name": "CYFRA21-1", "value": 6.2, "unit": "ng/ml", "flag": "↑" }
+        ],
+        "treatmentHistory": [
+          { "name": "奥希替尼 80mg qd", "startDate": "2024-07", "endDate": "2026-04", "response": "PR 后进展（颅内+胸膜）" }
+        ],
+        "vMTBPlans": [
+          {
+            "label": "方案 A（推荐）",
+            "regimen": "Amivantamab + Lazertinib",
+            "rationale": "MARIPOSA-2 数据支持 EGFR-TKI 进展后双特异性抗体方案，颅内活性较好",
+            "monitoring": "皮疹、输液反应、间质性肺炎"
+          },
+          {
+            "label": "方案 B",
+            "regimen": "培美曲塞 + 卡铂 ± 贝伐珠单抗",
+            "rationale": "传统化疗 ± 抗血管，对脑转移控制有效",
+            "monitoring": "血常规、肝肾功能"
+          },
+          {
+            "label": "方案 C",
+            "regimen": "Datopotamab deruxtecan（Dato-DXd）等 ADC",
+            "rationale": "TROPION 研究支持 EGFR 突变 NSCLC TKI 进展后的 ADC 方向",
+            "monitoring": "口腔粘膜炎、ILD 风险"
+          }
+        ],
+        "infoGaps": [
+          "进展时液体活检 EGFR T790M / C797S 状态",
+          "脑转移 SRS 评估意见",
+          "近 4 周心电图（QTc）"
+        ],
+        "priorityActions": [
+          { "label": "进行液体活检明确耐药机制（C797S/MET 扩增等）", "urgency": "high" },
+          { "label": "神外/放疗会诊讨论脑转移 SRS", "urgency": "high" },
+          { "label": "评估 Amivantamab 入组或商保可及性", "urgency": "medium" }
+        ]
       },
       "matchInput": {
         "diagnosis": "非小细胞肺癌",
@@ -163,109 +335,317 @@
       },
       "matches": [
         {
-          "id": "LBL-024-CN004",
-          "name": "评价 LBL-024联合用药治疗晚期实体瘤患者的有效性和安全性的开放、多中心Ⅱ 期临床研究",
-          "score": 99,
-          "phase": "II期",
-          "location": "湖北省、广东省、四川省",
-          "indication": "驱动基因阴性非小细胞肺癌",
-          "institution": "襄阳市中心医院、中山大学肿瘤防治中心、绵阳市中心医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "疾病标签精确命中",
-            "基因匹配（EGFR突变阳性符合）",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "PD-L1表达（PD-L1 TPS 30%）与试验免疫治疗方向相关",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
-          "id": "LGBX-101",
-          "name": "评价注射用莱古比星单药治疗晚期恶性实体瘤患者的安全性、耐受 性、药代动力学特征以及初步疗效的开放、剂量递增及剂量扩展的Ⅰ期临床试验",
-          "score": 99,
-          "phase": "I期",
-          "location": "山东省",
-          "indication": "组织学或细胞学确认的晚期恶性实体瘤患者，优先选肺腺癌、肺鳞癌和小细胞肺癌等。",
-          "institution": "济南市中心医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "疾病标签精确命中",
-            "基因匹配（EGFR突变阳性符合）",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "PD-L1表达（PD-L1 TPS 30%）与试验免疫治疗方向相关",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
           "id": "TQB2922-I-01",
           "name": "评估注射用 TQB2922 治疗晚期恶性肿瘤受试者的 I 期临床研究",
-          "score": 99,
+          "score": 92,
           "phase": "I期",
-          "location": "广东省、广东省、四川省",
-          "indication": "一线EGFR敏感突变的非鳞状非小细胞肺癌，或经3代EGFR TKI治疗失败且疾病晚期阶段未接受过系统性含铂化疗的EGFR敏感突变非鳞状非小细胞肺癌",
-          "institution": "中山大学肿瘤防治中心（中山大学附属肿瘤医院）、广东药科大学附属第一医院、川北医学院附属医院",
+          "location": "广东省、四川省",
+          "indication": "经3代EGFR TKI治疗失败的 EGFR 敏感突变非鳞状非小细胞肺癌",
+          "institution": "中山大学肿瘤防治中心、广东药科大学附属第一医院、川北医学院附属医院",
           "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "疾病标签精确命中",
-            "基因匹配（EGFR突变阳性符合）",
-            "分期信息在试验标准中有对应条件",
+            "试验入组明确要求 EGFR 敏感突变，与患者 L858R 一致",
+            "试验适用 3 代 TKI（奥希替尼）失败后人群",
             "治疗线数（2线）精确符合试验要求",
-            "PD-L1表达（PD-L1 TPS 30%）与试验免疫治疗方向相关",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
-          "id": "DB-1310-O-1001",
-          "name": "一项在晚期/转移性实体瘤受试者中评估DB-1310安全性、耐受性、药代动力学和初步抗肿瘤活性的I/Ia期、多中心、开放性首次人体研究",
-          "score": 99,
-          "phase": "",
-          "location": "四川省、湖北省、江苏省",
-          "indication": "晚期实体瘤",
-          "institution": "四川省人民医院、华中科技大学同济医学院附属协和医院、苏州大学附属第二医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "疾病标签精确命中",
-            "基因匹配（EGFR突变阳性符合）",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "PD-L1表达（PD-L1 TPS 30%）与试验免疫治疗方向相关",
-            "ECOG体能评分（1分）符合试验要求（≤2）",
-            "试验当前处于招募中"
-          ],
-          "statusText": "招募中",
-          "geneRequired": false
-        },
-        {
-          "id": "SCC244-G303",
-          "name": "谷美替尼对比多西他赛在既往接受免疫治疗和含铂双药化疗后进展驱动基因阴性且伴有MET过表达的非小细胞肺癌III期临床研究",
-          "score": 99,
-          "phase": "III期",
-          "location": "河北省、四川省、浙江省",
-          "indication": "非小MET过表达",
-          "institution": "河北医科大学第四医院、四川省肿瘤医院、浙江大学医学院附属第一医院",
-          "reasons": [
-            "疾病方向与试验适应症直接匹配",
-            "疾病标签精确命中",
-            "基因匹配（EGFR突变阳性符合）",
-            "分期信息在试验标准中有对应条件",
-            "治疗线数（2线）精确符合试验要求",
-            "PD-L1表达（PD-L1 TPS 30%）与试验免疫治疗方向相关",
-            "ECOG体能评分（1分）符合试验要求（≤1）",
+            "ECOG 1 分符合试验要求（≤1）",
             "试验当前处于招募中"
           ],
           "statusText": "招募中",
           "geneRequired": true
+        },
+        {
+          "id": "DB-1310-O-1001",
+          "name": "在晚期/转移性实体瘤受试者中评估 DB-1310（HER3 ADC）安全性与初步疗效的I/Ia期研究",
+          "score": 86,
+          "phase": "I/Ia期",
+          "location": "四川省、湖北省、江苏省",
+          "indication": "晚期实体瘤（含 EGFR 突变 NSCLC TKI 进展后队列）",
+          "institution": "四川省人民医院、华中科技大学同济医学院附属协和医院、苏州大学附属第二医院",
+          "reasons": [
+            "试验包含 EGFR 突变 NSCLC TKI 进展后队列",
+            "ADC 类药物对 TKI 耐药患者活性数据可期",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "AMG510-EGFR-201",
+          "name": "EGFR-TKI 治疗失败的 EGFR 敏感突变 NSCLC 二线联合方案 II 期研究",
+          "score": 84,
+          "phase": "II期",
+          "location": "上海市、江苏省、浙江省",
+          "indication": "EGFR L858R 或 19del 经 3 代 TKI 失败的非鳞 NSCLC",
+          "institution": "复旦大学附属肿瘤医院、江苏省肿瘤医院、浙江大学医学院附属第一医院",
+          "reasons": [
+            "试验入组要求 EGFR 敏感突变（L858R/19del），与患者一致",
+            "面向奥希替尼进展后人群",
+            "治疗线数（2线）精确符合试验要求",
+            "ECOG 1 分符合试验要求（≤1）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": true
+        },
+        {
+          "id": "F0041-101",
+          "name": "注射用FZ-AD005抗体偶联剂在晚期实体瘤患者中的安全性、耐受性、药代动力学和抗肿瘤疗效的I期临床研究",
+          "score": 78,
+          "phase": "I期",
+          "location": "上海市、湖南省",
+          "indication": "晚期恶性实体瘤（含 NSCLC 队列）",
+          "institution": "上海市东方医院、湖南省肿瘤医院、上海市肺科医院",
+          "reasons": [
+            "晚期实体瘤 basket，NSCLC 可入组",
+            "无需基因检测前置筛选",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "AMV-LZB-CN02",
+          "name": "Amivantamab 联合 Lazertinib 对比化疗治疗 EGFR 突变 NSCLC TKI 进展后的随机 III 期研究",
+          "score": 90,
+          "phase": "III期",
+          "location": "北京市、上海市、广东省",
+          "indication": "EGFR L858R / 19del 经 3 代 TKI 进展后 NSCLC",
+          "institution": "中国医学科学院肿瘤医院、上海市胸科医院、中山大学肿瘤防治中心",
+          "reasons": [
+            "试验入组要求 EGFR 敏感突变，与患者 L858R 一致",
+            "MARIPOSA-2 类研究：奥希替尼进展后双特异性抗体方案",
+            "治疗线数（2线）精确符合试验要求",
+            "脑转移患者可入组（需基线 MRI 评估）",
+            "ECOG 1 分符合试验要求（≤1）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": true
+        }
+      ]
+    },
+    {
+      "id": "sample-3-sba",
+      "curatedMatches": true,
+      "meta": {
+        "title": "小肠腺癌患者病历示例",
+        "summary": "59 岁男性，小肠腺癌 IV 期 T3N1M1（KRAS / PIK3CA / TP53 多重变异），FOLFOX+PD-1 一线后肝转移",
+        "imageUrl": "/demo-assets/sample-3-sba.jpg",
+        "thumbUrl": "/demo-assets/sample-3-sba.jpg",
+        "age": 59,
+        "sex": "男",
+        "diagnosisHint": "小肠腺癌"
+      },
+      "result": {
+        "diagnosis": "小肠腺癌",
+        "stage": "IV期",
+        "geneMutation": "KRAS Q70_Y71insWYSAMRDQ；PIK3CA R88Q；TP53 C141Y",
+        "pdl1": "CPS=10",
+        "ecog": "1",
+        "treatment": "FOLFOX 联合 PD-1 一线治疗后肝转移进展",
+        "treatmentLine": "2",
+        "confidence": 0.93,
+        "tnmStage": "T3N1M1",
+        "pathologyType": "中-低分化腺癌",
+        "age": 59,
+        "sex": "男",
+        "weight": 59,
+        "hospital": "上海某三甲医院 胰腺肝胆外科",
+        "diagnosisDate": "2023-12",
+        "comorbidities": ["高血压"],
+        "metastasisSites": ["腹膜", "系膜", "大网膜", "淋巴结", "肝脏多发"],
+        "surgicalHistory": [
+          { "name": "小肠部分切除术 + 肠肠吻合术", "date": "2023-12-01" }
+        ],
+        "timeline": [
+          { "date": "2023-11-27", "event": "PET-CT 发现腹腔多发病灶 SUVmax 12.3", "type": "imaging" },
+          { "date": "2023-12-01", "event": "小肠部分切除术 + 肠肠吻合术", "type": "surgery" },
+          { "date": "2023-12-15", "event": "NGS 检出 KRAS / PIK3CA / TP53 等变异", "type": "molecular" },
+          { "date": "2023-12-29", "event": "类器官药敏检测完成", "type": "molecular" },
+          { "date": "2024-01-02", "event": "院内 MDT 制定方案", "type": "treatment" },
+          { "date": "2024-01 ~ 2025-03", "event": "FOLFOX + PD-1 一线治疗", "type": "treatment" },
+          { "date": "2026-04-10", "event": "FAPI PET-CT 提示肝转移进展", "type": "progression" }
+        ],
+        "molecular": {
+          "drivers": [
+            { "gene": "KRAS", "variant": "Q70_Y71insWYSAMRDQ", "impact": "Driver" }
+          ],
+          "actionable": [
+            { "gene": "PIK3CA", "variant": "R88Q", "impact": "Actionable（PI3K/AKT 通路）" }
+          ],
+          "lossOfFunction": [
+            { "gene": "TP53", "variant": "C141Y", "impact": "LoF" }
+          ],
+          "vus": [
+            { "gene": "WT1", "variant": "D469N" }
+          ],
+          "biomarkers": {
+            "tmb": { "value": 3.6, "level": "TMB-L" },
+            "msi": "MSS",
+            "mmr": "pMMR",
+            "pdl1": "CPS=10",
+            "her2": "1+",
+            "claudin182": "阴性",
+            "hla": "HLA-I 杂合 / HED-L"
+          },
+          "drugMetabolism": [
+            { "gene": "UGT1A1", "genotype": "杂合多态", "implication": "伊立替康相关毒性风险升高" }
+          ]
+        },
+        "organoidDrugSensitivity": {
+          "sensitive": ["5-FU", "Imatinib", "Sorafenib"],
+          "resistant": ["Oxaliplatin", "Irinotecan", "Gemcitabine", "Paclitaxel", "FOLFIRINOX", "Lenvatinib", "Sotorasib", "Trametinib", "Olaparib", "Niraparib"]
+        },
+        "imaging": [
+          { "date": "2023-11-27", "modality": "PET-CT", "findings": "腹腔多发病灶 SUVmax 12.3" },
+          { "date": "2026-04-10", "modality": "FAPI PET-CT", "findings": "肝多发转移灶 SUVmax 9.6" }
+        ],
+        "tumorMarkers": [
+          { "name": "CA125", "value": 52.3, "unit": "U/ml", "flag": "↑" },
+          { "name": "CEA", "value": 18.4, "unit": "ng/ml", "flag": "↑" }
+        ],
+        "treatmentHistory": [
+          { "name": "FOLFOX + PD-1", "startDate": "2024-01", "endDate": "2025-03", "response": "部分缓解后进展" }
+        ],
+        "vMTBPlans": [
+          {
+            "label": "方案 A（推荐）",
+            "regimen": "5-FU/LV + Sorafenib + PD-1",
+            "rationale": "类器官 5-FU/Sorafenib 敏感；PD-L1 CPS=10 提示免疫可获益",
+            "monitoring": "肝功能每 2 周一次、影像 8 周一次"
+          },
+          {
+            "label": "方案 B",
+            "regimen": "Capecitabine + Bevacizumab + PD-1",
+            "rationale": "血管靶向 + 免疫，门诊可行性高",
+            "monitoring": "血压、尿蛋白、血常规"
+          },
+          {
+            "label": "方案 C",
+            "regimen": "5-FU/LV + Imatinib ± PD-1",
+            "rationale": "类器官 Imatinib 敏感，候选探索",
+            "monitoring": "水肿、血细胞、心功能"
+          },
+          {
+            "label": "方案 D",
+            "regimen": "PIK3CA 靶向（Alpelisib / Capivasertib）",
+            "rationale": "PIK3CA R88Q 可作为 basket 入组依据",
+            "monitoring": "血糖、皮疹、消化道反应"
+          }
+        ],
+        "infoGaps": [
+          "近 4 周肝功能、白蛋白",
+          "FAPI PET-CT 详细 SUV 数据",
+          "前期 PD-1 真实暴露周期"
+        ],
+        "priorityActions": [
+          { "label": "完成 PIK3CA basket 试验筛选（NCT04753203）", "urgency": "high" },
+          { "label": "评估 FAPI 放射配体治疗适配性", "urgency": "medium" },
+          { "label": "补充近 4 周肝肾功能指标", "urgency": "medium" }
+        ]
+      },
+      "matchInput": {
+        "diagnosis": "小肠腺癌",
+        "stage": "IV期",
+        "ecog": 1,
+        "age": 59,
+        "treatment_line": 2,
+        "gene_mutation": "KRAS Q70_Y71insWYSAMRDQ；PIK3CA R88Q；TP53 C141Y",
+        "pdl1": "CPS=10",
+        "past_treatment": "FOLFOX + PD-1 一线进展，肝转移"
+      },
+      "matches": [
+        {
+          "id": "NCT05185947",
+          "name": "小肠腺癌伴腹膜转移特异性二线治疗研究",
+          "score": 91,
+          "phase": "II期",
+          "location": "北京市、上海市、广东省",
+          "indication": "小肠腺癌伴腹膜/系膜转移，一线含氟尿嘧啶方案进展后",
+          "institution": "中国医学科学院肿瘤医院、复旦大学附属肿瘤医院、中山大学肿瘤防治中心",
+          "reasons": [
+            "适应症明确为小肠腺癌伴腹膜转移，与患者诊断完全一致",
+            "针对 FOLFOX 一线进展人群设计",
+            "治疗线数（2线）精确符合试验要求",
+            "ECOG 1 分符合试验要求（≤1）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "NCT04753203",
+          "name": "PIK3CA 突变实体瘤 Alpelisib basket 试验",
+          "score": 89,
+          "phase": "II期",
+          "location": "上海市、北京市、江苏省",
+          "indication": "携带 PIK3CA 激活突变的晚期实体瘤（含 GI 队列）",
+          "institution": "复旦大学附属肿瘤医院、北京大学肿瘤医院、江苏省肿瘤医院",
+          "reasons": [
+            "患者 PIK3CA R88Q 满足 basket 入组的 PI3K 通路激活突变",
+            "GI 队列接收小肠腺癌",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤1）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": true
+        },
+        {
+          "id": "CapeOX-Bev-mCRC",
+          "name": "卡培他滨联合贝伐珠单抗维持治疗泛胃肠道腺癌二线 II 期研究",
+          "score": 80,
+          "phase": "II期",
+          "location": "上海市、浙江省、江苏省",
+          "indication": "泛 GI 腺癌（含小肠腺癌）一线进展后维持/二线治疗",
+          "institution": "复旦大学附属中山医院、浙江大学医学院附属第二医院、苏州大学附属第一医院",
+          "reasons": [
+            "适应症涵盖小肠腺癌，与患者诊断一致",
+            "FOLFOX 后口服化疗 + 抗血管，门诊可行性高",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "HIPEC-Peritoneal",
+          "name": "腹膜转移 GI 腺癌腹腔热灌注化疗（HIPEC）+ 系统治疗探索研究",
+          "score": 78,
+          "phase": "II期",
+          "location": "北京市、上海市、湖北省",
+          "indication": "腹膜转移为主的 GI 腺癌（含小肠腺癌），ECOG ≤1",
+          "institution": "北京大学肿瘤医院、复旦大学附属肿瘤医院、华中科技大学同济医学院附属同济医院",
+          "reasons": [
+            "针对腹膜/系膜/大网膜转移人群，与患者转移模式一致",
+            "一线全身治疗后腹膜进展是主要入组场景",
+            "ECOG 1 分符合试验要求",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
+        },
+        {
+          "id": "FAPI-RNT-001",
+          "name": "FAPI 放射配体治疗（177Lu-FAPI）在 FAP 高表达晚期实体瘤的 I/II 期研究",
+          "score": 76,
+          "phase": "I/II期",
+          "location": "北京市、上海市、四川省",
+          "indication": "FAPI PET-CT 阳性、标准治疗失败的晚期实体瘤",
+          "institution": "北京协和医院、复旦大学附属华山医院、四川大学华西医院",
+          "reasons": [
+            "患者 FAPI PET-CT 阳性（肝转移 SUVmax 9.6），符合靶点入组条件",
+            "标准一线进展后人群匹配",
+            "治疗线数（2线）符合试验要求",
+            "ECOG 1 分符合试验要求（≤2）",
+            "试验当前处于招募中"
+          ],
+          "statusText": "招募中",
+          "geneRequired": false
         }
       ]
     }

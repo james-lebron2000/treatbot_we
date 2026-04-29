@@ -165,6 +165,16 @@
   box-shadow: 0 20rpx 40rpx rgba(15, 23, 42, 0.06);
 }
 
+/* U4：卡片顶部的人话理由 —— 紧贴 padding 顶部，绿色 14sp，不抢占 score 视觉权重。 */
+.human-reason {
+  display: block;
+  margin: -8rpx 0 14rpx;
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: #0A6E3A;
+  font-weight: 500;
+}
+
 .match-card-header {
   display: flex;
   align-items: flex-start;

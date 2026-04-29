@@ -1,4 +1,15 @@
 const logger = require('../utils/logger');
+// Q3-红线 §A.3：Sentry 兜底上报。Sentry 自带的 errorHandler middleware 会捕获 5xx，
+// 这里再 capture 一次保证业务错误（含已知 SequelizeError）也能被采集，便于排障。
+let _sentry = null;
+try {
+  _sentry = require('../observability/sentry');
+} catch (e) {
+  _sentry = null;
+}
+const captureException = (_sentry && _sentry.captureException)
+  ? _sentry.captureException
+  : () => {};
 
 /**
  * 全局错误处理中间件
@@ -58,9 +69,13 @@ const errorHandler = (err, req, res, next) => {
     });
   }
   
-  // 默认 500 错误
+  // 默认 500 错误：显式上报到 Sentry（受 beforeSend PII 脱敏保护）
+  captureException(err, {
+    tags: { component: 'errorHandler', method: req.method },
+    extra: { path: req.path, requestId: req.requestId, userId: req.userId }
+  });
   const isDev = process.env.NODE_ENV === 'development';
-  
+
   res.status(500).json({
     code: 500,
     message: isDev ? err.message : '服务器内部错误',

@@ -1,6 +1,8 @@
 const api = require('../../../utils/api')
 const privacy = require('../../../utils/privacy')
 const matchExplainer = require('../../../utils/match-explainer')
+// Q3-红线 §B.2：详情页报名按钮也是 trial_apply 入口
+const { track } = require('../../../utils/track')
 
 const withMaskedContact = (trial) => {
   const contact = trial.contact || {}
@@ -103,6 +105,8 @@ Page({
       wx.showToast({ title: '试验信息缺失', icon: 'none' })
       return
     }
+
+    try { track('trial_apply', { trialId: trial.id, from: 'detail' }) } catch (e) { /* ignore */ }
 
     wx.setStorageSync('selectedApplyTrial', trial)
     wx.navigateTo({

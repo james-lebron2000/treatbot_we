@@ -1,4 +1,6 @@
 {
-  "usingComponents": {},
+  "usingComponents": {
+    "help-fab": "/components/help-fab/help-fab"
+  },
   "navigationBarTitleText": "上传病历并匹配"
 }

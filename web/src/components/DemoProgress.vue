@@ -31,8 +31,8 @@
  *
  * 四段：
  *   0  – 2s   上传中…         0 → 30%
- *   2  – 17s  OCR 识别中…     30 → 60%
- *   17 – 27s  结构化提取中…   60 → 90%
+ *   2  – 17s  看清文字中…     30 → 60%
+ *   17 – 27s  找关键信息中…   60 → 90%
  *   27 – 30s  完成            90 → 100%
  *
  * 用 requestAnimationFrame 驱动；到达 100% 时 emit('done')。
@@ -71,8 +71,8 @@ const stages: Stage[] = [
   {
     key: 'upload',
     label: '上传文件',
-    title: '上传中…',
-    desc: '正在安全上传脱敏病历样本',
+    title: '正在上传…',
+    desc: '把脱敏示例病历安全送进来',
     startMs: 0,
     endMs: 2000,
     startPct: 0,
@@ -80,9 +80,9 @@ const stages: Stage[] = [
   },
   {
     key: 'ocr',
-    label: 'OCR 识别',
-    title: 'OCR 识别中…',
-    desc: '正在识别图像中的文字，并还原段落结构',
+    label: '看清文字',
+    title: '在看清病历上写的什么…',
+    desc: '认出图片里的文字、把段落还原出来',
     startMs: 2000,
     endMs: 17000,
     startPct: 30,
@@ -90,9 +90,9 @@ const stages: Stage[] = [
   },
   {
     key: 'structured',
-    label: '结构化提取',
-    title: '结构化提取中…',
-    desc: '从文本中抽取诊断、分期、基因突变、治疗史等关键字段',
+    label: '找关键信息',
+    title: '找关键信息中…',
+    desc: '把诊断、分期、基因、既往治疗这些重点挑出来',
     startMs: 17000,
     endMs: 27000,
     startPct: 60,
@@ -100,9 +100,9 @@ const stages: Stage[] = [
   },
   {
     key: 'done',
-    label: '完成',
-    title: '整理结果中…',
-    desc: '生成可下载的结构化病历',
+    label: '好了',
+    title: '整理成病历卡片中…',
+    desc: '生成一份能看懂、能下载的病历摘要',
     startMs: 27000,
     endMs: 30000,
     startPct: 90,

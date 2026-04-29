@@ -3,11 +3,13 @@
     "pages/index/index",
     "pages/upload/upload",
     "pages/upload/status/status",
+    "pages/manualEntry/manualEntry",
     "pages/records/records",
     "pages/matches/matches",
     "pages/matches/apply/apply",
     "pages/matches/detail/detail",
-    "pages/profile/profile"
+    "pages/profile/profile",
+    "pages/profile/consent/consent"
   ],
   "window": {
     "backgroundTextStyle": "light",

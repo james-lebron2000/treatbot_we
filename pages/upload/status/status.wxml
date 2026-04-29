@@ -33,11 +33,11 @@
   <view class="result-section" wx:if="{{status === 'completed'}}">
     <view class="success-header">
       <view class="success-icon">✓</view>
-      <text class="success-title">解析完成</text>
-      <text class="success-desc">AI已成功提取病历关键信息</text>
+      <text class="success-title">好了</text>
+      <text class="success-desc">以下是我们从病历里看到的信息，哪里不对直接改。</text>
     </view>
 
-    <!-- 结构化结果 -->
+    <!-- 病历关键信息 -->
     <view class="result-card">
       <view class="card-title">病历信息</view>
       <view class="info-list">

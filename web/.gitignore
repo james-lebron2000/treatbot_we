@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+# Q3-红线 §B.3：Playwright e2e 产物
+test-results/
+playwright-report/
+playwright/.cache/

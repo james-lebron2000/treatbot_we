@@ -9,10 +9,10 @@ Page({
     statusDesc: '请稍候...',
     progress: 0,
     steps: [
-      { name: '上传文件', completed: false, active: true },
-      { name: 'OCR识别', completed: false, active: false },
-      { name: '信息抽取', completed: false, active: false },
-      { name: '结构化处理', completed: false, active: false }
+      { name: '正在上传', completed: false, active: true },
+      { name: '识别文字', completed: false, active: false },
+      { name: '找关键信息', completed: false, active: false },
+      { name: '整理成病历卡片', completed: false, active: false }
     ],
     parsedResult: [],
     errorMsg: ''
@@ -51,12 +51,12 @@ Page({
 
       // 状态文本映射
       const statusMap = {
-        uploading: { text: '正在上传', desc: '文件传输中...' },
-        parsing: { text: 'OCR识别中', desc: '正在识别文字内容...' },
-        analyzing: { text: '信息抽取中', desc: '正在提取医疗实体...' },
-        structuring: { text: '结构化处理', desc: '正在生成病历卡片...' },
-        completed: { text: '解析完成', desc: '' },
-        error: { text: '解析失败', desc: '' }
+        uploading: { text: '正在上传', desc: '马上好…' },
+        parsing: { text: '识别文字中', desc: '在看清病历上写的什么…' },
+        analyzing: { text: '找关键信息', desc: '找诊断、分期、基因等重点…' },
+        structuring: { text: '整理成病历卡片', desc: '马上给您一份能看懂的摘要…' },
+        completed: { text: '好了', desc: '' },
+        error: { text: '遇到小问题', desc: '' }
       }
       const currentStatus = statusMap[status] || { text: '处理中', desc: '' }
 

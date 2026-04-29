@@ -1,0 +1,21 @@
+# 对应 PRD-2026Q2 §2.1：本地提交前拦截明文密钥。
+# 用法：pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            package-lock\.json|
+            server/package-lock\.json|
+            web/package-lock\.json|
+            docs/deploy-state-server-dump\.md|
+            .*\.min\.(js|css)
+          )$
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

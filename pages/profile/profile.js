@@ -2,6 +2,9 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const privacy = require('../../utils/privacy')
 
+// Q3-红线 §A.2：用户合规自助—— 同意管理 / 数据导出 / 注销账号。
+// 后端在 server/routes/index.js:49-53 已就绪；本页负责入口。
+
 const countList = (res) => {
   const payload = api.normalizePayload(res)
   if (!payload) {
@@ -121,6 +124,91 @@ Page({
       title: '隐私政策',
       content: '我们仅在您授权范围内使用病历数据用于临床试验匹配。',
       showCancel: false
+    })
+  },
+
+  // Q3-红线 §A.2：跳转「我的同意记录」页
+  goToConsent() {
+    wx.navigateTo({ url: '/pages/profile/consent/consent' })
+  },
+
+  // Q3-红线 §A.2：导出我的数据（小程序无文件系统写权限，落剪贴板）。
+  async exportMyData() {
+    const token = `${wx.getStorageSync('token') || ''}`.trim()
+    if (!token) {
+      wx.showToast({ title: '请先登录', icon: 'none' })
+      return
+    }
+
+    wx.showLoading({ title: '正在导出…', mask: true })
+    try {
+      const res = await api.exportMyData()
+      const payload = api.normalizePayload(res)
+      const text = JSON.stringify(payload || res || {}, null, 2)
+      wx.hideLoading()
+      wx.setClipboardData({
+        data: text,
+        success: () => {
+          wx.showModal({
+            title: '导出完成',
+            content: '您的数据已复制到剪贴板，可粘贴到备忘录或邮件中保存。',
+            showCancel: false
+          })
+        },
+        fail: () => {
+          wx.showToast({ title: '复制失败，请稍后重试', icon: 'none' })
+        }
+      })
+    } catch (error) {
+      wx.hideLoading()
+      console.error('导出失败:', privacy.sanitizeForLog({ message: error.message }))
+      wx.showToast({ title: error.message || '导出失败', icon: 'none' })
+    }
+  },
+
+  // Q3-红线 §A.2：注销账号（不可逆，二次确认；与 H5 SettingsView 注销流程同语义）。
+  deleteMyAccount() {
+    wx.showModal({
+      title: '注销账号',
+      content: '注销后您的病历、匹配记录和报名记录将被删除，且无法恢复。是否继续？',
+      confirmText: '继续注销',
+      confirmColor: '#d93025',
+      success: (res) => {
+        if (!res.confirm) return
+
+        // 二次输入确认（最低强度交互；后续可换 wx.requireMfa）
+        wx.showModal({
+          title: '请再次确认',
+          editable: true,
+          placeholderText: '输入「确认注销」以继续',
+          success: async (r2) => {
+            if (!r2.confirm) return
+            const text = `${r2.content || ''}`.trim()
+            if (text !== '确认注销') {
+              wx.showToast({ title: '输入不匹配，已取消', icon: 'none' })
+              return
+            }
+
+            wx.showLoading({ title: '处理中…', mask: true })
+            try {
+              await api.deleteMyAccount('用户主动注销')
+              wx.hideLoading()
+              auth.logout()
+              wx.showModal({
+                title: '已注销',
+                content: '您的账号已注销，感谢使用。',
+                showCancel: false,
+                success: () => {
+                  wx.reLaunch({ url: '/pages/index/index' })
+                }
+              })
+            } catch (error) {
+              wx.hideLoading()
+              wx.showToast({ title: error.message || '注销失败，请稍后重试', icon: 'none' })
+            }
+          }
+        })
+      }
     })
   }
 })

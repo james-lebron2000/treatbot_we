@@ -1,3 +1,7 @@
+// Q3-红线 §B.2：6 类漏斗事件入口；这里只埋 landing_view (= 小程序 onLaunch)，
+// 其它 5 类在各自页面里埋。
+const { track } = require('./utils/track')
+
 const SESSION_SCHEMA_VERSION = 3
 const SESSION_RESET_KEYS = [
   'token',
@@ -29,6 +33,9 @@ App({
     this.migrateSessionSchema()
     this.restoreSession()
     this.collectSystemInfo()
+    // Q3-红线 §B.2：用 onLaunch 当首屏曝光（小程序没有独立 landing 页）。
+    // 服务端 funnelController 接受匿名事件，无需等用户登录。
+    try { track('landing_view', { entry: 'onLaunch' }) } catch (e) { /* ignore */ }
   },
 
   resetRuntimeOverrides() {

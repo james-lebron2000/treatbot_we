@@ -40,8 +40,16 @@ a {
 }
 
 .app-header h1 {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   font-size: 20px;
+}
+
+.app-tagline {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.92;
+  letter-spacing: 0.2px;
 }
 
 .app-header nav {

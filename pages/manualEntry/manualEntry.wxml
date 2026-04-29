@@ -1,0 +1,100 @@
+<!-- PRD-2026Q2 §3.7：与 H5 MatchesView 手动录入卡片字段对齐（diagnosis/stage/genes/age） -->
+<!-- U4：每个字段加「？」白话解释 + 「我不知道，先跳过」逃生口 -->
+<view class="container">
+  <view class="hero">
+    <view class="hero-title">直接告诉我们关键信息</view>
+    <view class="hero-desc">不用上传报告也能匹配 —— 只要诊断和分期两项就够起步，其它留空也行。</view>
+  </view>
+
+  <view class="form-card">
+    <view class="field">
+      <view class="field-label-row">
+        <view class="field-label">诊断 / 癌种</view>
+        <view class="field-help-btn" bindtap="toggleExplainer" data-key="diagnosis">？</view>
+      </view>
+      <input
+        class="field-input"
+        placeholder="例如：肺腺癌"
+        value="{{form.diagnosis}}"
+        bindinput="onFieldInput"
+        data-key="diagnosis"
+      />
+      <view class="field-hint">{{copy.fieldHints.diagnosis}}</view>
+      <view class="field-explainer" wx:if="{{explainerOpen.diagnosis}}">
+        <view class="explainer-row"><text class="explainer-tag">这是什么</text><text class="explainer-text">{{explainers.diagnosis.plain}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">举例</text><text class="explainer-text">{{explainers.diagnosis.example}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">为什么问</text><text class="explainer-text">{{explainers.diagnosis.whyAsk}}</text></view>
+        <view class="explainer-skip" bindtap="markUnknown" data-key="diagnosis">我不知道，先跳过</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field-label-row">
+        <view class="field-label">分期</view>
+        <view class="field-help-btn" bindtap="toggleExplainer" data-key="stage">？</view>
+      </view>
+      <input
+        class="field-input"
+        placeholder="例如：IV 期"
+        value="{{form.stage}}"
+        bindinput="onFieldInput"
+        data-key="stage"
+      />
+      <view class="field-hint">{{copy.fieldHints.stage}}</view>
+      <view class="field-explainer" wx:if="{{explainerOpen.stage}}">
+        <view class="explainer-row"><text class="explainer-tag">这是什么</text><text class="explainer-text">{{explainers.stage.plain}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">举例</text><text class="explainer-text">{{explainers.stage.example}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">为什么问</text><text class="explainer-text">{{explainers.stage.whyAsk}}</text></view>
+        <view class="explainer-skip" bindtap="markUnknown" data-key="stage">我不知道，先跳过</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field-label-row">
+        <view class="field-label">基因突变（选填）</view>
+        <view class="field-help-btn" bindtap="toggleExplainer" data-key="genes">？</view>
+      </view>
+      <input
+        class="field-input"
+        placeholder="例如：EGFR 19del"
+        value="{{form.genes}}"
+        bindinput="onFieldInput"
+        data-key="genes"
+      />
+      <view class="field-hint">{{copy.fieldHints.genes}}</view>
+      <view class="field-explainer" wx:if="{{explainerOpen.genes}}">
+        <view class="explainer-row"><text class="explainer-tag">这是什么</text><text class="explainer-text">{{explainers.genes.plain}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">举例</text><text class="explainer-text">{{explainers.genes.example}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">为什么问</text><text class="explainer-text">{{explainers.genes.whyAsk}}</text></view>
+        <view class="explainer-skip" bindtap="markUnknown" data-key="genes">我不知道，先跳过</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field-label-row">
+        <view class="field-label">年龄（选填）</view>
+        <view class="field-help-btn" bindtap="toggleExplainer" data-key="age">？</view>
+      </view>
+      <input
+        class="field-input"
+        type="number"
+        placeholder="例如：62"
+        value="{{form.age}}"
+        bindinput="onFieldInput"
+        data-key="age"
+      />
+      <view class="field-hint">{{copy.fieldHints.age}}</view>
+      <view class="field-explainer" wx:if="{{explainerOpen.age}}">
+        <view class="explainer-row"><text class="explainer-tag">这是什么</text><text class="explainer-text">{{explainers.age.plain}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">举例</text><text class="explainer-text">{{explainers.age.example}}</text></view>
+        <view class="explainer-row"><text class="explainer-tag">为什么问</text><text class="explainer-text">{{explainers.age.whyAsk}}</text></view>
+        <view class="explainer-skip" bindtap="markUnknown" data-key="age">我不知道，先跳过</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="action-bar">
+    <button class="btn btn-default" bindtap="cancel">{{copy.cta.cancel}}</button>
+    <button class="btn btn-primary" bindtap="submit" loading="{{submitting}}">看看为家人找到的可能性</button>
+  </view>
+</view>
