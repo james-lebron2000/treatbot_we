@@ -369,8 +369,16 @@ const refreshToken = async (req, res, next) => {
     res.json(success(clientPayload));
 
   } catch (err) {
+    // 区分两类错误：
+    //   - jwt.verify 失败（malformed / 签名错 / 过期）→ 用户态错误，401
+    //   - 其余（DB 断 / Redis 断）→ 真正的服务端故障，让全局 errorHandler 出 500
+    // 之前仅 catch TokenExpiredError，导致前端发个乱码 refreshToken 被打成 500，
+    // 监控会误报"服务端故障"。
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json(error('刷新令牌已过期', 401));
+    }
+    if (err.name === 'JsonWebTokenError' || err.name === 'NotBeforeError') {
+      return res.status(401).json(error('无效的刷新令牌', 401));
     }
     next(err);
   }
