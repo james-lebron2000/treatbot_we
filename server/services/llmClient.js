@@ -121,13 +121,8 @@ const chatJson = async (provider, messages, schema, opts = {}) => {
   const promptHash = computePromptHash(messages);
 
   // 第一次尝试：调用方传入的 temperature（默认 1）。
-  let firstResult;
-  try {
-    firstResult = await callOnce(provider, messages, opts);
-  } catch (err) {
-    // 网络/凭证错误直接抛，不重试。
-    throw err;
-  }
+  // 网络/凭证错误直接抛，不在这里重试 —— 重试只针对 schema 失败的情形。
+  const firstResult = await callOnce(provider, messages, opts);
 
   if (firstResult.parsed) {
     const valid = schema.safeParse(firstResult.parsed);
