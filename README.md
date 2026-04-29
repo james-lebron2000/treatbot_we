@@ -226,51 +226,96 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 
 ## 项目全景
 
-> **最后更新：2026-04-17**。此章节是整个项目的"仪表盘"——读完这一页就知道"现在在哪，接下来去哪"。
+> **最后更新：2026-04-29**。Q3-红线 patient-friendly + observability + 合规自助一次性落地（commit `3f8709f → e8bd042 → afcf7f0`，已生产）。读完这一页就知道"现在在哪，接下来去哪"。
 
 ### 当前状态速览
 
 | 维度 | 现状 |
 |---|---|
 | 在招试验数据 | **496 条**，`decomposed_criteria` **2659 条** 已解析 |
-| 生产部署 | `https://inseq.top` · Docker 镜像 `server-api:v21`（多阶段构建） |
-| 测试覆盖 | **57 个非 DB 用例全绿**（匹配引擎/PD-L1/基因解析/JWT 校验/缓存） |
-| CI 质量门 | ✅ lint + test 强制通过（已移除 `\|\| true`）+ JWT 生产校验冒烟 |
-| 安全基线 | ✅ JWT 启动强校验（弱值黑名单+长度校验） · ✅ 生产 CSP 禁止 `unsafe-inline` 脚本 · ✅ HSTS |
-| 未起 staging | ⚠️ 只有一个生产环境 |
-| 无备份 / 无 APM | ⚠️ 灾备、可观测性是下一块拼图 |
+| 生产部署 | `https://inseq.top` · Caddy 反代 + Docker 多阶段构建 |
+| 服务端测试 | **28 suites / 212 tests 全绿**（jest，跳过 api.test.js 的 MySQL 依赖） |
+| H5 e2e | **16/16 chromium-desktop 全绿**（Playwright：demo 富信息 + 患者友好 + admin） |
+| Lint 基线 | ✅ **0 errors / 0 warnings**（2026-04-29 清零，从 38 warnings 起） |
+| CI 质量门 | ✅ Deploy + Secret Scan + e2e 三 workflow 强制通过；pre-commit detect-secrets + gitleaks |
+| 安全基线 | ✅ JWT 启动强校验 · CSP 生产无 unsafe-inline 脚本 · HSTS · captcha · SMS 限频 · LLM 入参 PII scrub |
+| 可观测性 | ✅ Sentry SDK + scrubber · Prometheus `/metrics` · http 耗时直方图 · 试验新鲜度 daily job · admin audit log |
+| 合规自助（§A.2） | ✅ 同意管理 / 数据导出 / 注销账号 / 改密 — H5 + 小程序两端就绪 |
+| 隐私页面 | ✅ `/privacy`（落地静态版）+ `/treatbot/privacy`（SPA 8 节患者友好版） |
+| 漏斗埋点（§B.2） | ✅ 6 事件白名单：landing_view / upload_start / upload_success / match_view / trial_apply / application_submitted |
+| Demo 数据质量 | ✅ 灯塔报告 12 节富信息病例 · `matchEngine.isCancerTypeMismatch` 硬排除跨癌种（修复肝癌→HER2 子宫内膜癌事故） |
+| 未起 staging | ⚠️ 仅生产，所有变更直接上线（今日 76 文件直进 prod 是例证） |
+| 无每日备份 | ⚠️ MySQL 灾备未起 |
+| ICP / 互联网医疗信息服务资质 | ⚠️ 审批未启动（外部依赖，3-6 个月） |
 
-### 现存关键问题（按阻断程度）
+### 最近一次发布 — Q3-红线全量（2026-04-29）
+
+三个 commit 串成一次发布，覆盖 Phase 1+2+3 三块工作：
+
+| Commit | 范围 | 关键内容 |
+|---|---|---|
+| `3f8709f` `feat(q3-redline)` | 76 文件 / +5549 -928 | §U1-U6 患者友好（HelpFab/Onboarding/FieldExplainer/ConsentModal/MatchesView「✓ 为什么适合」/PrivacyPromiseCard）· §A.1 双 token single-flight refresh · §A.2 自助接口 · §A.3 Sentry+/metrics+httpMetrics · §3.5 多病历软删除 · §B.2 漏斗埋点 · §B.3 LLM 安全（promptRegistry/zod schema/piiScrubber/captcha/SMS 限频）· demo 灯塔报告 12 节 · cancer-type 硬排除 · /privacy 页 · 同理心改写「不是骗局/不保证治好」为正面承诺 |
+| `e8bd042` `fix(ci)` | 3 文件 / +6 -9 | piiScrubber 字面 NBSP → ` ` · llmClient useless try/catch 移除 · secret-scan 重复 `--fail` 拆掉 |
+| `afcf7f0` `chore(server) lint cleanup` | 21 文件 / +31 -42 | 38 条 `no-unused-vars` 全部清零（dead require 删除 / 保留为后用的常量加 `_` 前缀） |
+
+**生产探针**（2026-04-29 验证）：
+- `/health` → `status: ok`
+- `/api/demo/samples` 3 个样例正确
+- `sample-1-hcc` 5 条匹配 → **0 跨癌种**（HER2 / 胃癌 / 子宫内膜 / 乳腺 / 头颈 / 胰腺 全无）
+- 帮助 FAB bundle grep：`不是骗局` / `不保证治好` 各 0 次；`全程免费` ×3、`您的数据您说了算` ×3、`公立三甲` ×1
+
+### 现存关键问题（更新于 2026-04-29）
 
 **🔴 P0 —— 继续上线前必须解决**
-
-1. **合规资质**：ICP 备案、互联网医疗信息服务资质尚未取得，审批周期 3–6 个月，需立即启动
-2. **无每日备份**：MySQL 数据一次误删 = 全部用户数据消失
+1. **ICP 备案 / 互联网医疗信息服务资质**：审批 3-6 个月，必须立即启动
+2. **MySQL 每日备份**：异地副本未起；一次误删 = 全部用户数据消失
 
 **🟠 P1 —— 规模化前必须补齐**
-
-3. **无 staging 环境**：所有新功能直接上生产；数据库迁移工具只能 addColumn 不能 rollback
-4. **管理后台 + CRO 自助导出缺位**（B1/B2/B3）：商业闭环没打通，无法向 CRO 收费
-5. **可观测性**：无 `/metrics` 端点、无 Sentry、无集中式日志，出线上问题只能 SSH 看 `docker logs`
-6. **api.test.js 需要 MySQL 才能跑**：本地/CI 都跑不起来，端到端流程无自动化验证
+3. **Staging 环境**：所有变更直接上生产（今日 76 文件直进 prod 暴露了风险）
+4. **管理后台 + CRO 自助导出**（B1/B2/B3）：商业闭环未打通
+5. **api.test.js 仍需要真实 MySQL**：jest 用 `--testPathIgnorePatterns` 跳过；CI 端需开 MySQL service container
 
 **🟡 P2 —— 体验 & 工程化**
+6. CSP `styleSrc` 仍含 `unsafe-inline`（Element Plus 依赖，待 nonce 方案）
+7. 前端只有 e2e，无 Vitest 单元覆盖
+8. `shared/schemas/` 只迁了 `upload.cjs` 一份；后续做 codegen 把 H5 zod schema dump 成 CJS 常量，结束双份漂移
 
-7. CSP `styleSrc` 仍含 `unsafe-inline`（Element Plus 依赖，需上 nonce 方案才能彻底移除）
-8. 前端路由未懒加载、无前端测试
-9. ESLint 配置文件缺失（已装包但无 `.eslintrc`）
+### 下一步方案（建议优先级）
 
-### 任务完成度（截至 2026-04-17）
+**本周（P0 启动 + P1 收尾）**
+- [ ] **启动 ICP 备案 + 互联网医疗信息服务资质** — 外部依赖，先把流程跑起来
+- [ ] MySQL 每日备份脚本上线（cron `mysqldump` + 异地 rsync 到 COS / 阿里云）
+- [ ] api.test.js 的 MySQL fixture：GitHub Actions service container 接入 MySQL 8
+
+**下两周（B 系列商业化基础）**
+- [ ] **B1 管理后台框架**（auth + 权限 + 导航）—— 所有商业化功能的前置依赖
+- [ ] **B2 申请管理后台**（pending → contacted → enrolled 状态流转）
+- [ ] **B3 CRO 结构化线索导出**（按 trialId 出 CSV，核心商业价值）
+
+**下月（增长闭环 — 用今日就绪的基建）**
+- [ ] **G1 可分享匹配报告页**（带二维码，公开可访问，用户自传播载体）
+- [ ] **G3 ClinicalTrials.gov 月度同步**（试验数据保鲜，trialFreshness daily job 已就位等接入）
+- [ ] **G6 漏斗转化看板**（funnel events 已埋好，接入 Grafana / Metabase 即可可视化）
+
+**长尾（不阻断主线）**
+- [ ] Staging 环境（K8s / 简版 docker-compose 双环境）
+- [ ] CSP nonce 方案，彻底移除 `styleSrc` 的 `unsafe-inline`
+- [ ] `shared/schemas/` codegen：H5 zod → CJS 常量自动 dump，小程序 require 同源
+- [ ] Sentry sourcemap 上传，生产报错栈可读
+- [ ] Vitest 单元覆盖核心组件（HelpFab / FieldExplainer / RecordSummaryCard）
+
+### 任务完成度（截至 2026-04-29）
 
 | 阶段 | 已完成 | 进行中 | 未开始 | 进度 |
 |---|:-:|:-:|:-:|:-:|
-| Phase 1 质量护栏 & 数据补全 | 3 | 1 | 3 | **43%** |
+| Phase 1 质量护栏 & 数据补全 | 5 | 1 | 1 | **71%** |
 | Phase 2 商业化基础设施 | 0 | 0 | 7 | 0% |
-| Phase 3 性能 & 可观测性 | 2 | 1 | 5 | **31%** |
-| Phase 4 增长闭环 | 0 | 0 | 7 | 0% |
+| Phase 3 性能 & 可观测性 | 6 | 1 | 1 | **75%** |
+| Phase 4 增长闭环 | 3 | 0 | 4 | **43%** |
 | Phase 5 规模化准备 | 0 | 0 | 7 | 0% |
 | **匹配引擎专项**（路线图外） | 6 | 0 | 0 | **100%** |
-| **总计** | **11** | **2** | **29** | **26%** |
+| **Q3-红线 §A/§B/§U 专项**（横跨 Phase 1/3/4） | 12 | 0 | 0 | **100%** |
+| **总计**（Phase 1-5 + 匹配引擎，去除 Q3 重叠） | **20** | **2** | **20** | **48%** |
 
 ### 匹配引擎专项（已全部交付，不在下方路线图内）
 
@@ -302,11 +347,11 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 
 | # | 状态 | 项目 | 关联任务 | 说明 |
 |---|:-:|------|---------|------|
-| Q1 | ⏸ | 配置 ESLint + Prettier | 新增 | 已安装 eslint 但无 `.eslintrc`，新增配置 + `eslint-plugin-security` |
-| Q2 | ⏸ | 添加 husky + lint-staged | 新增 | commit 时自动 lint，防止低质量代码入库 |
+| Q1 | ✅ | 配置 ESLint + 0/0 lint baseline | 新增 | `.eslintrc` 就位；2026-04-29 清掉 38 条 warnings；CI 入闸 hard error 阻断 |
+| Q2 | ✅ | pre-commit 钩子（detect-secrets + gitleaks） | 新增 | `.pre-commit-config.yaml` 入库；commit 时阻挡明文密钥 |
 | Q3 | ✅ | CI 去掉 `\|\| true` | J9 | `deploy.yml` lint/test 失败现在会阻断部署；**额外加了 JWT 生产冒烟 step** |
-| Q4 | ✅ | matchEngine 单元测试 | 新增 | 57 用例全绿：geneParser / pdl1Parser / matchEngineCache / matchEngine.integration / jwtSecret |
-| Q5 | 🔄 | API 集成测试补全 | 新增 | 现有 `api.test.js` 多用例为空；还需要搭测试 MySQL，暂阻塞 |
+| Q4 | ✅ | matchEngine + 全栈单元/集成测试 | 新增 | jest 28 suites / 212 tests 全绿（含 cancerTypeConsistency / piiScrubber / authRefresh / userLifecycle / promptEval / metrics） |
+| Q5 | 🔄 | API 集成测试补全 | 新增 | `api.test.js` 仍需要真实 MySQL；CI 端接入 service container 是下一步 |
 | Q6 | ⏸ | **结构化入排全量生效** | A8 🔴 | 运行 `parseInclusionLocal.py` 完成 436 条剩余试验解析（已解析 60/496） |
 | Q7 | ✅ | 移除 JWT 硬编码 fallback | 新增 | `utils/jwtSecret.js` 统一入口；生产未设置/弱值/短值 → 启动抛错；非生产 → 自动生成临时秘钥 |
 
@@ -340,12 +385,12 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 |---|:-:|------|---------|------|
 | P1 | ⏸ | 数据库索引补全 | 新增 | `trials` 表缺 `indication` 索引；`disease_tags` JSON 字段需 generated column + 索引 |
 | P2 | ✅ | Trial 预处理结果缓存 | 新增 | 改为 WeakMap per-trial 缓存（比单纯 normalizeText Map 更彻底），命中率 83.7% |
-| P3 | 🔄 | Prometheus `/metrics` 端点 | J8 🟠 | `/health/detailed` 已暴露 matchEngine 关键状态；`/metrics` 格式端点仍待接入 `prom-client` |
-| P4 | ⏸ | 请求耗时 + 错误率指标 | J8 🟠 | Express 中间件记录 `http_request_duration_seconds` |
-| P5 | ⏸ | Vite 路由懒加载 + 代码分割 | 新增 | `router/index.ts` 9 个页面全部静态 import，改为动态 `() => import()` |
+| P3 | ✅ | Prometheus `/metrics` 端点 | J8 🟠 | `prom-client` 接入；`/metrics` 内网白名单（10/8 + 172.16/12 + 192.168/16）；含 OCR 队列指标 |
+| P4 | ✅ | 请求耗时 + 错误率指标 | J8 🟠 | `httpMetricsMiddleware` 记录 `http_request_duration_seconds` 直方图（按 route + status） |
+| P5 | ✅ | Vite 路由懒加载 + 代码分割 | 新增 | `router/index.ts` 全部 14 个页面动态 import；首屏只装 LoginView + Vue 运行时 |
 | P6 | ✅ | Docker 多阶段构建 | 新增 | 拆分 `deps` / `runtime` 两阶段；最终镜像不再含 make/g++；改为非 root 用户启动 |
 | P7 | 🔄 | CSP 移除 `unsafe-inline` | 新增 | 生产 `scriptSrc` 已移除 `unsafe-inline`（并加 HSTS / baseUri / formAction）；`styleSrc` 仍保留，待 nonce 方案 |
-| P8 | ⏸ | 日志聚合（Loki / CloudWatch） | J7 🟡 | Winston JSON 日志已就绪，接入集中式日志平台 |
+| P8 | ✅ | Sentry + 集中可观测性 | J7 🟡 | Sentry SDK + scrubber + adminAuditLog + trialFreshness daily job + LLM observability；Loki 接入仍待办 |
 
 **里程碑**：Grafana 大盘可观测延迟/错误率/QPS；Docker 镜像体积减半；首屏 < 2s。
 
@@ -358,12 +403,12 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | # | 状态 | 项目 | 关联任务 | 说明 |
 |---|:-:|------|---------|------|
 | G1 | ⏸ | 可分享匹配报告 | E1 🟠 | 带二维码的公开报告页，核心传播载体 |
-| G2 | ⏸ | 新用户引导 + 样本病历 | F1 🟠 | 降低首次使用门槛，提升激活率 |
-| G3 | ⏸ | 试验数据定期更新 | G1 🟠 | 接入 ClinicalTrials.gov API，当前数据截至 2025-09 |
+| G2 | ✅ | 新用户引导 + 样本病历 | F1 🟠 | OnboardingView 30 秒期望管理 + Demo 3 个灯塔报告样例（hcc/nsclc/sba），`/treatbot/demo` 公开可达 |
+| G3 | ⏸ | 试验数据定期更新 | G1 🟠 | trialFreshness daily job 已就位；ClinicalTrials.gov 同步管线待接入 |
 | G4 | ⏸ | 小程序申请管理 | D4 🟠 | 微信端申请查看/取消，与 H5 对齐 |
 | G5 | ⏸ | 癌种语义扩展 | A10 🟡 | 疾病本体词典："胃癌" 自动包含 "胃腺癌" 等子类型 |
-| G6 | ⏸ | 用户行为埋点 | F4 🟡 | 上传 → 匹配 → 报名转化漏斗 |
-| G7 | ⏸ | 手动补录字段 | B7 🟡 | ECOG / 治疗线数输入框，`schema.ts` 已定义 |
+| G6 | ✅ | 用户行为埋点 | F4 🟡 | 6 事件白名单（landing_view / upload_start / upload_success / match_view / trial_apply / application_submitted），H5 sendBeacon + 小程序 wx.request 双端就绪 |
+| G7 | ✅ | 手动补录字段 | B7 🟡 | `pages/manualEntry/`（小程序）+ `web/src/pages/UploadView.vue` FieldExplainer 字段说明已上线 |
 
 **里程碑**：分享报告带来 > 10% 新用户；试验数据月度自动更新；转化漏斗可量化。
 
