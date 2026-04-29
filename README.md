@@ -278,7 +278,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 **🟡 P2 —— 体验 & 工程化**
 6. CSP `styleSrc` 仍含 `unsafe-inline`（Element Plus 依赖，待 nonce 方案）
 7. 前端只有 e2e，无 Vitest 单元覆盖
-8. `shared/schemas/` 只迁了 `upload.cjs` 一份；后续做 codegen 把 H5 zod schema dump 成 CJS 常量，结束双份漂移
+8. `shared/schemas/` 只迁了 `upload.js` 一份（曾用 `.cjs`，因 WeApp `require()` 不识 .cjs 已改名）；后续做 codegen 把 H5 zod schema dump 成 CJS 常量，结束双份漂移
 
 ### 下一步方案（建议优先级）
 

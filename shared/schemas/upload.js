@@ -1,9 +1,12 @@
 // PRD-2026Q2 §共享层：上传/病历结构化的「必填字段」单一来源。
 //
 // 这份文件用 CommonJS 导出，目的是让两端共消费同一组常量：
-//   - 小程序  utils/schema.js        require('../shared/schemas/upload.cjs')
-//   - H5      web/src/schemas/...    后续可写一个 .ts 包装器 import 这份 .cjs
-//             （Vite 默认能打 .cjs；TS 端可加 declare module 声明类型）
+//   - 小程序  utils/schema.js        require('../shared/schemas/upload.js')
+//   - H5      web/src/schemas/...    后续可写一个 .ts 包装器 import 这份 .js
+//
+// 历史注记：曾用 .cjs 扩展名，因 WeChat 小程序 require() 解析器只识别 .js，
+// 编译期会直接「module not found」；统一改成 .js 后两端都能解析，
+// 且仓库根目录没有 package.json "type":"module"，Node 默认按 CJS 读取。
 //
 // 本轮只把「必填字段集」放进来——这是最容易漂的一块（增删一项必填会波及
 // UploadView 进度条、records 列表 missingCount、matches 评分降权三处逻辑）。

@@ -1,6 +1,10 @@
-// PRD-2026Q2 §共享层：必填字段集来自 shared/schemas/upload.cjs，
+// PRD-2026Q2 §共享层：必填字段集来自 shared/schemas/upload.js，
 // 让小程序与（未来的）H5 端共用一份单一来源。
-const sharedUploadSchema = require('../shared/schemas/upload.cjs')
+//
+// 注意：WeChat 小程序的 require() 解析器只识别 .js 扩展名，不接受 .cjs，
+// 否则会在编译期报「module not found」。文件内容仍是 CommonJS 形态，
+// 仓库根目录无 package.json 也没有 "type":"module"，Node / Vite 端读取一致。
+const sharedUploadSchema = require('../shared/schemas/upload.js')
 
 const GROUP_META = {
   basic: { title: '基本入组信息', order: 1 },
@@ -339,14 +343,14 @@ const FIELD_SCHEMAS = [
 ]
 
 // 启动期一致性自检：本文件的 FIELD_SCHEMAS 中标 required:true 的 key 集合，
-// 必须与 shared/schemas/upload.cjs 的 REQUIRED_FIELDS 完全一致。
+// 必须与 shared/schemas/upload.js 的 REQUIRED_FIELDS 完全一致。
 // 任意一边漂移都会立即在小程序启动时打印警告，避免悄无声息的不一致。
 ;(function assertRequiredFieldsConsistency() {
   const localRequired = FIELD_SCHEMAS.filter((f) => f.required).map((f) => f.key).sort().join(',')
   const sharedRequired = [...sharedUploadSchema.REQUIRED_FIELDS].sort().join(',')
   if (localRequired !== sharedRequired) {
     console.warn(
-      '[schema] FIELD_SCHEMAS.required 与 shared/schemas/upload.cjs.REQUIRED_FIELDS 不一致；',
+      '[schema] FIELD_SCHEMAS.required 与 shared/schemas/upload.js.REQUIRED_FIELDS 不一致；',
       { local: localRequired, shared: sharedRequired }
     )
   }
