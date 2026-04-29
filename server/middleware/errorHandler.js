@@ -14,7 +14,7 @@ const captureException = (_sentry && _sentry.captureException)
 /**
  * 全局错误处理中间件
  */
-const errorHandler = (err, req, res, next) => {
+const errorHandler = (err, req, res, _next) => {
   // 记录错误日志
   logger.error('请求错误:', {
     message: err.message,

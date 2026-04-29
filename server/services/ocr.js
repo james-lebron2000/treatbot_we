@@ -33,7 +33,7 @@ const OCR_PROVIDER = (process.env.OCR_PROVIDER || 'auto').toLowerCase();
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
 const KIMI_BASE_URL = (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '');
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.5';
-const KIMI_TIMEOUT_MS = parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10);
+const _KIMI_TIMEOUT_MS = parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10);
 
 const hasKimiCredential = !!KIMI_API_KEY;
 const hasTencentCredential = !!(process.env.OCR_SECRET_ID && process.env.OCR_SECRET_KEY);
@@ -211,7 +211,7 @@ const estimateConfidence = (entities) => {
   return Math.min(0.98, Number(score.toFixed(2)));
 };
 
-const extractTextFromPdf = async (sourceUrl) => {
+const _extractTextFromPdf = async (sourceUrl) => {
   const response = await axios.get(sourceUrl, {
     responseType: 'arraybuffer',
     timeout: 30000
@@ -793,7 +793,7 @@ const recognizeByTencent = async (imageUrl) => {
   };
 };
 
-const recognizeByRule = async ({ imageUrl, fileKey, mimeType }) => {
+const recognizeByRule = async ({ imageUrl, fileKey, mimeType: _mimeType }) => {
   let text = '';
 
   // 尝试从本地文件直接读取文本（对纯文本文件有效，对图片二进制无害，regex 不会命中乱码）
@@ -896,7 +896,7 @@ const recognizeMedical = async (imageUrl) => {
  * markitdown 预处理：尝试用 markitdown 将文件转为 Markdown，再交给 Kimi 结构化
  * 对 PDF（文本型）和文档格式效果最好；扫描件/图片可能返回空文本，自动降级
  */
-const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType }) => {
+const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }) => {
   let markitdownService;
   try {
     markitdownService = require('./markitdown');

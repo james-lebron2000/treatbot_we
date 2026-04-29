@@ -16,7 +16,7 @@ const mockAppCreate = jest.fn();
 const mockMedicalCount = jest.fn();
 
 jest.mock('../models', () => {
-  const LOCK = { SHARE: 'SHARE', UPDATE: 'UPDATE' };
+  const _LOCK = { SHARE: 'SHARE', UPDATE: 'UPDATE' };
   return {
     sequelize: {
       transaction: (fn) => mockTransaction(fn)

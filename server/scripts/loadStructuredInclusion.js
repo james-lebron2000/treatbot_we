@@ -7,9 +7,8 @@ const fs = require('fs');
 const dotenvPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
 
-const { sequelize, testConnection } = require('../config/database');
+const { testConnection } = require('../config/database');
 const { Trial } = require('../models');
-const logger = require('../utils/logger');
 
 const DATA_PATH = path.join(__dirname, '..', 'data', 'structured_inclusion.json');
 

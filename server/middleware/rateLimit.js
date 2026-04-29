@@ -1,5 +1,4 @@
 const rateLimit = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis');
 const Redis = require('ioredis');
 const logger = require('../utils/logger');
 

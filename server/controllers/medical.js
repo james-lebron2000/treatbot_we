@@ -168,7 +168,7 @@ const handleUpload = async (req, res, next) => {
     const fileKey = ossService.generateKey(userId, file.originalname);
 
     // 上传到 COS
-    const uploadResult = await ossService.uploadFile(file.buffer, fileKey, {
+    const _uploadResult = await ossService.uploadFile(file.buffer, fileKey, {
       contentType: file.mimetype,
       metadata: {
         userId,

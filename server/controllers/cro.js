@@ -1,9 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op, fn, col } = require('sequelize');
-const { CroCompany, TrialApplication, Trial, User, MedicalRecord, sequelize } = require('../models');
-const { success, error, pagination } = require('../utils/response');
-const { safeText, escapeLike } = require('../utils/text');
+const { CroCompany, TrialApplication, Trial, User, MedicalRecord } = require('../models');
+const { success, error } = require('../utils/response');
+const { safeText } = require('../utils/text');
 const logger = require('../utils/logger');
 const { JWT_SECRET } = require('../utils/jwtSecret');
 

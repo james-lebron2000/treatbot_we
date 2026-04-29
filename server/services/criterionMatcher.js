@@ -10,9 +10,7 @@
  * instead of trial-level scoring, each criterion gets an individual verdict.
  */
 
-const { safeText } = require('../utils/text');
 const {
-  getDiseaseProfile,
   matchDiseaseText,
   normalizeText,
   hasGenericCancerSignal
@@ -306,7 +304,7 @@ const evaluatePdl1 = (s, profile) => {
  */
 const evaluateSemantic = (criterion, profile) => {
   const s = criterion.structured;
-  const text = normalizeText(criterion.original_text);
+  const _text = normalizeText(criterion.original_text);
 
   if (!s) {
     return { status: UNCERTAIN, evidence: '无结构化数据，需要人工审核', confidence: 0.2 };
@@ -344,7 +342,7 @@ const evaluateGeneRequirement = (s, profile) => {
 
   const results = [];
   for (const geneReq of required) {
-    const geneNorm = normalizeText(geneReq);
+    const _geneNorm = normalizeText(geneReq);
     const geneNameMatch = geneReq.match(GENE_NAME_REGEX);
     if (!geneNameMatch) {
       results.push({ gene: geneReq, matched: false, reason: '无法识别基因名称' });

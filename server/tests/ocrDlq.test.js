@@ -47,7 +47,6 @@ jest.mock('../services/ocr', () => ({
 
 // 引入被测模块（必须在 mock 之后 require）
 const queueService = require('../services/queue');
-const { OcrJobFailure } = require('../models');
 
 describe('PRD-2026Q2 §3.2 OCR DLQ failed handler', () => {
   beforeEach(() => {

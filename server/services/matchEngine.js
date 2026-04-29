@@ -102,7 +102,7 @@ const GENERIC_CANCER_ALIASES = [
 
 // 已知基因列表，用于精确基因名匹配（避免子串假阳性）
 // NOTE: 保留此列表仅为向后兼容；内部使用 geneParser 的 GENE_DEFINITIONS（长度降序、去重）。
-const KNOWN_GENES = [
+const _KNOWN_GENES = [
   'egfr', 'alk', 'ros1', 'kras', 'braf', 'her2', 'erbb2',
   'met', 'ret', 'ntrk', 'ntrk1', 'ntrk2', 'ntrk3',
   'fgfr', 'fgfr1', 'fgfr2', 'fgfr3',
@@ -155,7 +155,7 @@ const inferGeneRequired = (trial) => {
 /**
  * 从文本中提取命中的已知基因名列表（长度优先、已去重；NTRK1 命中时不再额外返回 NTRK）
  */
-const extractGeneNames = (text) => {
+const _extractGeneNames = (text) => {
   if (!text) return [];
   const map = parsePatientGenes(text);
   return Array.from(map.keys()).map((k) => k.toLowerCase());
@@ -373,7 +373,7 @@ const getTrialInclusionText = (trial) => {
 };
 
 // 保留原函数名作为别名，方便其他地方调用全文搜索
-const getTrialText = getTrialInclusionText;
+const _getTrialText = getTrialInclusionText;
 
 // ---- Per-trial 预处理缓存（P2 性能优化）----
 // 同一 trial 会被粗筛出的多条记录反复评分，每次都 join / lower / re-parse 浪费 CPU。
@@ -471,7 +471,7 @@ const isCancerTypeMismatch = (patient, trial) => {
   if (hasGenericCancerSignal(trial)) return result;
 
   const inclusionText = getTrialInclusionText(trial);
-  const normalizedInclusion = normalizeText(inclusionText);
+  const _normalizedInclusion = normalizeText(inclusionText);
 
   // 1) disease_tags 优先：如果 tags 包含明确的「其他特定癌种」别名
   const diseaseTags = Array.isArray(trial.disease_tags) ? trial.disease_tags : [];

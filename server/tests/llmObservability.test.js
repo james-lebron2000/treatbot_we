@@ -27,7 +27,7 @@ const findMetric = async (name) => {
   return all.find((m) => m.name === name);
 };
 
-const sumValues = (metric) => {
+const _sumValues = (metric) => {
   if (!metric || !Array.isArray(metric.values)) return 0;
   return metric.values.reduce((acc, v) => acc + (Number(v.value) || 0), 0);
 };

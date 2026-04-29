@@ -5,7 +5,7 @@ const { performance } = require('perf_hooks');
 const BASE_URL = process.env.API_URL || 'http://localhost:3000';
 const CONCURRENT_USERS = parseInt(process.env.CONCURRENT_USERS) || 10;
 const REQUESTS_PER_USER = parseInt(process.env.REQUESTS_PER_USER) || 100;
-const TEST_DURATION = parseInt(process.env.TEST_DURATION) || 60; // 秒
+const _TEST_DURATION = parseInt(process.env.TEST_DURATION) || 60; // 秒
 
 // 统计
 const stats = {

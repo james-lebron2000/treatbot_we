@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { sequelize, testConnection } = require('../config/database');
+const { testConnection } = require('../config/database');
 const { Trial } = require('../models');
 const logger = require('../utils/logger');
 

@@ -11,15 +11,12 @@
  *   node server/scripts/evalMatchEngine.js --threshold 42
  */
 
-const path = require('path');
 const goldenData = require('../tests/fixtures/golden-matches.json');
 
 // Import matching engine (standalone — no DB needed)
 const {
   scoreRecordAgainstTrial,
-  SCORE_MIN,
-  matchDiseaseText,
-  getDiseaseProfile
+  SCORE_MIN
 } = require('../services/matchEngine');
 
 // Import structured inclusion data to simulate trial objects
@@ -159,7 +156,7 @@ const evaluate = () => {
 
   // Compute nDCG@10 per patient
   const ndcgScores = [];
-  for (const [patientId, trials] of Object.entries(trialScores)) {
+  for (const [_patientId, trials] of Object.entries(trialScores)) {
     const ndcg = computeNDCG(trials, 10);
     if (ndcg !== null) ndcgScores.push(ndcg);
   }

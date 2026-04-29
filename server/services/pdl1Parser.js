@@ -9,7 +9,7 @@
  * 同癌种、同系统才能比较阈值。跨系统时不能强断言，只能给中等分 + 警告。
  */
 
-const PDL1_SYNONYMS = {
+const _PDL1_SYNONYMS = {
   TPS: ['tps', 'tumor proportion score', '肿瘤细胞阳性率', '肿瘤细胞比例', '肿瘤细胞占比'],
   CPS: ['cps', 'combined positive score', '综合阳性分数'],
   IC:  ['\\bic[0-3]?\\b', 'immune cell', '免疫细胞'],

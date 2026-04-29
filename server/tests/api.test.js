@@ -3,15 +3,15 @@ const app = require('../app');
 const { sequelize } = require('../config/database');
 
 // 测试数据
-const testUser = {
+const _testUser = {
   openid: 'test_openid_' + Date.now(),
   nickname: '测试用户',
   avatar_url: 'https://example.com/avatar.jpg',
   phone: '13800138000'
 };
 
-let authToken = null;
-let userId = null;
+let _authToken = null;
+let _userId = null;
 
 describe('Treatbot API Tests', () => {
   // 测试前准备

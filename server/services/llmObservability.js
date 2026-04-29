@@ -14,8 +14,6 @@
  *    那些直连位会被删掉，本模块的接口保持不变（双重保险）。
  */
 
-const logger = require('../utils/logger');
-
 // 懒加载 metrics，避免在某些 CI mock 场景下因 prom-client 不存在而崩溃
 let _metrics = null;
 try {

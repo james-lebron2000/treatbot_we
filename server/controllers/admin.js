@@ -14,7 +14,7 @@ const { parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('.
 // PRD-2026Q2 §2.4：试验新鲜度健康度视图
 const trialFreshness = require('../services/trialFreshness');
 // PRD-2026Q2 §2.3：PII 脱敏。list 响应出门前走一道 mask，reveal 单字段走审计日志旁路。
-const { maskPhone, maskIdCard, maskName } = require('../utils/mask');
+const { maskPhone, maskName } = require('../utils/mask');
 
 const APPLICATION_STATUS_TEXT = {
   pending: '待联系',
@@ -795,8 +795,8 @@ const exportApplications = async (req, res, next) => {
     const format = safeLower(req.query.format) === 'csv' ? 'csv' : 'json';
     const { trialId } = req.query;
     let where = {};
-    let range = null;
-    ({ where, range } = applyDateRange(where, req.query));
+    let _range = null;
+    ({ where, range: _range } = applyDateRange(where, req.query));
     if (trialId) {
       where.trial_id = trialId;
     }

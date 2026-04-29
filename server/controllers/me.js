@@ -21,7 +21,6 @@ const {
   OcrJobFailure
 } = require('../models');
 const ossService = require('../services/oss');
-const smsService = require('../services/sms');
 const { redisClient } = require('../middleware/rateLimit');
 const { JWT_SECRET } = require('../utils/jwtSecret');
 const logger = require('../utils/logger');
