@@ -261,6 +261,22 @@ jobs:
           echo "::endgroup::"
 
           ###############################################
+          # PART A.6 — DB 幂等迁移（addColumn / createTable 都是 if-not-exists）
+          # 之所以放在 health check 之后：
+          #   - 容器已经能起，说明现网 schema 至少能跑老路由；migrate 失败不至于把
+          #     生产打挂（DB 仍是上一版兼容 schema），下面 || true 把失败降为警告。
+          #   - 之前 user_funnel_event / me/consent 相关表是手工 ssh 上去补的；
+          #     这次让 deploy 顺手做掉，避免 §B.2 漏斗写入 500（"table doesn't exist"）。
+          ###############################################
+          echo "::group::A.6) DB migrations (idempotent)"
+          if docker exec treatbot-api node scripts/migrate.js; then
+            echo "  ✅ Migrations done"
+          else
+            echo "  ⚠ Migrate exit non-zero — 旧表结构兼容，业务不阻塞，但请人工排查"
+          fi
+          echo "::endgroup::"
+
+          ###############################################
           # PART B — 前端 web 提升到 /var/www/treatbot-web/
           ###############################################
           echo "::group::B) Web frontend promote"
