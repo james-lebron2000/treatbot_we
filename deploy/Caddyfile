@@ -12,9 +12,13 @@
 #   /h5/*                     → 127.0.0.1:3100  (Next.js)
 #   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
 #   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
-#   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*
-#                             → 127.0.0.1:3000  (Express, treatbot-api)
+#   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
+#   /api/track, /api/me/*     → 127.0.0.1:3000  (Express, treatbot-api)
 #   /api/*  (所有其他)         → 127.0.0.1:5101  (遗留 Python 服务)
+#
+# 历史记录：
+#   2026-04-29 补 /api/track + /api/me/* —— 此前漏配导致小程序 §B.2 漏斗埋点
+#   与 §A.2 合规自助接口在生产环境直接 404（落到了 Python :5101 catch-all）。
 #   /demo-assets/*, /uploads/* → static via Express :3000
 
 {
@@ -61,6 +65,8 @@ inseq.top, www.inseq.top {
         path /api/medical/* /api/matches /api/matches/* /api/trials /api/trials/*
         path /api/applications /api/applications/*
         path /api/admin/* /api/cro/* /api/user/*
+        # Q3-红线 §B.2 漏斗埋点 + §A.2 合规自助：补齐这两组才算端到端可用
+        path /api/track /api/me/*
     }
     handle @treatbot_api {
         reverse_proxy 127.0.0.1:3000 {

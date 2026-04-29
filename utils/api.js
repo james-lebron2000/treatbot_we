@@ -591,38 +591,54 @@ const requestWithRetry = async (options, retryCount = 1) => {
   throw lastError || new Error('请求失败')
 }
 
+// Q3-红线 §A.1（补丁）：上传同样要走 single-flight refresh，否则病历上传到一半
+// 撞上 token 过期 → 用户面前直接红屏失败。复用 request() 的同一个 refreshing Promise，
+// 保证多个上传并发时只发一次 /auth/refresh。
 const uploadFile = (options) => {
   return new Promise((resolve, reject) => {
-    const token = wx.getStorageSync('token')
-    const baseUrl = getRuntimeBaseUrl()
-
-    wx.uploadFile({
-      url: `${baseUrl}${options.url}`,
-      filePath: options.filePath,
-      name: options.name || 'file',
-      timeout: options.timeout || 30000,
-      header: {
-        Authorization: token ? `Bearer ${token}` : ''
-      },
-      formData: options.formData || {},
-      success: (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const parsed = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
-            resolve(parsed)
-          } catch (error) {
-            reject(buildHttpError('上传返回数据格式错误', { statusCode: res.statusCode }))
+    const doUpload = (retried) => {
+      const token = wx.getStorageSync('token')
+      const baseUrl = getRuntimeBaseUrl()
+      wx.uploadFile({
+        url: `${baseUrl}${options.url}`,
+        filePath: options.filePath,
+        name: options.name || 'file',
+        timeout: options.timeout || 30000,
+        header: {
+          Authorization: token ? `Bearer ${token}` : ''
+        },
+        formData: options.formData || {},
+        success: (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const parsed = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+              resolve(parsed)
+            } catch (error) {
+              reject(buildHttpError('上传返回数据格式错误', { statusCode: res.statusCode }))
+            }
+            return
           }
-          return
-        }
 
-        reject(buildHttpError('上传失败', { statusCode: res.statusCode, response: res.data }))
-      },
-      fail: (err) => {
-        console.error('上传失败:', err)
-        reject(buildHttpError('网络上传失败', { statusCode: 0, response: err }))
-      }
-    })
+          if (res.statusCode === 401 && !retried) {
+            tryRefreshToken()
+              .then(() => doUpload(true))
+              .catch(() => {
+                clearAuth()
+                wx.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+                reject(buildHttpError('Unauthorized', { statusCode: 401, response: res.data }))
+              })
+            return
+          }
+
+          reject(buildHttpError('上传失败', { statusCode: res.statusCode, response: res.data }))
+        },
+        fail: (err) => {
+          console.error('上传失败:', err)
+          reject(buildHttpError('网络上传失败', { statusCode: 0, response: err }))
+        }
+      })
+    }
+    doUpload(false)
   })
 }
 
