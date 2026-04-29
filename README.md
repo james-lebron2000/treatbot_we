@@ -152,6 +152,32 @@ npm run dev          # 开发
 npm run build        # 构建到 dist/，部署到 nginx /treatbot/
 ```
 
+### 微信小程序
+
+仓库根目录就是小程序工程（`app.json` + `pages/` + `utils/`）。
+
+```bash
+# 1. 用「微信开发者工具」打开仓库根目录（不要打开 web/，那是 H5）
+# 2. AppID 已在 project.config.json 里固定；如不是你的账号请改回自己的测试号
+# 3. 服务器域名：开发模式可勾「不校验合法域名」，
+#    线上需要在「微信公众平台 → 开发设置 → 服务器域名」加 https://inseq.top
+```
+
+**首次跑 CLI（`cli preview` / `cli auto`）必做的一次性开关：**
+
+> 微信开发者工具 → 设置 → 安全设置 → **服务端口 ✅ 开启**
+
+不开启时 CLI 会卡在 `Enable IDE Service (y/N)` 等输入而 IDE 端 GUI 没人点确认，
+`.ide` 端口文件不会被写出（只会写出 `.cli`），CLI 端最终 timeout。
+开过一次后 `~/Library/Application Support/微信开发者工具/.../Default/.ide` 长期存在，
+后续 CLI 直接连。
+
+```bash
+# 开启 Service Port 之后才有效
+cli preview --project $(pwd) --qr-output qr.txt
+cli auto --project $(pwd)        # 自动化测试入口
+```
+
 ---
 
 ## 环境变量
