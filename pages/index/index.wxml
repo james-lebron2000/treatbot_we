@@ -52,20 +52,40 @@
        「我的病历」「找到的可能性」原本是 feature-grid 里的两张卡片，
        但底部 tabBar 已经有同名入口（pages/records/records、pages/matches/matches），
        重复出现反而让 0 医学基础病人产生「到底点哪个」的认知负担。
-       —— 删掉重复卡片，把上传按钮放大成主 CTA，是当前唯一可以点击的「上传」入口。 -->
+       —— 删掉重复卡片，按钮文字简化为「开始」，描述/承诺信息全部摊到页面上。 -->
   <view class="feature-section">
     <view class="section-title">从这里开始</view>
     <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到可能性」全程。</view>
 
-    <view class="feature-grid">
-      <view class="feature-card primary" bindtap="goToUpload">
-        <view class="feature-icon">录</view>
-        <view class="feature-info">
-          <text class="feature-title">把病历交给我们</text>
-          <text class="feature-desc">拍照、相册或 PDF 都行，几分钟就帮您看懂</text>
+    <view class="upload-hero">
+      <view class="upload-hero-info">
+        <view class="upload-hero-line">
+          <text class="upload-hero-icon">📄</text>
+          <text class="upload-hero-text">拍照、相册或 PDF 都行 —— 看不清的报告也能认</text>
         </view>
-        <view class="feature-arrow">›</view>
+        <view class="upload-hero-line">
+          <text class="upload-hero-icon">⏱</text>
+          <text class="upload-hero-text">不到 2 分钟，您拿到一份能看懂的病历摘要</text>
+        </view>
+        <view class="upload-hero-line">
+          <text class="upload-hero-icon">🔒</text>
+          <text class="upload-hero-text">数据完全由您掌管，随时可带走或删除</text>
+        </view>
       </view>
+      <view class="upload-hero-button" bindtap="goToUpload" hover-class="upload-hero-button-hover">
+        <text class="upload-hero-button-text">开始</text>
+      </view>
+    </view>
+
+    <!-- PRD-2026Q3 §U7：先看个例子。0 医学基础家属面对一个空首页常常不敢点
+         上传——给一个「无门槛预览」入口，看完一份完整的样例病历 + 匹配结果再决定。 -->
+    <view class="demo-entry" bindtap="goToDemo" hover-class="demo-entry-hover">
+      <view class="demo-entry-icon">▶</view>
+      <view class="demo-entry-info">
+        <text class="demo-entry-title">先看个例子</text>
+        <text class="demo-entry-desc">看一份完整的样例病历 + 匹配结果，了解上传后能拿到什么</text>
+      </view>
+      <view class="demo-entry-arrow">›</view>
     </view>
   </view>
 

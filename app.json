@@ -9,7 +9,8 @@
     "pages/matches/apply/apply",
     "pages/matches/detail/detail",
     "pages/profile/profile",
-    "pages/profile/consent/consent"
+    "pages/profile/consent/consent",
+    "pages/demo/demo"
   ],
   "window": {
     "backgroundTextStyle": "light",

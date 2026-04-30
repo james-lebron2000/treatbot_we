@@ -3,14 +3,14 @@
 }
 
 .card-title {
-  font-size: 32rpx;
+  font-size: 40rpx;
   font-weight: 700;
   color: #262626;
   margin-bottom: 12rpx;
 }
 
 .trial-name {
-  font-size: 34rpx;
+  font-size: 42rpx;
   color: #111;
   line-height: 1.45;
   margin-bottom: 10rpx;
@@ -18,7 +18,7 @@
 
 .trial-meta {
   display: block;
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #666;
   line-height: 1.5;
 }
@@ -37,7 +37,7 @@
 
 .label {
   display: block;
-  font-size: 28rpx;
+  font-size: 36rpx;
   color: #333;
   margin-bottom: 10rpx;
 }
@@ -48,13 +48,13 @@
   border: 1rpx solid #d9d9d9;
   background: #fafafa;
   padding: 0 20rpx;
-  font-size: 30rpx;
+  font-size: 38rpx;
   color: #222;
   box-sizing: border-box;
 }
 
 .tips {
-  font-size: 24rpx;
+  font-size: 32rpx;
   color: #8c8c8c;
   line-height: 1.6;
 }

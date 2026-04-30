@@ -21,20 +21,20 @@
 
 .trial-name {
   flex: 1;
-  font-size: 30rpx;
+  font-size: 38rpx;
   font-weight: 600;
   color: #333;
 }
 
 .status {
   color: #1890ff;
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .institution,
 .apply-time {
   display: block;
   color: #666;
-  font-size: 24rpx;
+  font-size: 32rpx;
   line-height: 1.6;
 }

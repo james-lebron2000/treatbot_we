@@ -19,12 +19,12 @@
   color: #1890ff;
   border-radius: 8rpx;
   padding: 8rpx 18rpx;
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .status {
   color: #52c41a;
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .row {
@@ -39,17 +39,17 @@
 .label {
   width: 160rpx;
   color: #666;
-  font-size: 26rpx;
+  font-size: 34rpx;
 }
 
 .value {
   flex: 1;
   color: #333;
-  font-size: 26rpx;
+  font-size: 34rpx;
 }
 
 .images-title {
-  font-size: 30rpx;
+  font-size: 38rpx;
   font-weight: 600;
   margin-bottom: 16rpx;
 }

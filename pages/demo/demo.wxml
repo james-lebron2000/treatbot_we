@@ -1,0 +1,231 @@
+<view class="container">
+  <!-- 样例标识 banner：刻意做明显，避免病人把 mock 数据当成自己的真实匹配 -->
+  <view class="sample-banner">
+    <view class="sample-banner-tag">📘 样例</view>
+    <view class="sample-banner-body">
+      <text class="sample-banner-title">{{sampleBanner.title}}</text>
+      <text class="sample-banner-subtitle">{{sampleBanner.subtitle}}</text>
+    </view>
+  </view>
+
+  <!-- ===== 1. 结构化病历卡 ===== -->
+  <view class="section">
+    <view class="section-header">
+      <text class="section-step">第 1 步</text>
+      <text class="section-title">看懂版病历摘要</text>
+      <text class="section-subtitle">您上传后会拿到这样一份病历卡片 —— 关键信息一目了然，哪里不对可以直接改。</text>
+    </view>
+
+    <view class="record-card">
+      <!-- 摘要 -->
+      <view class="record-summary">
+        <text class="record-summary-label">一句话病情</text>
+        <text class="record-summary-text">{{record.summary}}</text>
+      </view>
+
+      <!-- 病人基本信息 -->
+      <view class="record-row">
+        <text class="record-row-label">基本信息</text>
+        <view class="record-row-grid">
+          <view class="kv">
+            <text class="kv-label">姓名</text>
+            <text class="kv-value">{{record.patient.nickName}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">年龄 / 性别</text>
+            <text class="kv-value">{{record.patient.age}} 岁 / {{record.patient.sex}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">身高 / 体重</text>
+            <text class="kv-value">{{record.patient.height}} / {{record.patient.weight}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">体力评分 ECOG</text>
+            <text class="kv-value">{{record.ecog}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 诊断 -->
+      <view class="record-row">
+        <text class="record-row-label">诊断</text>
+        <view class="record-row-grid">
+          <view class="kv">
+            <text class="kv-label">原发病</text>
+            <text class="kv-value highlight">{{record.diagnosis.primary}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">病理类型</text>
+            <text class="kv-value">{{record.diagnosis.pathology}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">分期</text>
+            <text class="kv-value highlight">{{record.diagnosis.stage}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">确诊时间</text>
+            <text class="kv-value">{{record.diagnosis.diagnosedAt}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 基因检测 -->
+      <view class="record-row">
+        <text class="record-row-label">基因检测</text>
+        <view class="gene-list">
+          <view class="gene-item {{item.highlight ? 'highlight' : ''}}" wx:for="{{record.genes}}" wx:key="name">
+            <text class="gene-name">{{item.name}}</text>
+            <text class="gene-detail">{{item.detail}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 关键化验 -->
+      <view class="record-row">
+        <text class="record-row-label">关键化验</text>
+        <view class="lab-list">
+          <view class="lab-item" wx:for="{{record.labs}}" wx:key="name">
+            <text class="lab-name">{{item.name}}</text>
+            <text class="lab-value {{item.flag === 'low' ? 'lab-flag-low' : ''}} {{item.flag === 'high' ? 'lab-flag-high' : ''}}">{{item.value}}</text>
+            <text class="lab-range">参考 {{item.range}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 治疗时间线 -->
+      <view class="record-row">
+        <text class="record-row-label">治疗经历</text>
+        <view class="timeline">
+          <view class="timeline-item" wx:for="{{record.treatments}}" wx:key="date">
+            <view class="timeline-dot"></view>
+            <view class="timeline-content">
+              <view class="timeline-head">
+                <text class="timeline-date">{{item.date}}</text>
+                <text class="timeline-kind">{{item.kind}}</text>
+              </view>
+              <text class="timeline-name">{{item.name}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 影像 -->
+      <view class="record-row last">
+        <text class="record-row-label">影像与病灶</text>
+        <view class="record-row-grid">
+          <view class="kv">
+            <text class="kv-label">靶病灶</text>
+            <text class="kv-value">{{record.imaging.targetLesion}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">新发病灶</text>
+            <text class="kv-value highlight">{{record.imaging.newLesion}}</text>
+          </view>
+          <view class="kv">
+            <text class="kv-label">最近一次检查</text>
+            <text class="kv-value">{{record.imaging.latestExam}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 2. 匹配结果 ===== -->
+  <view class="section">
+    <view class="section-header">
+      <text class="section-step">第 2 步</text>
+      <text class="section-title">为家人找到的可能性</text>
+      <text class="section-subtitle">围绕上面的病历，我们会从公开的临床试验库里找出 —— 每一项都说清楚为什么。</text>
+    </view>
+
+    <view class="match-stats">
+      <view class="stat-item">
+        <text class="stat-value">{{matches.length}}</text>
+        <text class="stat-label">找到的可能性</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">1</text>
+        <text class="stat-label">高度匹配</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">3</text>
+        <text class="stat-label">值得优先看</text>
+      </view>
+    </view>
+
+    <view class="matches-list">
+      <view class="match-card" wx:for="{{matches}}" wx:key="id">
+        <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
+
+        <view class="match-card-header" bindtap="toggleMatch" data-id="{{item.id}}">
+          <view class="match-content">
+            <text class="match-title">{{item.name}}</text>
+          </view>
+          <view class="match-header-right">
+            <view class="match-score-badge level-{{item.matchTone}}">
+              <text class="score">{{item.score}}%</text>
+              <text class="label">匹配度</text>
+            </view>
+            <text class="match-expand-indicator">{{item.expanded ? '收起' : '看详情'}}</text>
+          </view>
+        </view>
+
+        <view class="match-card-summary">
+          <view class="match-tags">
+            <text class="tag tag-level level-{{item.matchTone}}">{{item.matchLevel}}</text>
+            <text class="tag tag-primary">{{item.phase}}</text>
+            <text class="tag tag-warning">{{item.type}}</text>
+          </view>
+          <text class="match-indication">适应症：{{item.indication}}</text>
+        </view>
+
+        <view wx:if="{{item.expanded}}" class="match-card-expanded">
+          <view class="decision-banner tone-{{item.decisionTone}}">
+            <text class="decision-label">我们的看法</text>
+            <text class="decision-text">{{item.decisionHint}}</text>
+          </view>
+
+          <view class="detail-panel">
+            <text class="detail-panel-title">分中心</text>
+            <view class="sub-center-list">
+              <text class="sub-center-chip" wx:for="{{item.subCenters}}" wx:for-item="center" wx:key="*this">{{center}}</text>
+            </view>
+          </view>
+
+          <view class="detail-panel">
+            <text class="detail-panel-title">基础信息</text>
+            <text class="meta-line">研究机构：{{item.institution}}</text>
+            <text class="meta-line">试验编号：{{item.nctId}}</text>
+            <text class="meta-line">招募状态：{{item.status}}</text>
+          </view>
+
+          <view class="detail-panel">
+            <text class="detail-panel-title">入选标准</text>
+            <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="c" wx:key="*this">
+              <text class="criteria-icon">+</text>
+              <text class="criteria-text">{{c}}</text>
+            </view>
+          </view>
+
+          <view class="detail-panel">
+            <text class="detail-panel-title">排除标准</text>
+            <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="c" wx:key="*this">
+              <text class="criteria-icon">-</text>
+              <text class="criteria-text">{{c}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 3. 转化 CTA ===== -->
+  <view class="cta-section">
+    <text class="cta-title">看完了？换您家人的真实病历试试</text>
+    <text class="cta-subtitle">几分钟就能帮您看懂 —— 数据完全由您掌管，随时可带走或删除。</text>
+    <view class="cta-button" bindtap="goToUpload" hover-class="cta-button-hover">
+      <text class="cta-button-text">上传我的病历</text>
+    </view>
+    <text class="cta-back" bindtap="goBack">先返回看看</text>
+  </view>
+</view>

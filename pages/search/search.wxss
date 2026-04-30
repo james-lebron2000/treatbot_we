@@ -17,14 +17,14 @@
 }
 
 .search-icon {
-  font-size: 32rpx;
+  font-size: 40rpx;
   margin-right: 16rpx;
   color: #999;
 }
 
 .search-input {
   flex: 1;
-  font-size: 28rpx;
+  font-size: 36rpx;
   color: #333;
 }
 
@@ -40,7 +40,7 @@
 
 .clear-btn text {
   color: #fff;
-  font-size: 28rpx;
+  font-size: 36rpx;
   line-height: 1;
 }
 
@@ -51,12 +51,12 @@
 }
 
 .filter-btn text {
-  font-size: 28rpx;
+  font-size: 36rpx;
   color: #666;
 }
 
 .filter-arrow {
-  font-size: 20rpx;
+  font-size: 28rpx;
   margin-left: 8rpx;
   transition: transform 0.3s;
 }
@@ -77,7 +77,7 @@
 
 .filter-label {
   display: block;
-  font-size: 28rpx;
+  font-size: 36rpx;
   font-weight: 500;
   color: #333;
   margin-bottom: 20rpx;
@@ -93,7 +93,7 @@
   padding: 12rpx 28rpx;
   background: #f5f5f5;
   border-radius: 28rpx;
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #666;
   transition: all 0.3s;
 }
@@ -113,7 +113,7 @@
   flex: 1;
   height: 80rpx;
   border-radius: 40rpx;
-  font-size: 28rpx;
+  font-size: 36rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,13 +141,13 @@
 }
 
 .history-title {
-  font-size: 30rpx;
+  font-size: 38rpx;
   font-weight: 500;
   color: #333;
 }
 
 .clear-history {
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #999;
 }
 
@@ -166,12 +166,12 @@
 }
 
 .history-icon {
-  font-size: 24rpx;
+  font-size: 32rpx;
   margin-right: 12rpx;
 }
 
 .history-text {
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #666;
 }
 
@@ -187,7 +187,7 @@
 }
 
 .results-count {
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #666;
 }
 
@@ -216,11 +216,11 @@
   color: #1890ff;
   padding: 8rpx 16rpx;
   border-radius: 8rpx;
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .result-status {
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .result-status.recruiting {
@@ -237,7 +237,7 @@
 
 .result-name {
   display: block;
-  font-size: 30rpx;
+  font-size: 38rpx;
   font-weight: 500;
   color: #333;
   line-height: 1.5;
@@ -252,7 +252,7 @@
 }
 
 .info-item {
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #666;
 }
 
@@ -267,7 +267,7 @@
   color: #666;
   padding: 8rpx 16rpx;
   border-radius: 8rpx;
-  font-size: 24rpx;
+  font-size: 32rpx;
 }
 
 .loading-state,
@@ -275,7 +275,7 @@
   text-align: center;
   padding: 40rpx;
   color: #999;
-  font-size: 26rpx;
+  font-size: 34rpx;
 }
 
 .empty-state {
@@ -293,13 +293,13 @@
 }
 
 .empty-title {
-  font-size: 32rpx;
+  font-size: 40rpx;
   color: #333;
   margin-bottom: 16rpx;
 }
 
 .empty-desc {
-  font-size: 26rpx;
+  font-size: 34rpx;
   color: #999;
   text-align: center;
 }

@@ -180,6 +180,14 @@ Page({
     })
   },
 
+  // PRD-2026Q3 §U7：先看个例子。0 医学基础家属面对一个空首页常常不敢点上传 ——
+  // 给一个「无门槛预览」入口，带他们看一份完整的样例病历 + 匹配结果，再决定要不要传。
+  goToDemo() {
+    wx.navigateTo({
+      url: '/pages/demo/demo'
+    })
+  },
+
   goToRecords() {
     wx.switchTab({
       url: '/pages/records/records'

@@ -14,14 +14,14 @@
 }
 
 .empty-title {
-  font-size: 32rpx;
+  font-size: 40rpx;
   font-weight: 600;
   color: #333;
   margin-bottom: 16rpx;
 }
 
 .empty-desc {
-  font-size: 28rpx;
+  font-size: 36rpx;
   color: #999;
   margin-bottom: 40rpx;
   text-align: center;
@@ -32,6 +32,6 @@
   background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
   color: #fff;
   border-radius: 40rpx;
-  font-size: 30rpx;
+  font-size: 38rpx;
   border: none;
 }
