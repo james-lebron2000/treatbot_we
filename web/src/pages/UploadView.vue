@@ -191,9 +191,11 @@ import { fields as glossaryFields } from '../copy/glossary'
 // Q3-红线 §A.2.1：上传前如果没记录过 'upload' scope，弹 modal 强制同意。
 import ConsentModal from '../components/ConsentModal.vue'
 import { POLICY_VERSION } from '../constants/privacy'
-// PRD-2026Q2 §3.7：与小程序共享的上传场景文案字典（根 `shared/copy/upload.json`）。
+// PRD-2026Q2 §3.7：与小程序共享的上传场景文案字典（根 `shared/copy/upload.js`）。
 // 这里统一错误/状态/字段 hint/CTA 四类 key；empathy.ts 保留其它场景的共情话术。
-import uploadCopy from '@shared/copy/upload.json'
+// 已从 .json 迁到 .js（WeApp `require()` 不识 .json）；详见 shared/copy/upload.js 顶部。
+// @ts-ignore — plain CJS module
+import uploadCopy from '@shared/copy/upload.js'
 // Q3-红线 §B.2：业务漏斗埋点
 import { track } from '../utils/track'
 

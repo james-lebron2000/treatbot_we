@@ -4,9 +4,10 @@ const schema = require('../../utils/schema')
 const parseTask = require('../../utils/parse-task')
 // Q3-红线 §B.2：upload_start / upload_success 漏斗事件
 const { track } = require('../../utils/track')
-// PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.json`）。
-// 小程序工具链支持对 JSON 直接 require；统一 error / status / cta 三类 key。
-const copy = require('../../shared/copy/upload.json')
+// PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.js`）。
+// 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
+// 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
+const copy = require('../../shared/copy/upload.js')
 
 // PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
 const classifyUploadError = (error) => {

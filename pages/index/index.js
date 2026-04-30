@@ -2,8 +2,9 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const parseTask = require('../../utils/parse-task')
 const matchExplainer = require('../../utils/match-explainer')
-// PRD-2026Q3 §U5：首屏期望管理 banner 的文案 = shared/copy/help.json 的 expectations 段
-const help = require('../../shared/copy/help.json')
+// PRD-2026Q3 §U5：首屏期望管理 banner 的文案 = shared/copy/help.js 的 expectations 段
+// （原 help.json 已迁移到 .js，因 WeApp require 不识别 .json，详见 shared/copy/help.js 顶部）
+const help = require('../../shared/copy/help.js')
 
 const pickList = (res) => {
   if (!res) {

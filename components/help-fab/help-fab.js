@@ -1,6 +1,8 @@
 // PRD-2026Q3 §U5：小程序「需要帮忙」悬浮按钮。
-// 文案完全来自 shared/copy/help.json，与 H5 共用同一份。
-const help = require('../../shared/copy/help.json')
+// 文案完全来自 shared/copy/help.js，与 H5 共用同一份（H5 经 web/src/copy/help.ts 转 ESM）。
+// 注意：原文件是 help.json，但 WeApp `require()` 不识别 .json 后缀（同 .cjs 一样会丢"module not defined"），
+// 所以已迁移到 .js（CommonJS）。
+const help = require('../../shared/copy/help.js')
 
 Component({
   options: { multipleSlots: false },

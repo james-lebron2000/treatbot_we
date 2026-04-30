@@ -5,7 +5,8 @@ const parseTask = require('../../utils/parse-task')
 // Q3-红线 §B.2：match_view / trial_apply 漏斗事件
 const { track } = require('../../utils/track')
 // U4：把后端返回的英文/术语 reasons 翻译成普通人能读懂的一句话。
-const glossary = require('../../shared/copy/glossary.json')
+// 共享文案已从 .json 迁到 .js（WeApp require 不识 .json）；详见 shared/copy/glossary.js。
+const glossary = require('../../shared/copy/glossary.js')
 
 const humanizeReasons = (reasons) => {
   if (!Array.isArray(reasons) || reasons.length === 0) return glossary.matchReasons.fallback

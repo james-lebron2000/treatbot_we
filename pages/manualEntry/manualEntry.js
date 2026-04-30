@@ -2,8 +2,9 @@
 // 用来当用户没有报告 / 不想上传时，直接把诊断/分期/基因/年龄录入后进入匹配。
 // U4：为 0 医学基础病人加「？」白话解释 + 「我不知道，先跳过」逃生口。
 const api = require('../../utils/api')
-const copy = require('../../shared/copy/upload.json')
-const glossary = require('../../shared/copy/glossary.json')
+// shared/copy/* 已从 .json 迁到 .js，因 WeApp `require()` 不识 .json 后缀。
+const copy = require('../../shared/copy/upload.js')
+const glossary = require('../../shared/copy/glossary.js')
 
 // 字段 key → glossary.fields key 映射（manualEntry 用的 genes 在 glossary 里叫 geneMutation）。
 const FIELD_GLOSSARY_MAP = {
