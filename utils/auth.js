@@ -102,19 +102,50 @@ const setSession = (payload) => {
   return normalized
 }
 
-const wechatLogin = () => {
-  return new Promise((resolve, reject) => {
-    wx.login({
-      success: (res) => {
-        if (!res.code) {
-          reject(new Error('微信登录失败'))
-          return
-        }
-        resolve(res.code)
-      },
-      fail: reject
-    })
+// DevTools-only：IDE 自身的微信会话过期时 `wx.login` 会直接返回
+// `errMsg: "login:fail INVALID_LOGIN, access_token expired ..."`。这不是后端
+// 问题，是 IDE 右上角登录态过期；用户需要点头像重新登录开发者工具。
+// 我们把这条具体错误打个 code，让上层（utils/api.js / pages/upload/upload.js）
+// 能据此显示更可操作的提示，而不是泛化的「出了点小问题」。
+const isIdeLoginExpired = (errMsg) => {
+  const msg = `${errMsg || ''}`.toLowerCase()
+  return msg.indexOf('invalid_login') !== -1 ||
+         msg.indexOf('access_token expired') !== -1 ||
+         msg.indexOf('access_token missing') !== -1
+}
+
+const wxLoginOnce = () => new Promise((resolve, reject) => {
+  wx.login({
+    success: (res) => {
+      if (!res.code) {
+        const err = new Error('微信登录失败')
+        err.code = 'wx_login_no_code'
+        reject(err)
+        return
+      }
+      resolve(res.code)
+    },
+    fail: (err) => {
+      const wrapped = new Error(`${err && err.errMsg || '微信登录失败'}`)
+      wrapped.code = isIdeLoginExpired(err && err.errMsg) ? 'wx_login_session_expired' : 'wx_login_fail'
+      wrapped.cause = err
+      reject(wrapped)
+    }
   })
+})
+
+const wechatLogin = async () => {
+  // 一次重试：DevTools IDE 偶发瞬时失败，等 400ms 再来一次往往能恢复。
+  // 真机环境基本不会进重试分支。
+  try {
+    return await wxLoginOnce()
+  } catch (error) {
+    if (error && error.code === 'wx_login_session_expired') {
+      throw error // IDE 会话过期，重试也没用，直接交给上层提示重启 IDE
+    }
+    await new Promise((r) => setTimeout(r, 400))
+    return await wxLoginOnce()
+  }
 }
 
 const refreshProfile = async () => {

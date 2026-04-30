@@ -10,9 +10,14 @@ const { track } = require('../../utils/track')
 const copy = require('../../shared/copy/upload.js')
 
 // PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
+// 增量：DevTools 里 `wx.login` 自身会话过期 → utils/auth.js 抛 code='wx_login_session_expired'，
+// 这里单独识别并回 'wx_login'，避免泛化到 unknown 让研发同学误以为是后端 bug。
 const classifyUploadError = (error) => {
   if (!error) {
     return 'unknown'
+  }
+  if (error.code === 'wx_login_session_expired') {
+    return 'wx_login'
   }
   const status = Number(error.statusCode || 0)
   if (status === 429) {
@@ -31,6 +36,7 @@ const ERROR_COPY_KEY_MAP = {
   rate_limit: 'rate_limit',
   parse: 'parse_failed',
   network: 'network',
+  wx_login: 'wx_login_session_expired',
   unknown: 'unknown'
 }
 

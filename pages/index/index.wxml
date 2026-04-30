@@ -48,6 +48,11 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q3 §U5（迭代）：首页只保留一个明确的上传 CTA。
+       「我的病历」「找到的可能性」原本是 feature-grid 里的两张卡片，
+       但底部 tabBar 已经有同名入口（pages/records/records、pages/matches/matches），
+       重复出现反而让 0 医学基础病人产生「到底点哪个」的认知负担。
+       —— 删掉重复卡片，把上传按钮放大成主 CTA，是当前唯一可以点击的「上传」入口。 -->
   <view class="feature-section">
     <view class="section-title">从这里开始</view>
     <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到可能性」全程。</view>
@@ -58,24 +63,6 @@
         <view class="feature-info">
           <text class="feature-title">把病历交给我们</text>
           <text class="feature-desc">拍照、相册或 PDF 都行，几分钟就帮您看懂</text>
-        </view>
-        <view class="feature-arrow">›</view>
-      </view>
-
-      <view class="feature-card" bindtap="goToRecords">
-        <view class="feature-icon">档</view>
-        <view class="feature-info">
-          <text class="feature-title">我的病历</text>
-          <text class="feature-desc">看看我们从病历里读到了什么，哪里不对直接改</text>
-        </view>
-        <view class="feature-arrow">›</view>
-      </view>
-
-      <view class="feature-card" bindtap="goToMatches">
-        <view class="feature-icon">筛</view>
-        <view class="feature-info">
-          <text class="feature-title">找到的可能性</text>
-          <text class="feature-desc">为家人找到的临床试验 —— 每一项都说清楚为什么</text>
         </view>
         <view class="feature-arrow">›</view>
       </view>

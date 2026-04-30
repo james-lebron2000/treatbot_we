@@ -19,6 +19,9 @@ module.exports = {
     file_too_large: '这份文件有点大 —— 压缩一下或分几次传都可以，您的数据不会丢。',
     unsupported_format: '我们目前只能认图片和 PDF —— 换一种格式再传一次？',
     network: '网络有点卡，您的数据没丢。检查一下网络再试一次就好。',
+    // DevTools-only：IDE 微信登录态过期 —— 真机不会触发，仅给研发同学看的友好提示，
+    // 让用户在开发者工具看到这条提示时知道要重新登录 IDE，而不是怀疑后端炸了。
+    wx_login_session_expired: '开发者工具的微信登录已过期。请点 IDE 右上角头像重新登录，再回来上传。',
     unknown: '刚刚卡了一下，您的数据都还在。再试一次？'
   },
   status: {
