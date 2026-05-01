@@ -147,11 +147,26 @@ jobs:
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         SHA: ${{ github.sha }}
+        # OCR / LLM provider 凭证从 GitHub Secrets 注入容器（替代手动 ssh 改 .env）。
+        # 命中策略：docker run 同时使用 --env-file 和 -e 时，-e last-wins 覆盖 file 中同名 KEY；
+        # secret 留空则跳过对应 -e 行，旧容器值得以保留 —— 与原行为兼容。
+        # ↓ 敏感（API key）：必须从 Secrets
+        MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
+        # ↓ 非敏感（公开端点 / 模型 ID / 超时）：固定字面量，便于单一来源 + 一眼可读
+        # MiniMax vision 模型留空 → 走代码默认 fallback（图像 OCR 跳到 Kimi vision）
+        MINIMAX_VISION_MODEL: ${{ secrets.MINIMAX_VISION_MODEL }}
+        # Doubao Ark：Ark 控制台必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）
+        ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
+        ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
+        # 大型扫描 PDF + 多页 vision 调用需要 90s+，benchmark 实测 45s/60s 触发 50% 超时
+        ARK_TIMEOUT_MS: '180000'
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: DOCKER_USERNAME,SHA
+        envs: DOCKER_USERNAME,SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS
         command_timeout: 15m
         script: |
           set -e
@@ -231,12 +246,35 @@ jobs:
             fi
           done
 
-          # A.5 启动新容器（同样 network/port/mount，env 来自备份文件）
+          # A.5 启动新容器（同样 network/port/mount，env 来自备份文件 + Secrets 覆盖）
+          # 收集 OCR/LLM 相关 -e 行：有值才注入，空 secret 不写 -e（旧容器值保留）。
+          # 用 array 而非空格拼接的字符串，避免 API key 含特殊字符时的引号麻烦。
+          OCR_ENV_FLAGS=()
+          [ -n "$MINIMAX_API_KEY" ]      && OCR_ENV_FLAGS+=(-e "MINIMAX_API_KEY=$MINIMAX_API_KEY")
+          [ -n "$MINIMAX_VISION_MODEL" ] && OCR_ENV_FLAGS+=(-e "MINIMAX_VISION_MODEL=$MINIMAX_VISION_MODEL")
+          [ -n "$KIMI_API_KEY" ]         && OCR_ENV_FLAGS+=(-e "KIMI_API_KEY=$KIMI_API_KEY")
+          [ -n "$ARK_API_KEY" ]          && OCR_ENV_FLAGS+=(-e "ARK_API_KEY=$ARK_API_KEY")
+          # 以下三项是 workflow 里写死的字面量（非 secret），所以这里一定有值
+          OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=$ARK_VISION_MODEL")
+          OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=$ARK_BASE_URL")
+          OCR_ENV_FLAGS+=(-e "ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS")
+
+          # 摘要（只显示哪个键有值 + key 长度，避免日志泄漏明文）
+          echo "  OCR env override:"
+          [ -n "$MINIMAX_API_KEY" ]      && echo "    ✓ MINIMAX_API_KEY (len=${#MINIMAX_API_KEY})"      || echo "    ⚠ MINIMAX_API_KEY: 未设置 → 沿用旧 env"
+          [ -n "$MINIMAX_VISION_MODEL" ] && echo "    ✓ MINIMAX_VISION_MODEL=$MINIMAX_VISION_MODEL"     || echo "    ⚠ MINIMAX_VISION_MODEL: 未设置（图像 OCR 会跳到 Kimi vision）"
+          [ -n "$KIMI_API_KEY" ]         && echo "    ✓ KIMI_API_KEY (len=${#KIMI_API_KEY})"            || echo "    ⚠ KIMI_API_KEY: 未设置 → 沿用旧 env"
+          [ -n "$ARK_API_KEY" ]          && echo "    ✓ ARK_API_KEY (len=${#ARK_API_KEY})"              || echo "    ⚠ ARK_API_KEY: 未设置（Doubao 路径不可用）"
+          echo "    ✓ ARK_VISION_MODEL=$ARK_VISION_MODEL"
+          echo "    ✓ ARK_BASE_URL=$ARK_BASE_URL"
+          echo "    ✓ ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS"
+
           docker run -d --name treatbot-api \
             --network server_treatbot-network \
             --restart unless-stopped \
             -p 3000:3000 \
             --env-file "$BACKUP_ENV" \
+            "${OCR_ENV_FLAGS[@]}" \
             -v /opt/treatbot/server/data:/app/data \
             -v /opt/treatbot/server/logs:/app/logs \
             -v /opt/treatbot/server/uploads:/app/uploads \
