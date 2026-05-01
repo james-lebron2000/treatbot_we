@@ -172,8 +172,22 @@ jobs:
           fi
 
           # A.1 拉新镜像
+          # 生产 VM 在国内，到 registry-1.docker.io 经常 context deadline exceeded —— 同一 SHA 已多次因
+          # 单次 pull 超时整个 Deploy 失败（见 GH Actions run 25221303969 / 25221713652）。
+          # 加 3 次重试 + 30s 间隔，覆盖瞬时网络抖动；3 次都失败再放行原报错给后续步骤定位。
           NEW_IMG="${DOCKER_USERNAME}/treatbot-api:${SHA}"
-          docker pull "$NEW_IMG"
+          for attempt in 1 2 3; do
+            if docker pull "$NEW_IMG"; then
+              echo "  ✓ docker pull 成功 (attempt $attempt/3)"
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "  ❌ docker pull 连续 3 次失败 —— 中止 deploy（生产容器未替换，旧版本继续提供服务）"
+              exit 1
+            fi
+            echo "  ⚠ docker pull attempt $attempt/3 失败，30s 后重试…"
+            sleep 30
+          done
           docker tag  "$NEW_IMG" "treatbot-api:${SHA}"
 
           # A.2 备份旧镜像 + 旧 env 到独立 tag/file，永久保留
