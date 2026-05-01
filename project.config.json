@@ -2,10 +2,38 @@
   "description": "项目配置文件",
   "packOptions": {
     "ignore": [
-      {
-        "value": "docs",
-        "type": "folder"
-      }
+      { "value": "server", "type": "folder" },
+      { "value": "web", "type": "folder" },
+      { "value": "scripts", "type": "folder" },
+      { "value": "testdata", "type": "folder" },
+      { "value": "deploy", "type": "folder" },
+      { "value": "docs", "type": "folder" },
+      { "value": "node_modules", "type": "folder" },
+      { "value": ".git", "type": "folder" },
+      { "value": ".github", "type": "folder" },
+      { "value": ".vscode", "type": "folder" },
+      { "value": ".idea", "type": "folder" },
+      { "value": "tests", "type": "folder" },
+      { "value": "test", "type": "folder" },
+      { "value": "coverage", "type": "folder" },
+      { "value": "dist", "type": "folder" },
+      { "value": "build", "type": "folder" },
+      { "value": "md", "type": "suffix" },
+      { "value": "sh", "type": "suffix" },
+      { "value": "log", "type": "suffix" },
+      { "value": "Makefile", "type": "file" },
+      { "value": ".gitignore", "type": "file" },
+      { "value": ".gitattributes", "type": "file" },
+      { "value": ".editorconfig", "type": "file" },
+      { "value": ".prettierrc", "type": "file" },
+      { "value": ".eslintrc", "type": "file" },
+      { "value": ".eslintrc.js", "type": "file" },
+      { "value": ".eslintrc.json", "type": "file" },
+      { "value": ".DS_Store", "type": "file" },
+      { "value": "package.json", "type": "file" },
+      { "value": "package-lock.json", "type": "file" },
+      { "value": "yarn.lock", "type": "file" },
+      { "value": "pnpm-lock.yaml", "type": "file" }
     ],
     "include": []
   },
