@@ -96,7 +96,9 @@ Page({
       return
     }
 
-    wx.navigateTo({ url: `/pages/matches/matches?recordId=${id}` })
+    // PRD-2026Q3 §U7：病历 tab 点进每条记录，目标是「看自家病历的完整卡片 + 已匹配试验」
+    // —— 即 records/detail。匹配 tab 仍可独立浏览所有匹配。
+    wx.navigateTo({ url: `/pages/records/detail/detail?id=${encodeURIComponent(id)}` })
   },
 
   // PRD-2026Q2 §3.5：长按弹「删除」action sheet。后端 DELETE /medical/records/:id

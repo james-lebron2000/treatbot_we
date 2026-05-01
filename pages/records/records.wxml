@@ -30,8 +30,8 @@
         <text class="record-date">上传时间：{{item.uploadTime}}</text>
       </view>
       <view class="record-footer">
-        <text class="match-count" wx:if="{{item.matchCount > 0}}">已匹配 {{item.matchCount}} 个试验</text>
-        <text class="match-count" wx:else>暂无匹配结果</text>
+        <text class="match-count" wx:if="{{item.matchCount > 0}}">找到 {{item.matchCount}} 种新药</text>
+        <text class="match-count" wx:else>暂未找到能用的新药</text>
         <text class="gap-hint" wx:if="{{item.missingCount > 0}}">待补 {{item.missingCount}} 项</text>
         <text class="arrow">→</text>
       </view>

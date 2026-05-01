@@ -1,48 +1,169 @@
 <view class="container">
-  <view wx:if="{{record}}" class="detail-card">
-    <view class="detail-header">
-      <text class="type">{{record.type}}</text>
-      <text class="status">{{record.status === 'parsed' ? '已解析' : '处理中'}}</text>
-    </view>
+  <!-- 加载中（首屏 hydrate 过就会立刻消失） -->
+  <view wx:if="{{loading && !record}}" class="loading">
+    <text>正在为您整理这份病历…</text>
+  </view>
 
-    <view class="row">
-      <text class="label">诊断</text>
-      <text class="value">{{record.diagnosis || '未识别'}}</text>
-    </view>
-    <view class="row">
-      <text class="label">分期</text>
-      <text class="value">{{record.stage || '未识别'}}</text>
-    </view>
-    <view class="row">
-      <text class="label">基因突变</text>
-      <text class="value">{{record.geneMutation || '未识别'}}</text>
-    </view>
-    <view class="row">
-      <text class="label">既往治疗</text>
-      <text class="value">{{record.treatment || '未识别'}}</text>
-    </view>
-    <view class="row">
-      <text class="label">上传时间</text>
-      <text class="value">{{record.uploadTime || '-'}}</text>
+  <!-- 上传后跳转的「成功提示」横幅，让用户清楚地从「上传 → 看到病历视图」无缝衔接 -->
+  <view wx:if="{{fromUpload && record}}" class="upload-success-banner">
+    <text class="banner-icon">✓</text>
+    <view class="banner-body">
+      <text class="banner-title">看懂了 —— 这是为您整理好的病历</text>
+      <text class="banner-subtitle">下面是所有从这份病历里读出的关键信息。哪里不对可以联系我们改。</text>
     </view>
   </view>
 
-  <view wx:if="{{record && record.images && record.images.length}}" class="images-card">
-    <view class="images-title">原始病历图片</view>
-    <view class="images-list">
-      <image
-        wx:for="{{record.images}}"
-        wx:key="*this"
-        class="record-image"
-        src="{{item}}"
-        mode="aspectFill"
-        bindtap="previewImage"
-        data-current="{{item}}"
-      />
+  <!-- 病情摘要（最显眼，让医生 / 家属一眼能拿来口述） -->
+  <view wx:if="{{record}}" class="summary-card">
+    <view class="summary-head">
+      <text class="summary-kicker">一句话病情</text>
+      <view class="summary-status {{statusKey}}">{{statusText || '已解析'}}</view>
+    </view>
+    <text class="summary-text">{{record.diagnosis || '待补'}} · {{record.stage || '待补'}}{{record.geneMutation ? '（' + record.geneMutation + '）' : ''}}{{record.previousTreatments ? '；既往：' + record.previousTreatments : ''}}</text>
+    <view class="completeness">
+      <text class="completeness-label">关键信息完整度</text>
+      <view class="completeness-bar">
+        <view class="completeness-fill" style="width: {{summary.completeness}}%;"></view>
+      </view>
+      <text class="completeness-value">{{summary.completeness}}%</text>
+    </view>
+    <view wx:if="{{missingFields.length > 0}}" class="missing-tip">
+      <text class="missing-text">还有 {{missingFields.length}} 项关键信息未补全 —— 完整后才能找到更多能用的新药</text>
+      <text class="missing-link" bindtap="goToCompletion">去补全 →</text>
     </view>
   </view>
 
-  <view wx:if="{{!loading && !record}}" class="empty-state">
-    <text>暂无病历详情</text>
+  <!-- 基本信息 -->
+  <view wx:if="{{view}}" class="record-section">
+    <text class="record-section-title">基本信息</text>
+    <view class="kv-grid">
+      <view class="kv" wx:for="{{view.basic}}" wx:key="label">
+        <text class="kv-label">{{item.label}}</text>
+        <text class="kv-value">{{item.value}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 诊断 -->
+  <view wx:if="{{view}}" class="record-section">
+    <text class="record-section-title">诊断与肿瘤特征</text>
+    <view class="kv-grid">
+      <view class="kv" wx:for="{{view.diagnosis}}" wx:key="label">
+        <text class="kv-label">{{item.label}}</text>
+        <text class="kv-value {{item.highlight ? 'highlight' : ''}}">{{item.value}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 基因检测（geneMutation 切片成 chip） -->
+  <view wx:if="{{view && view.genes.length > 0}}" class="record-section">
+    <text class="record-section-title">基因检测</text>
+    <view class="gene-chips">
+      <view class="gene-chip" wx:for="{{view.genes}}" wx:key="*this">
+        <text class="gene-chip-text">{{item}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 治疗经历 -->
+  <view wx:if="{{view}}" class="record-section">
+    <text class="record-section-title">治疗经历</text>
+    <view class="treatment-summary">
+      <view class="treatment-line">
+        <text class="treatment-label">治疗线数</text>
+        <text class="treatment-value">{{view.treatment.line}}</text>
+      </view>
+      <view wx:if="{{view.treatment.chips.length > 0}}" class="treatment-chips">
+        <view class="treatment-chip" wx:for="{{view.treatment.chips}}" wx:key="*this">
+          <text>{{item}}</text>
+        </view>
+      </view>
+      <view wx:if="{{view.treatment.description !== '—'}}" class="treatment-desc">
+        <text class="treatment-label">治疗描述</text>
+        <text class="treatment-value">{{view.treatment.description}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 化验 -->
+  <view wx:if="{{view && view.labRows.length > 0}}" class="record-section">
+    <text class="record-section-title">关键化验</text>
+    <view class="lab-list">
+      <view class="lab-row" wx:for="{{view.labRows}}" wx:key="name">
+        <text class="lab-name">{{item.name}}</text>
+        <view class="lab-value-group">
+          <text class="lab-value">{{item.value}}</text>
+          <text class="lab-unit">{{item.unit}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 风险（HBV/HCV/HIV/感染/自免/移植/妊娠） -->
+  <view wx:if="{{view && view.riskRows.length > 0}}" class="record-section">
+    <text class="record-section-title">感染与禁忌</text>
+    <view class="kv-grid">
+      <view class="kv" wx:for="{{view.riskRows}}" wx:key="name">
+        <text class="kv-label">{{item.name}}</text>
+        <text class="kv-value">{{item.value}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 匹配的新药（病历 tab 持久化的核心要求） -->
+  <view wx:if="{{record}}" class="matches-section">
+    <view class="matches-section-head">
+      <text class="matches-title">为您找到的新药</text>
+      <text class="matches-count" wx:if="{{matchCount > 0}}">共 {{matchCount}} 种</text>
+      <text class="matches-count loading-tag" wx:elif="{{matchesLoading}}">查找中…</text>
+    </view>
+
+    <view wx:if="{{matchCount > 0}}" class="matches-list">
+      <view class="match-card" wx:for="{{matches}}" wx:key="id">
+        <view class="match-card-head">
+          <view class="match-card-name-group">
+            <text class="match-card-name">💊 {{item.drugName}}<text class="match-card-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            <text class="match-card-class" wx:if="{{item.drugClass}}">{{item.drugClass}}</text>
+          </view>
+          <view class="match-score-badge level-{{item.matchTone}}">
+            <text class="score">{{item.score}}%</text>
+            <text class="label">匹配度</text>
+          </view>
+        </view>
+        <view class="match-tags">
+          <text class="tag tag-free" wx:if="{{item.freeAccess}}">免费用药</text>
+          <text class="tag tag-level level-{{item.matchTone}}">{{item.matchLevel}}</text>
+          <text class="tag tag-primary" wx:if="{{item.phase}}">{{item.phase}}</text>
+          <text class="tag tag-warning" wx:if="{{item.status}}">{{item.status}}</text>
+        </view>
+        <text class="match-reason" wx:if="{{item.humanReason}}">为什么适合：{{item.humanReason}}</text>
+        <text class="match-meta" wx:if="{{item.indication}}">主治：{{item.indication}}</text>
+        <text class="match-meta" wx:if="{{item.manufacturer || item.institution}}">提供：{{item.manufacturer}}<text wx:if="{{item.manufacturer && item.institution}}"> ｜ </text>{{item.institution}}</text>
+      </view>
+    </view>
+
+    <view wx:elif="{{!matchesLoading}}" class="matches-empty">
+      <text class="matches-empty-text">还没有为这份病历预取到能用的新药。</text>
+      <text class="matches-empty-link" bindtap="goToMatches">去找新药 →</text>
+    </view>
+
+    <view wx:if="{{matchCount > 0}}" class="matches-cta" bindtap="goToMatches">
+      <text class="matches-cta-text">看完整新药详情 →</text>
+    </view>
+  </view>
+
+  <!-- 底部操作 -->
+  <view wx:if="{{record}}" class="footer-actions">
+    <view class="footer-secondary" bindtap="goBackToRecords">
+      <text>返回病历列表</text>
+    </view>
+    <view class="footer-primary" bindtap="goToMatches">
+      <text>看为家人找到的新药</text>
+    </view>
+  </view>
+
+  <!-- 错误兜底 -->
+  <view wx:if="{{!loading && !record && errorMessage}}" class="empty-state">
+    <text>{{errorMessage}}</text>
   </view>
 </view>

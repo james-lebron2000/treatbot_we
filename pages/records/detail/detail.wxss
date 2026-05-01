@@ -1,67 +1,518 @@
-.detail-card,
-.images-card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 30rpx;
-  margin-bottom: 20rpx;
-  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+/* PRD-2026Q3 §U7：详情页样式与 demo 的 record-card 保持视觉一致 */
+
+.container {
+  padding: 24rpx 24rpx 160rpx;
 }
 
-.detail-header {
+.loading {
+  padding: 80rpx 0;
+  text-align: center;
+  color: #374151;
+  font-size: 32rpx;
+}
+
+/* 上传后的成功条 */
+.upload-success-banner {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: stretch;
+  gap: 18rpx;
+  background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 2rpx solid #10b981;
+  border-radius: 24rpx;
+  padding: 22rpx;
   margin-bottom: 24rpx;
 }
 
-.type {
-  background: #e6f7ff;
-  color: #1890ff;
-  border-radius: 8rpx;
-  padding: 8rpx 18rpx;
-  font-size: 32rpx;
-}
-
-.status {
-  color: #52c41a;
-  font-size: 32rpx;
-}
-
-.row {
+.banner-icon {
   display: flex;
-  margin-bottom: 16rpx;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #10b981;
+  color: #fff;
+  font-size: 36rpx;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
-.row:last-child {
-  margin-bottom: 0;
-}
-
-.label {
-  width: 160rpx;
-  color: #666;
-  font-size: 34rpx;
-}
-
-.value {
+.banner-body {
   flex: 1;
-  color: #333;
-  font-size: 34rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
 }
 
-.images-title {
-  font-size: 38rpx;
+.banner-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #064e3b;
+}
+
+.banner-subtitle {
+  font-size: 26rpx;
+  color: #047857;
+  line-height: 1.55;
+}
+
+/* 病情摘要卡（最显眼） */
+.summary-card {
+  background: linear-gradient(145deg, #16344b 0%, #1f4e5f 60%, #2f6f75 100%);
+  color: #fff;
+  border-radius: 28rpx;
+  padding: 28rpx 26rpx;
+  margin-bottom: 22rpx;
+  box-shadow: 0 22rpx 42rpx rgba(15, 52, 75, 0.18);
+}
+
+.summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14rpx;
+}
+
+.summary-kicker {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 2rpx;
+}
+
+.summary-status {
+  font-size: 24rpx;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999rpx;
+  padding: 6rpx 18rpx;
+}
+
+.summary-status.parsed,
+.summary-status.completed {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.summary-status.parsing,
+.summary-status.uploading {
+  background: rgba(245, 158, 11, 0.4);
+}
+
+.summary-text {
+  display: block;
+  font-size: 30rpx;
+  line-height: 1.55;
   font-weight: 600;
-  margin-bottom: 16rpx;
+  margin-bottom: 22rpx;
 }
 
-.images-list {
+.completeness {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.completeness-label {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.completeness-bar {
+  flex: 1;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.completeness-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #34d399, #10b981);
+  border-radius: 999rpx;
+  transition: width 0.4s ease-out;
+}
+
+.completeness-value {
+  font-size: 26rpx;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.missing-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  margin-top: 18rpx;
+  padding: 14rpx 16rpx;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 16rpx;
+}
+
+.missing-text {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.55;
+  flex: 1;
+}
+
+.missing-link {
+  font-size: 28rpx;
+  color: #fde68a;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* 通用 record-section */
+.record-section {
+  background: #fff;
+  border-radius: 26rpx;
+  padding: 24rpx;
+  margin-bottom: 18rpx;
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 14rpx 28rpx rgba(15, 23, 42, 0.04);
+}
+
+.record-section-title {
+  display: block;
+  font-size: 28rpx;
+  color: #334155;
+  margin-bottom: 14rpx;
+  letter-spacing: 1rpx;
+}
+
+.kv-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16rpx;
+  gap: 14rpx;
 }
 
-.record-image {
-  width: 200rpx;
-  height: 200rpx;
+.kv {
+  flex: 1 1 calc(50% - 7rpx);
+  min-width: calc(50% - 7rpx);
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 12rpx 16rpx;
+  background: #f8fafc;
+  border-radius: 14rpx;
+}
+
+.kv-label {
+  font-size: 24rpx;
+  color: #334155;
+}
+
+.kv-value {
+  font-size: 28rpx;
+  color: #0f172a;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.kv-value.highlight {
+  color: #16344b;
+  font-weight: 700;
+}
+
+/* 基因 chip */
+.gene-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.gene-chip {
+  background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1rpx solid #34d399;
+  border-radius: 999rpx;
+  padding: 8rpx 20rpx;
+}
+
+.gene-chip-text {
+  font-size: 26rpx;
+  color: #065f46;
+  font-weight: 600;
+}
+
+/* 治疗 */
+.treatment-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.treatment-line,
+.treatment-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.treatment-label {
+  font-size: 24rpx;
+  color: #334155;
+}
+
+.treatment-value {
+  font-size: 26rpx;
+  color: #0f172a;
+  line-height: 1.55;
+}
+
+.treatment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.treatment-chip {
+  background: #e0e7ff;
+  border-radius: 999rpx;
+  padding: 6rpx 18rpx;
+}
+
+.treatment-chip text {
+  font-size: 26rpx;
+  color: #3730a3;
+}
+
+/* 化验 */
+.lab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.lab-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12rpx 16rpx;
+  background: #f8fafc;
+  border-radius: 14rpx;
+}
+
+.lab-name {
+  font-size: 26rpx;
+  color: #1e293b;
+}
+
+.lab-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.lab-value {
+  font-size: 28rpx;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.lab-unit {
+  font-size: 24rpx;
+  color: #334155;
+}
+
+/* 匹配结果 */
+.matches-section {
+  background: #fff;
+  border-radius: 26rpx;
+  padding: 24rpx;
+  margin-top: 24rpx;
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 14rpx 28rpx rgba(15, 23, 42, 0.04);
+}
+
+.matches-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.matches-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.matches-count {
+  font-size: 24rpx;
+  color: #16344b;
+  background: #e0e7ff;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+}
+
+.matches-count.loading-tag {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.matches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.match-card {
+  background: #f8fafc;
+  border-radius: 18rpx;
+  padding: 18rpx;
+  border: 1rpx solid #e2e8f0;
+}
+
+.match-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14rpx;
+  margin-bottom: 10rpx;
+}
+
+.match-card-name {
+  flex: 1;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.45;
+}
+
+.match-score-badge {
+  border-radius: 14rpx;
+  padding: 6rpx 12rpx;
+  text-align: center;
+  background: #f1f5f9;
+  flex-shrink: 0;
+}
+
+.match-score-badge.level-high { background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%); }
+.match-score-badge.level-mid { background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%); }
+.match-score-badge.level-low { background: linear-gradient(145deg, #fff7ed 0%, #fed7aa 100%); }
+
+.match-score-badge .score {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.match-score-badge .label {
+  display: block;
+  font-size: 20rpx;
+  color: #374151;
+}
+
+.match-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-bottom: 10rpx;
+}
+
+.tag {
+  font-size: 24rpx;
+  border-radius: 999rpx;
+  padding: 4rpx 14rpx;
+  line-height: 1.5;
+}
+
+.tag-level.level-high { background: #d1fae5; color: #065f46; }
+.tag-level.level-mid { background: #dbeafe; color: #1e40af; }
+.tag-level.level-low { background: #fed7aa; color: #9a3412; }
+.tag-primary { background: #e0e7ff; color: #3730a3; }
+.tag-warning { background: #fef3c7; color: #92400e; }
+
+.match-reason {
+  display: block;
+  font-size: 28rpx;
+  color: #065f46;
+  background: #ecfdf5;
   border-radius: 12rpx;
+  padding: 10rpx 14rpx;
+  margin-bottom: 8rpx;
+  line-height: 1.55;
+}
+
+.match-meta {
+  display: block;
+  font-size: 26rpx;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.matches-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  padding: 24rpx 0;
+}
+
+.matches-empty-text {
+  font-size: 28rpx;
+  color: #374151;
+}
+
+.matches-empty-link {
+  font-size: 28rpx;
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.matches-cta {
+  margin-top: 18rpx;
+  padding: 18rpx 0;
+  background: #16344b;
+  border-radius: 18rpx;
+  text-align: center;
+}
+
+.matches-cta-text {
+  font-size: 26rpx;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+}
+
+/* 底部固定操作 */
+.footer-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 14rpx;
+  padding: 18rpx 24rpx;
+  background: #fff;
+  box-shadow: 0 -8rpx 20rpx rgba(15, 23, 42, 0.06);
+  z-index: 10;
+}
+
+.footer-secondary,
+.footer-primary {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 18rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.footer-secondary {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.footer-primary {
+  background: linear-gradient(145deg, #16344b 0%, #2f6f75 100%);
+  color: #fff;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 80rpx 0;
+  color: #334155;
+  font-size: 30rpx;
 }

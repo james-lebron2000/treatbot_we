@@ -10,7 +10,8 @@
     "pages/matches/detail/detail",
     "pages/profile/profile",
     "pages/profile/consent/consent",
-    "pages/demo/demo"
+    "pages/demo/demo",
+    "pages/records/detail/detail"
   ],
   "window": {
     "backgroundTextStyle": "light",
