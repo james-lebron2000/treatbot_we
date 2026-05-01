@@ -1,0 +1,6 @@
+{
+  "//": "PRD-2026Q3：shared/ 下的 .js 文件是 CommonJS（WeApp `require()` 无法解析 .cjs / .json，只能用 .js 扩展）。但 web/package.json 里有 `\"type\": \"module\"`，Node 的包类型继承规则会让 Rollup 把这些 .js 当 ESM 解析，于是 `import help from '../../../shared/copy/help.js'` 报 `\"default\" is not exported`。在 shared/ 放一份 `\"type\": \"commonjs\"` 的 package.json 就能就地覆盖类型推断，让 Rollup 走 CJS 互操作（自动从 module.exports 合成 default 命名导出）。WeApp 的 require() 走自己的解析，不读这个 package.json，行为不变。",
+  "name": "treatbot-shared",
+  "private": true,
+  "type": "commonjs"
+}

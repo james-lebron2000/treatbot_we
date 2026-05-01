@@ -24,6 +24,18 @@ export default defineConfig({
     }
   },
   build: {
+    // shared/copy/*.js 是 CommonJS 模块（必须保留 .js 扩展，因为 WeApp `require()`
+    // 不识 .json / .cjs）。但 web/package.json 是 `"type": "module"`，Vite 默认
+    // 只会把 node_modules 下的 CJS 走 @rollup/plugin-commonjs 转 ESM；仓库内的
+    // shared/**/*.js 不在 include 范围，Rollup 会按 ESM 解析它们，于是
+    // `import help from '../../../shared/copy/help.js'` 报
+    // `"default" is not exported by "../shared/copy/help.js"`。
+    // 显式把 shared 目录加进 commonjsOptions.include 即可让 Rollup 走 CJS 互操作，
+    // 自动从 `module.exports = {...}` 合成 default 导出。WeApp 端走自己的
+    // require() 解析，与本配置无关。
+    commonjsOptions: {
+      include: [/node_modules/, /shared\/.*\.js$/]
+    },
     rollupOptions: {
       output: {
         manualChunks: {
