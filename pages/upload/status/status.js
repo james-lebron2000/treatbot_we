@@ -101,7 +101,7 @@ Page({
     wx.showToast({ title: '进入编辑模式', icon: 'none' })
   },
 
-  // 查看匹配试验
+  // 查看找到的新药
   goToMatches() {
     wx.switchTab({ url: '/pages/matches/matches' })
   },

@@ -25,10 +25,10 @@
 
   <view class="hero-section">
     <view class="hero-content">
-      <text class="hero-eyebrow">数愈健康 · 您的数据您做主</text>
+      <text class="hero-eyebrow">数愈健康 · 用药全程免费</text>
       <text class="hero-title">让每一份病历</text>
-      <text class="hero-title">都找到属于它的答案</text>
-      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、对接临床试验。数据完全由您掌管。</text>
+      <text class="hero-title">都找到能用的新药</text>
+      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、找到能免费用上的新药。数据完全由您掌管。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
@@ -36,11 +36,11 @@
   <view class="stats-section">
     <view class="stat-item">
       <text class="stat-number">5,000+</text>
-      <text class="stat-label">试验数据库</text>
+      <text class="stat-label">在研新药</text>
     </view>
     <view class="stat-item">
       <text class="stat-number">10,000+</text>
-      <text class="stat-label">成功匹配人数</text>
+      <text class="stat-label">已找到免费用药</text>
     </view>
     <view class="stat-item">
       <text class="stat-number">零</text>
@@ -55,7 +55,7 @@
        —— 删掉重复卡片，按钮文字简化为「开始」，描述/承诺信息全部摊到页面上。 -->
   <view class="feature-section">
     <view class="section-title">从这里开始</view>
-    <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到可能性」全程。</view>
+    <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到能用的新药」全程。</view>
 
     <view class="upload-hero">
       <view class="upload-hero-info">
@@ -64,8 +64,8 @@
           <text class="upload-hero-text">拍照、相册或 PDF 都行 —— 看不清的报告也能认</text>
         </view>
         <view class="upload-hero-line">
-          <text class="upload-hero-icon">⏱</text>
-          <text class="upload-hero-text">不到 2 分钟，您拿到一份能看懂的病历摘要</text>
+          <text class="upload-hero-icon">💊</text>
+          <text class="upload-hero-text">不到 2 分钟，您拿到一份能用的新药清单</text>
         </view>
         <view class="upload-hero-line">
           <text class="upload-hero-icon">🔒</text>
@@ -78,12 +78,12 @@
     </view>
 
     <!-- PRD-2026Q3 §U7：先看个例子。0 医学基础家属面对一个空首页常常不敢点
-         上传——给一个「无门槛预览」入口，看完一份完整的样例病历 + 匹配结果再决定。 -->
+         上传——给一个「无门槛预览」入口，看完一份完整的样例病历 + 新药匹配再决定。 -->
     <view class="demo-entry" bindtap="goToDemo" hover-class="demo-entry-hover">
       <view class="demo-entry-icon">▶</view>
       <view class="demo-entry-info">
         <text class="demo-entry-title">先看个例子</text>
-        <text class="demo-entry-desc">看一份完整的样例病历 + 匹配结果，了解上传后能拿到什么</text>
+        <text class="demo-entry-desc">看一份完整的样例病历 + 找到的新药，了解上传后能拿到什么</text>
       </view>
       <view class="demo-entry-arrow">›</view>
     </view>
@@ -100,7 +100,7 @@
     </view>
     <view class="processing-card-actions">
       <text class="processing-card-link" bindtap="goToRecords">看病历</text>
-      <text class="processing-card-link" bindtap="goToMatches">看可能性</text>
+      <text class="processing-card-link" bindtap="goToMatches">看新药</text>
     </view>
   </view>
 
@@ -114,26 +114,31 @@
 
   <view class="recent-section" wx:if="{{!loading && recentMatches.length > 0}}">
     <view class="section-header">
-      <text class="section-title">最近找到的可能性</text>
+      <text class="section-title">最近找到的新药</text>
       <text class="view-all" bindtap="goToMatches">看全部</text>
     </view>
 
     <view class="match-list">
       <view class="match-item" wx:for="{{recentMatches}}" wx:key="id" bindtap="viewMatchDetail" data-id="{{item.id}}">
         <view class="match-header">
-          <text class="match-title">{{item.trialName}}</text>
+          <view class="match-title-group">
+            <text class="match-drug-name">💊 {{item.drugName}}<text class="match-drug-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            <text class="match-drug-class" wx:if="{{item.drugClass}}">{{item.drugClass}}</text>
+          </view>
           <view class="match-score">
             <text class="score-value">{{item.matchScore}}%</text>
             <text class="score-label">匹配度</text>
           </view>
         </view>
         <view class="match-tags">
+          <text class="tag tag-free">免费用药</text>
           <text class="tag tag-primary">{{item.phase}}</text>
           <text class="tag tag-success">{{item.location}}</text>
         </view>
         <view class="match-info">
-          <text class="info-item">适应症：{{item.indication}}</text>
-          <text class="info-item">研究机构：{{item.institution}}</text>
+          <text class="info-item">主治：{{item.indication}}</text>
+          <text class="info-item" wx:if="{{item.manufacturer}}">提供：{{item.manufacturer}} ｜ {{item.institution}}</text>
+          <text class="info-item" wx:else>提供：{{item.institution}}</text>
         </view>
       </view>
     </view>
@@ -157,8 +162,8 @@
       <view class="step-arrow">→</view>
       <view class="step">
         <view class="step-number">3</view>
-        <text class="step-title">找到可能</text>
-        <text class="step-desc">对接合适试验</text>
+        <text class="step-title">找到新药</text>
+        <text class="step-desc">对接药企/医院</text>
       </view>
     </view>
   </view>

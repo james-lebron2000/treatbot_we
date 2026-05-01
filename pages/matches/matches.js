@@ -7,6 +7,8 @@ const { track } = require('../../utils/track')
 // U4：把后端返回的英文/术语 reasons 翻译成普通人能读懂的一句话。
 // 共享文案已从 .json 迁到 .js（WeApp require 不识 .json）；详见 shared/copy/glossary.js。
 const glossary = require('../../shared/copy/glossary.js')
+// 阿里健康/美团买药货架风格：把研究包装成"药品" — 主标题展示通用名/代号。
+const { resolveDrug } = require('../../utils/drug-extractor')
 
 const humanizeReasons = (reasons) => {
   if (!Array.isArray(reasons) || reasons.length === 0) return glossary.matchReasons.fallback
@@ -73,14 +75,26 @@ Page({
       return acc
     }, {})
 
-    return list.map((item) => ({
-      ...item,
-      expanded: !!expandedMap[`${item.id}`],
-      subCenters: splitSubCenters(item.location),
-      // U4：人话理由 —— 用 glossary 把 reasons 翻成普通人能看的一句话；
-      // 没有 reasons 时走 fallback「与您家人的情况比较接近」。
-      humanReason: humanizeReasons(item.reasons)
-    }))
+    return list.map((item) => {
+      const drug = resolveDrug(item)
+      return {
+        ...item,
+        expanded: !!expandedMap[`${item.id}`],
+        subCenters: splitSubCenters(item.location),
+        // U4：人话理由 —— 用 glossary 把 reasons 翻成普通人能看的一句话；
+        // 没有 reasons 时走 fallback「这种新药的招募条件和您家人比较接近」。
+        humanReason: humanizeReasons(item.reasons),
+        // 货架视图核心字段：把研究翻译成「药」— 优先用后端返回的 drug，
+        // 否则从 trial.name 词典抽取，再 fallback 到 type-based 占位。
+        drugName: drug.name,
+        drugCode: drug.code,
+        drugClass: drug.class,
+        drugForm: drug.form,
+        drugBrand: drug.brand,
+        manufacturer: drug.manufacturer,
+        freeAccess: drug.freeAccess
+      }
+    })
   },
 
   onLoad(options) {

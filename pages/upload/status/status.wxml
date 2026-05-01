@@ -51,7 +51,7 @@
     <!-- 操作按钮 -->
     <view class="action-btns">
       <button class="btn btn-default" bindtap="editResult">手动修正</button>
-      <button class="btn btn-primary" bindtap="goToMatches">查看匹配试验</button>
+      <button class="btn btn-primary" bindtap="goToMatches">查看找到的新药</button>
     </view>
   </view>
 

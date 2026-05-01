@@ -87,17 +87,17 @@ module.exports = {
     }
   },
   matchReasons: {
-    _meta: '把后端返回的英文/术语 reasons 翻译成一句话适合普通人读的「为什么这个研究适合您家人」。覆盖率 80% 即可，没命中的走 fallback「与您家人的情况比较接近」。',
-    diagnosis_match: '诊断对得上',
-    stage_match: '病情阶段在招募范围里',
+    _meta: '把后端返回的英文/术语 reasons 翻译成一句话适合普通人读的「为什么这种新药适合您家人」。覆盖率 80% 即可，没命中的走 fallback「这种新药的招募条件和您家人比较接近」。',
+    diagnosis_match: '诊断对得上，这种新药就是冲着这个病做的',
+    stage_match: '病情阶段在用药招募范围里',
     ecog_match: '体力要求您家人能达到',
-    gene_match: '基因结果完全吻合，这是最关键的一条',
-    age_match: '年龄符合',
-    treatment_line_match: '之前的治疗经历正好是这个研究招募的人群',
-    biomarker_match: '化验指标在范围内',
-    no_exclusion: '看了所有限制条件都没踩中',
-    location_match: '研究医院离您不远',
-    fallback: '和您家人的情况比较接近'
+    gene_match: '基因结果完全吻合，这种新药就是冲着这个基因变化设计的',
+    age_match: '年龄符合用药条件',
+    treatment_line_match: '之前的治疗经历正好是这种新药要找的人群',
+    biomarker_match: '化验指标在用药范围内',
+    no_exclusion: '看了所有用药限制都没踩中',
+    location_match: '提供这种新药的医院离您不远',
+    fallback: '这种新药的招募条件和您家人比较接近'
   },
   errors: {
     rate_limit: '您今天上传得有点多了，先歇会儿，过 10 分钟再来。',

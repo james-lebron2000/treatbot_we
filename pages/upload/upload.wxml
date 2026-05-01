@@ -12,7 +12,7 @@
     <view class="step-line {{currentStep >= 3 ? 'active' : ''}}"></view>
     <view class="step {{currentStep >= 3 ? 'active' : ''}}">
       <view class="step-dot">3</view>
-      <text class="step-text">核对并找试验</text>
+      <text class="step-text">核对并找新药</text>
     </view>
   </view>
 
@@ -136,12 +136,12 @@
 
       <view class="background-tip">
         <text class="background-tip-title">不用一直等着</text>
-        <text class="background-tip-text">我们会在后台继续帮您看懂这份病历，好了会通知您，可能适合的试验也一并准备好。</text>
+        <text class="background-tip-text">我们会在后台继续帮您看懂这份病历，好了会通知您，可能能用的新药也一并准备好。</text>
       </view>
 
       <view class="background-actions">
         <button class="btn btn-default" bindtap="goToRecords">先看病历</button>
-        <button class="btn btn-primary" bindtap="goToMatchesPage">等会儿看可能性</button>
+        <button class="btn btn-primary" bindtap="goToMatchesPage">等会儿看新药</button>
       </view>
     </view>
   </view>
@@ -236,7 +236,7 @@
 
     <view class="action-bar">
       <button class="btn btn-default" bindtap="editResult">信息已补好</button>
-      <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">看看为家人找到的可能性</button>
+      <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">看看为家人找到的新药</button>
     </view>
   </view>
 

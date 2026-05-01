@@ -2,6 +2,8 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const parseTask = require('../../utils/parse-task')
 const matchExplainer = require('../../utils/match-explainer')
+// 阿里健康/美团买药货架风格：把"研究"翻译成"药"作为卡片主标题。
+const { resolveDrug } = require('../../utils/drug-extractor')
 // PRD-2026Q3 §U5：首屏期望管理 banner 的文案 = shared/copy/help.js 的 expectations 段
 // （原 help.json 已迁移到 .js，因 WeApp require 不识别 .json，详见 shared/copy/help.js 顶部）
 const help = require('../../shared/copy/help.js')
@@ -20,9 +22,15 @@ const pickList = (res) => {
 }
 
 const normalizeMatch = (item) => {
+  const drug = resolveDrug(item)
   return {
     id: `${item.id || item.trialId || ''}`,
-    trialName: matchExplainer.safeText(item.trialName || item.name || item.title || '未命名临床试验'),
+    // trialName 仍保留作为副信息（详情页或追溯需要），但主标题 UI 用 drugName
+    trialName: matchExplainer.safeText(item.trialName || item.name || item.title || '未命名临床研究'),
+    drugName: drug.name,
+    drugCode: drug.code,
+    drugClass: drug.class,
+    manufacturer: drug.manufacturer,
     matchScore: Number(item.matchScore || item.score || 0),
     phase: matchExplainer.safeText(item.phase || item.trialPhase || '待补'),
     location: matchExplainer.safeText(item.location || item.city || '待补'),

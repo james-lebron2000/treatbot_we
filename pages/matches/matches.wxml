@@ -1,8 +1,8 @@
 <view class="container">
   <view class="page-header">
     <view class="page-title-group">
-      <text class="page-title">为家人找到的可能性</text>
-      <text class="page-subtitle">围绕您上传的病历，为家人找到可能适合的临床试验 —— 每一项都说清楚为什么。</text>
+      <text class="page-title">为家人找到的新药</text>
+      <text class="page-subtitle">围绕您上传的病历，为家人找出可能能免费用上的新药 —— 每一种都说清楚为什么适合。</text>
     </view>
     <view class="filter-btn" bindtap="loadMatches">
       <text>刷新</text>
@@ -12,7 +12,7 @@
   <view class="match-stats">
     <view class="stat-item">
       <text class="stat-value">{{matches.length}}</text>
-      <text class="stat-label">找到的可能性</text>
+      <text class="stat-label">找到的新药</text>
     </view>
     <view class="stat-item">
       <text class="stat-value">{{highMatches}}</text>
@@ -20,16 +20,16 @@
     </view>
     <view class="stat-item">
       <text class="stat-value">{{readyMatches}}</text>
-      <text class="stat-label">值得优先看</text>
+      <text class="stat-label">值得优先申请</text>
     </view>
   </view>
 
   <view class="score-rule-tip">
-    <text>我们先展示最匹配的几项 · 数量少会自动放宽标准让您多几个选择。</text>
+    <text>我们先展示最匹配的几种新药 · 数量少会自动放宽标准让您多几个选择。</text>
   </view>
 
   <view class="score-fallback-tip" wx:if="{{lowScoreMode}}">
-    <text>暂时没有高度匹配的结果 —— 我们放宽了标准，下面是还值得一看的候选。</text>
+    <text>暂时没有高度匹配的新药 —— 我们放宽了标准，下面是还值得一看的候选。</text>
   </view>
 
   <view class="processing-banner" wx:if="{{activeParseTask}}">
@@ -44,7 +44,7 @@
   </view>
 
   <view class="supplement-tip" wx:if="{{!loading && needSupplement > 0}}">
-    <text class="supplement-text">再补一点病历信息，{{needSupplement}} 个试验会评得更准。</text>
+    <text class="supplement-text">再补一点病历信息，{{needSupplement}} 种新药会评得更准。</text>
     <button class="supplement-btn" bindtap="goToUpload">去补一补</button>
   </view>
 
@@ -53,7 +53,7 @@
   </view>
 
   <view class="loading" wx:if="{{loading}}">
-    <text>正在为家人找合适的试验…</text>
+    <text>正在为家人找合适的新药…</text>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && errorMessage}}">
@@ -62,11 +62,22 @@
 
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
-      <!-- U4：人话理由 —— 置顶一行解释「为什么这个研究适合」，不取代下面的 score / decisionHint。 -->
+      <!-- U4：人话理由 —— 置顶一行解释「为什么这种新药适合」，不取代下面的 score / decisionHint。 -->
       <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
+
+      <!-- 货架卡片 header：药品名 = 主标题；类别/剂型 = 副标题；评分 = 右侧大徽章 -->
       <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
         <view class="match-content">
-          <text class="match-title">{{item.name}}</text>
+          <view class="drug-headline">
+            <text class="drug-icon">💊</text>
+            <text class="drug-name">{{item.drugName}}</text>
+            <text class="drug-code" wx:if="{{item.drugCode}}">/ {{item.drugCode}}</text>
+          </view>
+          <view class="drug-subline">
+            <text class="drug-class">{{item.drugClass}}</text>
+            <text class="drug-form" wx:if="{{item.drugForm}}"> · {{item.drugForm}}</text>
+            <text class="drug-brand" wx:if="{{item.drugBrand}}"> · {{item.drugBrand}}</text>
+          </view>
         </view>
         <view class="match-header-right">
           <view class="match-score-badge">
@@ -79,11 +90,12 @@
 
       <view class="match-card-summary">
         <view class="match-tags">
+          <text class="tag tag-free" wx:if="{{item.freeAccess}}">免费用药</text>
           <text class="tag tag-level level-{{item.score >= 80 ? 'high' : (item.score >= 60 ? 'mid' : 'low')}}">{{item.matchLevel}}</text>
           <text class="tag tag-primary">{{item.phase}}</text>
-          <text class="tag tag-warning">{{item.type}}</text>
         </view>
-        <text class="match-indication">{{item.indication}}</text>
+        <text class="match-indication">主治：{{item.indication}}</text>
+        <text class="match-source" wx:if="{{item.manufacturer}}">提供：{{item.manufacturer}}<text wx:if="{{item.institution && item.institution !== '待补'}}"> ｜ {{item.institution}}</text></text>
       </view>
 
       <view wx:if="{{item.expanded}}" class="match-card-expanded">
@@ -93,24 +105,25 @@
         </view>
 
         <view class="detail-panel">
-          <text class="detail-panel-title">分中心</text>
+          <text class="detail-panel-title">提供这种新药的医院</text>
           <view class="sub-center-list" wx:if="{{item.subCenters.length > 0}}">
             <text class="sub-center-chip" wx:for="{{item.subCenters}}" wx:for-item="center" wx:key="index">{{center}}</text>
           </view>
           <view class="column-empty" wx:else>
-            <text>分中心信息还没拿到，我们会继续跟进</text>
+            <text>医院信息还没拿到，我们会继续跟进</text>
           </view>
         </view>
 
         <view class="detail-panel">
-          <text class="detail-panel-title">基础信息</text>
-          <text class="match-meta" wx:if="{{item.institution}}">研究机构：{{item.institution}}</text>
-          <text class="match-meta" wx:if="{{item.nctId}}">试验编号：{{item.nctId}}</text>
+          <text class="detail-panel-title">来源信息</text>
+          <text class="match-meta" wx:if="{{item.manufacturer}}">药企：{{item.manufacturer}}</text>
+          <text class="match-meta" wx:if="{{item.institution}}">主导医院：{{item.institution}}</text>
+          <text class="match-meta" wx:if="{{item.nctId}}">研究编号：{{item.nctId}}</text>
           <text class="match-meta" wx:if="{{item.status}}">招募状态：{{item.status}}</text>
         </view>
 
         <view class="detail-panel" wx:if="{{item.inclusion.length > 0}}">
-          <text class="detail-panel-title">入选标准</text>
+          <text class="detail-panel-title">能用这种新药的条件</text>
           <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="criterion" wx:key="index">
             <text class="criteria-icon">+</text>
             <text class="criteria-text">{{criterion}}</text>
@@ -118,7 +131,7 @@
         </view>
 
         <view class="detail-panel" wx:if="{{item.exclusion.length > 0}}">
-          <text class="detail-panel-title">排除标准</text>
+          <text class="detail-panel-title">不能用这种新药的情况</text>
           <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="criterion" wx:key="index">
             <text class="criteria-icon">-</text>
             <text class="criteria-text">{{criterion}}</text>
@@ -126,15 +139,15 @@
         </view>
 
         <view class="match-actions">
-          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看详情</button>
-          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">想让研究团队联系我</button>
+          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看用药详情</button>
+          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">📞 申请免费用药</button>
         </view>
       </view>
     </view>
   </view>
 
   <view class="empty-state" wx:if="{{!loading && !errorMessage && matches.length === 0}}">
-    <text>目前没找到完全贴合的试验 —— 这不代表没有，我们每周更新试验库。</text>
+    <text>目前没找到完全贴合的新药 —— 这不代表没有，我们每周更新新药库。</text>
     <button class="btn btn-default mt-30" bindtap="loadMatches">再找一次</button>
   </view>
   <help-fab />
