@@ -27,19 +27,43 @@ class LlmSchemaError extends Error {
 /**
  * provider → endpoint config 表。新增 provider 在这里加一行即可。
  * apiKey / baseUrl / model 在调用时从 process.env 取，避免模块加载时缓存空值。
+ *
+ * `chatCompletionPath` 可选：默认 `/chat/completions`（OpenAI 兼容路径）。
+ * MiniMax 的官方文档路径是 `/text/chatcompletion_v2`，body 与 OpenAI 兼容。
  */
 const PROVIDER_REGISTRY = {
+  // MiniMax 是当前主推 provider（替换原 Kimi）；coding plan 凭证从 MINIMAX_API_KEY 取。
+  minimax: () => ({
+    apiKey: process.env.MINIMAX_API_KEY || '',
+    baseUrl: (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/+$/, ''),
+    model: process.env.MINIMAX_MODEL || 'MiniMax-Text-01',
+    timeoutMs: parseInt(process.env.MINIMAX_TIMEOUT_MS || '45000', 10),
+    chatCompletionPath: process.env.MINIMAX_CHAT_PATH || '/text/chatcompletion_v2'
+  }),
+  // Kimi 保留为可选 fallback；MINIMAX 不可用时可以启用 KIMI_API_KEY 顶上去。
   kimi: () => ({
     apiKey: process.env.KIMI_API_KEY || '',
     baseUrl: (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, ''),
     model: process.env.KIMI_MODEL || 'kimi-k2.5',
-    timeoutMs: parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10)
+    timeoutMs: parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10),
+    chatCompletionPath: '/chat/completions'
   }),
   openai: () => ({
     apiKey: process.env.OPENAI_API_KEY || '',
     baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
     model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS || '45000', 10)
+    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS || '45000', 10),
+    chatCompletionPath: '/chat/completions'
+  }),
+  // Doubao / 火山方舟 Ark（OpenAI 兼容协议）。
+  // 视觉默认模型：doubao-seed-1.6-vision；body shape 与 OpenAI/MiniMax 完全一致。
+  doubao: () => ({
+    apiKey: process.env.ARK_API_KEY || '',
+    baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
+    // Ark 必须用带版本后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
+    model: process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+    timeoutMs: parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10),
+    chatCompletionPath: '/chat/completions'
   })
 };
 
@@ -79,8 +103,11 @@ const callOnce = async (providerKey, messages, opts = {}) => {
     response_format: { type: 'json_object' }
   };
 
+  // 大多数 provider 走 OpenAI 兼容的 `/chat/completions`；MiniMax 走 `/text/chatcompletion_v2`。
+  // 二者 body shape 都是 OpenAI 风格（messages/model/temperature），只是 path 不同。
+  const chatPath = cfg.chatCompletionPath || '/chat/completions';
   const response = await axios.post(
-    `${cfg.baseUrl}/chat/completions`,
+    `${cfg.baseUrl}${chatPath}`,
     body,
     {
       timeout: opts.timeoutMs || cfg.timeoutMs,
@@ -108,7 +135,7 @@ const callOnce = async (providerKey, messages, opts = {}) => {
  * 主入口：调一次 → schema 不通过则换 temperature=0 重试一次 → 仍失败抛 LlmSchemaError。
  * 调用方按需在 catch 块里 fallback 到下一个 provider / 规则兜底。
  *
- * @param {string} provider 'kimi' | 'openai'
+ * @param {string} provider 'minimax' | 'kimi' | 'openai'
  * @param {Array} messages OpenAI 风格 messages 数组（已 PII 脱敏）
  * @param {import('zod').ZodTypeAny} schema zod schema
  * @param {object} [opts] 透传给 callOnce 的额外参数

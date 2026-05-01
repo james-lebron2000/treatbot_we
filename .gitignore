@@ -226,3 +226,9 @@ secrets.json
 
 # Large data files (use LFS or share separately)
 server/data/trials_data.json
+
+# Vision-LLM benchmark outputs (raw markdown + CSV; report is committed under docs/)
+bench-out/
+bench-out-*/
+bench-run*.log
+bench-out-stdout.log

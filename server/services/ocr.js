@@ -30,13 +30,44 @@ const classifyLlmError = (_llmObs && _llmObs.classifyLlmError)
   : () => 'other';
 
 const OCR_PROVIDER = (process.env.OCR_PROVIDER || 'auto').toLowerCase();
+
+// MiniMax（主 LLM provider，替换 Kimi）
+const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
+const MINIMAX_BASE_URL = (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/+$/, '');
+const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'MiniMax-Text-01';
+// Phase E.6 / Review #1：MiniMax-Text-01 是纯文本模型，不接受 image_url。
+// 多模态走 abab6.5s 系列（MiniMax 官方 vision-capable）。env 未配 → vision 路径自动跳过 MiniMax，
+// 直接降级到 Kimi vision，避免无谓的 API 报错和 30s 超时。
+const MINIMAX_VISION_MODEL = process.env.MINIMAX_VISION_MODEL || '';
+const _MINIMAX_TIMEOUT_MS = parseInt(process.env.MINIMAX_TIMEOUT_MS || '45000', 10);
+const hasMinimaxCredential = !!MINIMAX_API_KEY;
+// 只有同时配了 KEY + 多模态 MODEL 才允许走 image OCR
+const hasMinimaxVisionCredential = !!MINIMAX_API_KEY && !!MINIMAX_VISION_MODEL;
+
+// Kimi（保留为 fallback，未配置则跳过）
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
 const KIMI_BASE_URL = (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '');
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.5';
 const _KIMI_TIMEOUT_MS = parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10);
 
+// 修复方案 Track 2.4：仍保留模块级 boolean 给现有调用点（多处 if (hasKimiCredential)），
+// 但同时 require ocrConfig 用于「入口早抛」场景，避免静默走 4 层降级。
 const hasKimiCredential = !!KIMI_API_KEY;
+
+// Doubao / 火山方舟 Ark（OpenAI 兼容；本轮仅供 benchVisionLlm 离线脚本调用，
+// 生产 OCR pipeline 的 provider 路由由 Track B 决定后再接入 recognizeGeneral）
+const ARK_API_KEY = process.env.ARK_API_KEY || '';
+const ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, '');
+// Ark 必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
+// 备选：doubao-1-5-vision-pro-32k-250115
+const ARK_VISION_MODEL = process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
+// 大型扫描 PDF + 多页 vision 调用需要 90s+，timeout 默认 180s
+const _ARK_TIMEOUT_MS = parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10);
+const hasDoubaoCredential = !!ARK_API_KEY;
+const hasDoubaoVisionCredential = !!ARK_API_KEY;
+
 const hasTencentCredential = !!(process.env.OCR_SECRET_ID && process.env.OCR_SECRET_KEY);
+const ocrConfig = require('../utils/ocrConfig');
 
 const OcrClient = tencentcloud.ocr.v20181119.Client;
 const tencentClient = hasTencentCredential
@@ -240,6 +271,260 @@ const readPdfBuffer = async ({ sourceUrl, fileKey }) => {
     return Buffer.from(resp.data);
   }
   throw new Error('无法读取 PDF 内容：缺少 fileKey 和 sourceUrl');
+};
+
+// ============================================================================
+// MiniMax 主路径：覆盖 PDF / 纯文本 / 图片三种 OCR 入口。MiniMax 文件 API 用
+// `purpose=retrieval` 上传，再通过 `/files/retrieve_content` 取出文本，与 Kimi 流程对等。
+// ============================================================================
+
+/**
+ * 使用 MiniMax File API 处理 PDF（支持扫描件）
+ * 流程：上传 PDF → 取 retrieve_content 文本 → 走 MiniMax chat 抽取实体 → 删除文件
+ */
+const requestMinimaxPdf = async ({ sourceUrl, fileKey }) => {
+  if (!hasMinimaxCredential) {
+    throw new Error('MiniMax API Key 未配置');
+  }
+
+  const pdfBuffer = await readPdfBuffer({ sourceUrl, fileKey });
+
+  // Step 1: 上传 PDF（purpose=retrieval 是 MiniMax 文档约定的「文档抽取」用途，
+  // 上传成功后可以通过 /files/retrieve_content 拿到 MiniMax 解析过的纯文本）
+  const form = new FormData();
+  const filename = (fileKey ? path.basename(fileKey) : null) || 'medical.pdf';
+  form.append('file', pdfBuffer, { filename, contentType: 'application/pdf' });
+  form.append('purpose', 'retrieval');
+
+  let fileId = null;
+  try {
+    const uploadResp = await axios.post(
+      `${MINIMAX_BASE_URL}/files/upload`,
+      form,
+      {
+        timeout: 60000,
+        headers: {
+          Authorization: `Bearer ${MINIMAX_API_KEY}`,
+          ...form.getHeaders()
+        }
+      }
+    );
+    // MiniMax 上传响应形如 {file: {file_id, filename, ...}, base_resp: {...}}
+    fileId = uploadResp.data?.file?.file_id || uploadResp.data?.file_id;
+    if (!fileId) {
+      throw new Error('MiniMax 文件上传返回缺少 file_id');
+    }
+    logger.info('PDF 上传至 MiniMax 成功', { fileId, filename });
+  } catch (uploadErr) {
+    throw new Error(`MiniMax PDF 上传失败: ${uploadErr.message}`);
+  }
+
+  // Step 2: 拉取 MiniMax 解析后的文本
+  let extractedText = '';
+  try {
+    const contentResp = await axios.get(
+      `${MINIMAX_BASE_URL}/files/retrieve_content`,
+      {
+        timeout: 30000,
+        params: { file_id: fileId },
+        headers: { Authorization: `Bearer ${MINIMAX_API_KEY}` }
+      }
+    );
+    // 内容字段在不同版本可能叫 content / text / data；做兼容
+    const raw = typeof contentResp.data === 'string'
+      ? contentResp.data
+      : (contentResp.data?.content || contentResp.data?.text || contentResp.data?.data || '');
+    extractedText = `${raw || ''}`.trim();
+    // Q3-红线 §A.1.1：日志只记长度，不记原文。
+    logger.info('MiniMax 文件内容提取成功', { fileId, textLength: extractedText.length });
+  } catch (contentErr) {
+    logger.warn('MiniMax 文件内容获取失败，将直接在消息中引用文件', { fileId, error: contentErr.message });
+  }
+
+  let result = null;
+  // Q3-红线 §A.1.1：在 LLM 调用前做 PII 脱敏；mapping 严格活到本函数返回，从不入日志/库。
+  const { scrubbed, mapping } = scrubForLlm(extractedText.substring(0, 4000));
+  try {
+    // Q3-红线 §B.1：复用 prompts/v1/ocr-pdf.md（与 Kimi 共享同一份 prompt）。
+    const pdfPrompt = getPrompt('ocr-pdf', 'v1', { extractedText: scrubbed || '' });
+    // 文本为空（扫描件）时回退到 prompt 头 + 简短提示，让模型尽力描述图像内容。
+    // 注：MiniMax File API 的 file 引用方式与 Kimi 不同，扫描件文本若拿不到，
+    // 不再额外引用 file_id（避免 chat 端不识别），改为告诉模型「请基于上下文继续」。
+    const promptHeadOnly = getPrompt('ocr-pdf', 'v1', { extractedText: '' })
+      .user
+      .replace(/\n*病历文本：\s*$/, '')
+      .trim();
+
+    const userContent = scrubbed
+      ? pdfPrompt.user
+      : `${promptHeadOnly}\n\n（备注：当前 PDF 未解析出可用文本，请基于已知字段返回最可能的 JSON 占位结果）`;
+
+    const messages = [
+      { role: 'system', content: pdfPrompt.system },
+      { role: 'user', content: userContent }
+    ];
+
+    // Q3-红线 §A.3.2：LLM 调用埋点（PDF File API 模式）
+    const parsed = await instrumentLlmCall(
+      { provider: 'minimax', model: MINIMAX_MODEL, operation: 'ocr_pdf' },
+      () => chatJson('minimax', messages, OcrExtractionSchema)
+    );
+
+    const ecogRaw = parsed.ecog;
+    const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
+    const lineRaw = parsed.treatmentLine;
+    const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
+
+    const entities = {
+      diagnosis: parsed.diagnosis || null,
+      stage: parsed.stage || null,
+      geneMutation: parsed.geneMutation || null,
+      treatment: parsed.treatment || null,
+      ecog: Number.isFinite(ecogValue) && ecogValue >= 0 && ecogValue <= 4 ? ecogValue : null,
+      pdl1: parsed.pdl1 || null,
+      treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null
+    };
+
+    const restoredEntities = restoreFromLlm(entities, mapping);
+    const normalizedConfidence = Number(parsed.confidence);
+    result = {
+      success: true,
+      provider: 'minimax_pdf',
+      text: (parsed.rawText || '').toString(),
+      entities: restoredEntities,
+      confidence: Number.isFinite(normalizedConfidence)
+        ? Math.max(0, Math.min(1, normalizedConfidence))
+        : estimateConfidence(restoredEntities),
+      detections: []
+    };
+  } finally {
+    // Step 3: 清理上传的文件（MiniMax 用 DELETE /files/delete?file_id=...）
+    try {
+      await axios.delete(`${MINIMAX_BASE_URL}/files/delete`, {
+        timeout: 10000,
+        params: { file_id: fileId },
+        headers: { Authorization: `Bearer ${MINIMAX_API_KEY}` }
+      });
+      logger.info('MiniMax 临时文件已清理', { fileId });
+    } catch (delErr) {
+      logger.warn('MiniMax 临时文件清理失败（无害）', { fileId, error: delErr.message });
+    }
+  }
+
+  return result;
+};
+
+/**
+ * 使用 MiniMax 多模态模型对图像做 OCR + 实体抽取。
+ *
+ * 注意：必须用 MINIMAX_VISION_MODEL（如 abab6.5s-chat）才能接受 image_url；
+ * 纯文本模型 MiniMax-Text-01 会 4xx。调用前 hasMinimaxVisionCredential 已经过滤，
+ * 这里直接传 model override 给 chatJson。
+ */
+const requestMinimax = async (imageRef) => {
+  if (!hasMinimaxVisionCredential) {
+    throw new Error('MiniMax 视觉模型未配置（需 MINIMAX_VISION_MODEL）');
+  }
+  // Q3-红线 §B.1：从 prompts/v1/ocr-image.md 读取版本化 prompt（与 Kimi 共享）。
+  const imagePrompt = getPrompt('ocr-image', 'v1', {});
+  const messages = [
+    { role: 'system', content: imagePrompt.system },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: imagePrompt.user },
+        { type: 'image_url', image_url: { url: imageRef } }
+      ]
+    }
+  ];
+
+  const parsed = await instrumentLlmCall(
+    { provider: 'minimax', model: MINIMAX_VISION_MODEL, operation: 'ocr_image' },
+    () => chatJson('minimax', messages, OcrExtractionSchema, { model: MINIMAX_VISION_MODEL })
+  );
+
+  const entities = parseKimiEntities(parsed); // 复用同一套字段抽取逻辑
+  const normalizedConfidence = Number(parsed.confidence);
+
+  return {
+    success: true,
+    provider: 'minimax',
+    text: (parsed.rawText || '').toString(),
+    entities,
+    confidence: Number.isFinite(normalizedConfidence)
+      ? Math.max(0, Math.min(1, normalizedConfidence))
+      : estimateConfidence(entities),
+    detections: []
+  };
+};
+
+/**
+ * 使用 MiniMax 对纯文本（已提取的 PDF 文本 / markitdown 输出）做结构化抽取
+ */
+const requestMinimaxText = async (text) => {
+  if (!hasMinimaxCredential) {
+    throw new Error('MiniMax API Key 未配置');
+  }
+
+  const safeInput = (text || '').substring(0, 4000);
+  const { scrubbed, mapping } = scrubForLlm(safeInput);
+
+  // Prompt 与 requestKimiText 完全一致 —— 都是结构化字段抽取。
+  const messages = [
+    {
+      role: 'system',
+      content: '你是医疗病历信息抽取助手。必须返回JSON对象，不要输出其他文本。文本中的 <PHONE_x>/<NAME_x>/<ID_x> 是占位符，请原样保留在 rawText 中，不要尝试推断真实值。'
+    },
+    {
+      role: 'user',
+      content: [
+        '请从以下病历文本中提取字段，返回 JSON：',
+        '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "age": null, "weight": null, "height": null, "comorbidities": [], "priorTherapies": [], "labValues": {}, "bloodCounts": {}, "fertilityStatus": null, "confidence": 0.0 }',
+        '要求：',
+        '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"或"肺腺癌"',
+        '2) stage：AJCC分期，如"IVA期"，或临床描述"晚期"/"局部晚期"',
+        '3) geneMutation：基因变异，如"EGFR 19del阳性"，多个用分号分隔',
+        '4) pdl1：PD-L1表达，如"TPS 80%"或"CPS 15"，不存在填null',
+        '5) treatment：既往治疗史，如"铂类化疗2周期"',
+        '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
+        '7) ecog：0~4整数或null',
+        '8) age：患者年龄（整数），不存在填null',
+        '9) weight：体重(kg)，不存在填null',
+        '10) height：身高(cm)，不存在填null',
+        '11) comorbidities：合并症数组，如["脑转移","高血压"]，无则填[]',
+        '12) priorTherapies：既往具体治疗方案数组，如["曲妥珠单抗","FOLFOX"]，无则填[]',
+        '13) labValues：肝肾功能对象，如{"ALT":{"value":35,"unit":"U/L"}}，无则填{}',
+        '14) bloodCounts：血常规对象，如{"WBC":{"value":5.2,"unit":"×10⁹/L"}}，无则填{}',
+        '15) fertilityStatus：生育状态，不存在填null',
+        '16) confidence：0~1置信度',
+        '17) rawText：保留核心原文，不超过2000字符',
+        '所有字段不存在则填null/[]/{} 对应类型',
+        '',
+        '病历文本：',
+        scrubbed
+      ].join('\n')
+    }
+  ];
+
+  const parsed = await instrumentLlmCall(
+    { provider: 'minimax', model: MINIMAX_MODEL, operation: 'ocr_text' },
+    () => chatJson('minimax', messages, OcrExtractionSchema)
+  );
+
+  const entities = parseKimiEntities(parsed);
+  const normalizedConfidence = Number(parsed.confidence);
+  const restoredEntities = restoreFromLlm(entities, mapping);
+
+  return {
+    success: true,
+    provider: 'minimax_text',
+    text: (parsed.rawText || scrubbed).toString(),
+    entities: restoredEntities,
+    confidence: Number.isFinite(normalizedConfidence)
+      ? Math.max(0, Math.min(1, normalizedConfidence))
+      : estimateConfidence(restoredEntities),
+    detections: []
+  };
 };
 
 /**
@@ -750,6 +1035,169 @@ const requestKimiText = async (text) => {
   };
 };
 
+// ============================================================================
+// Doubao（火山方舟 Ark）路径：OpenAI 兼容协议，与 MiniMax/Kimi 对齐三件套：
+//   - requestDoubao(imageRef)              → 视觉 OCR
+//   - requestDoubaoText(text)              → 纯文本结构化抽取
+//   - requestDoubaoPdf({ sourceUrl, ... }) → PDF 抽文本后走 requestDoubaoText
+//                                            （Ark 暂未稳定提供文件抽取端点，故走 pdf-parse）
+// 本轮（Track A）仅供 server/scripts/benchVisionLlm.js 离线 benchmark 使用；
+// 生产 OCR pipeline 的 provider 路由（recognizeGeneral / processMedicalImage）暂不挂接。
+// ============================================================================
+
+const requestDoubao = async (imageRef) => {
+  if (!hasDoubaoVisionCredential) {
+    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
+  }
+  // Q3-红线 §B.1：与 MiniMax/Kimi 共享 prompts/v1/ocr-image.md
+  const imagePrompt = getPrompt('ocr-image', 'v1', {});
+  const messages = [
+    { role: 'system', content: imagePrompt.system },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: imagePrompt.user },
+        { type: 'image_url', image_url: { url: imageRef } }
+      ]
+    }
+  ];
+
+  const parsed = await instrumentLlmCall(
+    { provider: 'doubao', model: ARK_VISION_MODEL, operation: 'ocr_image' },
+    () => chatJson('doubao', messages, OcrExtractionSchema, { model: ARK_VISION_MODEL })
+  );
+
+  const entities = parseKimiEntities(parsed); // 复用同一套字段抽取
+  const normalizedConfidence = Number(parsed.confidence);
+
+  return {
+    success: true,
+    provider: 'doubao',
+    text: (parsed.rawText || '').toString(),
+    entities,
+    confidence: Number.isFinite(normalizedConfidence)
+      ? Math.max(0, Math.min(1, normalizedConfidence))
+      : estimateConfidence(entities),
+    detections: []
+  };
+};
+
+const requestDoubaoText = async (text) => {
+  if (!hasDoubaoCredential) {
+    throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
+  }
+
+  const safeInput = (text || '').substring(0, 4000);
+  const { scrubbed, mapping } = scrubForLlm(safeInput);
+
+  // Prompt 与 requestMinimaxText / requestKimiText 完全对称
+  const messages = [
+    {
+      role: 'system',
+      content: '你是医疗病历信息抽取助手。必须返回JSON对象，不要输出其他文本。文本中的 <PHONE_x>/<NAME_x>/<ID_x> 是占位符，请原样保留在 rawText 中，不要尝试推断真实值。'
+    },
+    {
+      role: 'user',
+      content: [
+        '请从以下病历文本中提取字段，返回 JSON：',
+        '{ "rawText": "", "diagnosis": null, "stage": null, "geneMutation": null, "pdl1": null, "treatment": null, "treatmentLine": null, "ecog": null, "age": null, "weight": null, "height": null, "comorbidities": [], "priorTherapies": [], "labValues": {}, "bloodCounts": {}, "fertilityStatus": null, "confidence": 0.0 }',
+        '要求：',
+        '1) diagnosis：规范化诊断名称，如"非小细胞肺癌"或"肺腺癌"',
+        '2) stage：AJCC分期，如"IVA期"，或临床描述"晚期"/"局部晚期"',
+        '3) geneMutation：基因变异，如"EGFR 19del阳性"，多个用分号分隔',
+        '4) pdl1：PD-L1表达，如"TPS 80%"或"CPS 15"，不存在填null',
+        '5) treatment：既往治疗史，如"铂类化疗2周期"',
+        '6) treatmentLine：患者当前需要的治疗线数（整数），如一线治疗失败后填2，不存在填null',
+        '7) ecog：0~4整数或null',
+        '8) age：患者年龄（整数），不存在填null',
+        '9) weight：体重(kg)，不存在填null',
+        '10) height：身高(cm)，不存在填null',
+        '11) comorbidities：合并症数组，如["脑转移","高血压"]，无则填[]',
+        '12) priorTherapies：既往具体治疗方案数组，如["曲妥珠单抗","FOLFOX"]，无则填[]',
+        '13) labValues：肝肾功能对象，如{"ALT":{"value":35,"unit":"U/L"}}，无则填{}',
+        '14) bloodCounts：血常规对象，如{"WBC":{"value":5.2,"unit":"×10⁹/L"}}，无则填{}',
+        '15) fertilityStatus：生育状态，不存在填null',
+        '16) confidence：0~1置信度',
+        '17) rawText：保留核心原文，不超过2000字符',
+        '所有字段不存在则填null/[]/{} 对应类型',
+        '',
+        '病历文本：',
+        scrubbed
+      ].join('\n')
+    }
+  ];
+
+  const parsed = await instrumentLlmCall(
+    { provider: 'doubao', model: ARK_VISION_MODEL, operation: 'ocr_text' },
+    () => chatJson('doubao', messages, OcrExtractionSchema, { model: ARK_VISION_MODEL })
+  );
+
+  const entities = parseKimiEntities(parsed);
+  const normalizedConfidence = Number(parsed.confidence);
+  const restoredEntities = restoreFromLlm(entities, mapping);
+
+  return {
+    success: true,
+    provider: 'doubao_text',
+    text: (parsed.rawText || scrubbed).toString(),
+    entities: restoredEntities,
+    confidence: Number.isFinite(normalizedConfidence)
+      ? Math.max(0, Math.min(1, normalizedConfidence))
+      : estimateConfidence(restoredEntities),
+    detections: []
+  };
+};
+
+/**
+ * Doubao PDF 处理：Ark 暂未稳定提供文件抽取端点（不像 MiniMax /files/retrieve_content
+ * 或 Kimi /files purpose=file-extract），所以这里走「pdf-parse 抽文本 → requestDoubaoText」。
+ * 扫描件 PDF 没有文本层时返回空文本 → 调用方应改走 vision 路径（pdftoppm 拆页 → requestDoubao）。
+ */
+const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
+  if (!hasDoubaoCredential) {
+    throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
+  }
+
+  const pdfBuffer = await readPdfBuffer({ sourceUrl, fileKey });
+  let extractedText = '';
+  try {
+    const parsedPdf = await pdfParse(pdfBuffer);
+    extractedText = `${parsedPdf.text || ''}`.trim();
+    logger.info('Doubao PDF 文本抽取（pdf-parse）', { textLength: extractedText.length });
+  } catch (parseErr) {
+    logger.warn('Doubao PDF pdf-parse 失败（可能为扫描件）', { error: parseErr.message });
+    extractedText = '';
+  }
+
+  if (!extractedText) {
+    throw new Error('Doubao PDF 抽空文本（疑似扫描件）：请走 vision 路径（pdftoppm 拆页）');
+  }
+
+  const result = await requestDoubaoText(extractedText.substring(0, 4000));
+  return { ...result, provider: 'doubao_pdf' };
+};
+
+// MiniMax 替换 Kimi 后，主推 MiniMax；保留 Kimi 作为可选 fallback。
+// recognizeByMinimax 与 recognizeByKimi 同 shape：URL 优先，私网/失败回退到 base64。
+const recognizeByMinimax = async ({ imageUrl, fileKey, mimeType }) => {
+  if (!hasMinimaxCredential) {
+    throw new Error('MiniMax API Key 未配置');
+  }
+
+  if (isPrivateOrIpUrl(imageUrl)) {
+    const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
+    return requestMinimax(dataUrl);
+  }
+
+  try {
+    return await requestMinimax(imageUrl);
+  } catch (firstError) {
+    logger.warn('MiniMax URL 模式失败，尝试 Base64 回退', { error: firstError.message });
+    const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
+    return requestMinimax(dataUrl);
+  }
+};
+
 const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
   if (!hasKimiCredential) {
     throw new Error('Kimi API Key 未配置');
@@ -845,6 +1293,15 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
   const attemptedProviders = new Set();
 
   try {
+    // 主路径：MiniMax（替换原 Kimi 默认主路径）
+    // - OCR_PROVIDER=minimax → 强制 MiniMax
+    // - OCR_PROVIDER=auto + 有 MiniMax vision 凭证 → 优先 MiniMax
+    // 注意（Phase E.6 / Review #1）：image OCR 必须用 hasMinimaxVisionCredential，纯文本模型 MiniMax-Text-01 无法接受 image_url。
+    if (providerPreference === 'minimax' || (providerPreference === 'auto' && hasMinimaxVisionCredential)) {
+      attemptedProviders.add('minimax');
+      return await recognizeByMinimax({ imageUrl, fileKey, mimeType });
+    }
+
     if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential)) {
       attemptedProviders.add('kimi');
       return await recognizeByKimi({ imageUrl, fileKey, mimeType });
@@ -864,6 +1321,16 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     // Q3-红线 §A.3.2：标记 fallback 触发（计入 llm_fallback_triggered_total）
     const fromProvider = [...attemptedProviders][0] || providerPreference || 'unknown';
     const fallbackReason = classifyLlmError(error);
+
+    // 回退顺序：MiniMax(vision) → Kimi → Tencent → 规则。
+    if (hasMinimaxVisionCredential && providerPreference !== 'minimax' && !attemptedProviders.has('minimax')) {
+      try {
+        recordLlmFallback(fromProvider, 'minimax', fallbackReason);
+        return await recognizeByMinimax({ imageUrl, fileKey, mimeType });
+      } catch (e) {
+        logger.warn('MiniMax 回退失败', { error: e.message });
+      }
+    }
 
     if (hasKimiCredential && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
@@ -927,7 +1394,25 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
     markdownLength: markdown.length
   });
 
-  // 优先用 Kimi 进行结构化抽取
+  // 优先用 MiniMax 进行结构化抽取（替换原 Kimi 主路径）
+  if (hasMinimaxCredential) {
+    try {
+      const mmResult = await requestMinimaxText(markdown);
+      return {
+        success: true,
+        text: mmResult.text || markdown,
+        entities: mmResult.entities,
+        confidence: mmResult.confidence,
+        detections: [],
+        // 修复方案 Track 2.2：返回 provider 让 queue 在解析失败时能在错误信息里写明具体哪一层降级。
+        provider: 'markitdown+minimax'
+      };
+    } catch (mmErr) {
+      logger.warn('markitdown + MiniMax 文本抽取失败，尝试 Kimi 回退', { error: mmErr.message });
+    }
+  }
+
+  // 次选：Kimi 文本抽取（fallback）
   if (hasKimiCredential) {
     try {
       const kimiResult = await requestKimiText(markdown);
@@ -936,21 +1421,23 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
         text: kimiResult.text || markdown,
         entities: kimiResult.entities,
         confidence: kimiResult.confidence,
-        detections: []
+        detections: [],
+        provider: 'markitdown+kimi'
       };
     } catch (kimiErr) {
       logger.warn('markitdown + Kimi 文本抽取失败，降级到规则', { error: kimiErr.message });
     }
   }
 
-  // 无 Kimi 或 Kimi 失败：用规则兜底
+  // 无 LLM 或 LLM 失败：用规则兜底
   const entities = extractMedicalEntities(markdown);
   return {
     success: true,
     text: markdown,
     entities,
     confidence: estimateConfidence(entities),
-    detections: []
+    detections: [],
+    provider: 'markitdown+rule'
   };
 };
 
@@ -968,6 +1455,15 @@ const processMedicalImage = async (imageUrl) => {
       throw new Error('缺少可识别的文件地址');
     }
 
+    // 修复方案 Track 2.1：缺所有 OCR 凭证时直接抛 OCR_NOT_CONFIGURED，
+    // 不再走 4 层降级让用户白等 30 秒最后落到一句通用 toast。
+    // 客户端会展示 errorMsg + 让用户跳手动录入。
+    if (!ocrConfig.isOcrEnabled()) {
+      const err = new Error('OCR_NOT_CONFIGURED: 该环境暂不支持自动解析，请联系管理员配置 MINIMAX_API_KEY（推荐）/ KIMI_API_KEY 或腾讯云 OCR 凭证');
+      err.code = 'OCR_NOT_CONFIGURED';
+      throw err;
+    }
+
     // 第一优先级：markitdown 预处理（对 PDF 文本型文件效果最佳）
     try {
       const markitdownResult = await tryMarkitdownPipeline({
@@ -976,7 +1472,7 @@ const processMedicalImage = async (imageUrl) => {
         mimeType: source.mimeType
       });
       if (markitdownResult) {
-        logger.info('markitdown 管线成功，跳过传统 OCR', { provider: 'markitdown' });
+        logger.info('markitdown 管线成功，跳过传统 OCR', { provider: markitdownResult.provider || 'markitdown' });
         return markitdownResult;
       }
     } catch (mdErr) {
@@ -989,7 +1485,28 @@ const processMedicalImage = async (imageUrl) => {
       mimeType: source.mimeType,
       fileKey: source.fileKey
     })) {
-      // 优先路径：Kimi File API（原生支持扫描件 PDF，无需图片转换）
+      // 主路径：MiniMax File API（替换原 Kimi 主路径）
+      if (hasMinimaxCredential) {
+        try {
+          const mmPdfResult = await requestMinimaxPdf({
+            sourceUrl,
+            fileKey: source.fileKey
+          });
+          logger.info('PDF 走 MiniMax File API 模式完成', { provider: mmPdfResult.provider });
+          return {
+            success: true,
+            text: mmPdfResult.text,
+            entities: mmPdfResult.entities,
+            confidence: mmPdfResult.confidence,
+            detections: [],
+            provider: mmPdfResult.provider || 'minimax_pdf'
+          };
+        } catch (mmPdfErr) {
+          logger.warn('MiniMax File API 处理 PDF 失败，尝试 Kimi File API 回退', { error: mmPdfErr.message });
+        }
+      }
+
+      // 次选：Kimi File API（fallback，原 Kimi 主路径）
       if (hasKimiCredential) {
         try {
           const kimiPdfResult = await requestKimiPdf({
@@ -1002,7 +1519,8 @@ const processMedicalImage = async (imageUrl) => {
             text: kimiPdfResult.text,
             entities: kimiPdfResult.entities,
             confidence: kimiPdfResult.confidence,
-            detections: []
+            detections: [],
+            provider: kimiPdfResult.provider || 'kimi_pdf'
           };
         } catch (kimiPdfErr) {
           logger.warn('Kimi File API 处理 PDF 失败，降级到文本解析', { error: kimiPdfErr.message });
@@ -1019,7 +1537,25 @@ const processMedicalImage = async (imageUrl) => {
         logger.warn('PDF 文本层解析失败', { error: pdfError.message });
       }
 
-      // 有文本则用 Kimi 文本模式结构化（更准确）
+      // 有文本则优先用 MiniMax 文本模式结构化
+      if (text && hasMinimaxCredential) {
+        try {
+          const mmResult = await requestMinimaxText(text);
+          logger.info('PDF 走 MiniMax 文本模式结构化完成');
+          return {
+            success: true,
+            text: mmResult.text || text,
+            entities: mmResult.entities,
+            confidence: mmResult.confidence,
+            detections: [],
+            provider: mmResult.provider || 'pdf_minimax_text'
+          };
+        } catch (mmErr) {
+          logger.warn('PDF MiniMax 文本模式失败，尝试 Kimi 文本模式回退', { error: mmErr.message });
+        }
+      }
+
+      // 次选：Kimi 文本模式（fallback）
       if (text && hasKimiCredential) {
         try {
           const kimiResult = await requestKimiText(text);
@@ -1029,7 +1565,8 @@ const processMedicalImage = async (imageUrl) => {
             text: kimiResult.text || text,
             entities: kimiResult.entities,
             confidence: kimiResult.confidence,
-            detections: []
+            detections: [],
+            provider: kimiResult.provider || 'pdf_kimi_text'
           };
         } catch (kimiErr) {
           logger.warn('PDF Kimi 文本模式失败，降级到规则抽取', { error: kimiErr.message });
@@ -1043,7 +1580,8 @@ const processMedicalImage = async (imageUrl) => {
         text,
         entities,
         confidence: estimateConfidence(entities),
-        detections: []
+        detections: [],
+        provider: 'pdf_rule'
       };
     }
 
@@ -1057,7 +1595,8 @@ const processMedicalImage = async (imageUrl) => {
       text: result.text,
       entities: result.entities,
       confidence: result.confidence,
-      detections: result.detections
+      detections: result.detections,
+      provider: result.provider || 'image'
     };
   } catch (error) {
     logger.error('医疗图片处理失败:', error);
@@ -1070,8 +1609,18 @@ module.exports = {
   recognizeMedical,
   extractMedicalEntities,
   processMedicalImage,
+  // MiniMax（主推 provider，替换原 Kimi）
+  requestMinimax,
+  requestMinimaxText,
+  requestMinimaxPdf,
+  // Kimi（fallback，仍保留供过渡期与旧测试引用）
+  requestKimi,
   requestKimiText,
   requestKimiPdf,
+  // Doubao（火山方舟 Ark；本轮仅供 server/scripts/benchVisionLlm.js 离线 benchmark）
+  requestDoubao,
+  requestDoubaoText,
+  requestDoubaoPdf,
   // exposed for unit tests
   __testables: {
     isPrivateOrIpUrl,
