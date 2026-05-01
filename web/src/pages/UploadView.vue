@@ -78,7 +78,11 @@
         </div>
 
         <button class="btn primary" :disabled="uploading || !files.length" @click="uploadAndParse" style="width:100%;padding:12px;">
-          {{ uploading ? `正在帮您看懂第 ${uploadIndex}/${files.length} 份…` : '开始解析（约 3 分钟）' }}
+          {{ uploading
+            ? (batchStats.total > 1
+                ? `已处理 ${batchStats.completedCount + batchStats.erroredCount}/${batchStats.total} 份…`
+                : '正在帮您看懂…')
+            : (files.length > 1 ? `开始批量解析 ${files.length} 份（约 3-5 分钟）` : '开始解析（约 3 分钟）') }}
         </button>
 
         <p style="font-size:0.78rem;color:#9ca3af;margin:6px 0 0;text-align:center;line-height:1.5;">
@@ -94,7 +98,13 @@
       <p style="font-size:0.85rem;color:#6b7280;">
         {{ parseStatus === 'running' ? 'AI 在找诊断、分期、基因信息 —— 这些稍后您能直接核对修改' : uploadCopy.status.pending }}
       </p>
-      <p v-if="parseProgress > 0" style="color:#2563eb;">进度 {{ parseProgress }}%</p>
+      <!-- 批量场景显示 X / Y 进度（更直观） -->
+      <p v-if="isBatchParse && batchStats.total > 1" style="color:#2563eb;font-weight:500;">
+        已处理 {{ batchStats.completedCount + batchStats.erroredCount }} / {{ batchStats.total }} 份
+        <span v-if="batchStats.completedCount" style="color:#16a34a;">（成功 {{ batchStats.completedCount }}）</span>
+        <span v-if="batchStats.erroredCount" style="color:#dc2626;">（失败 {{ batchStats.erroredCount }}）</span>
+      </p>
+      <p v-else-if="parseProgress > 0" style="color:#2563eb;">进度 {{ parseProgress }}%</p>
       <p v-if="elapsedSeconds > 10" style="font-size:0.8rem;color:#9ca3af;">
         已花 {{ elapsedSeconds }} 秒{{ elapsedSeconds > 30 ? '，这份内容偏多，再稍等一下' : '' }}
       </p>
@@ -130,6 +140,24 @@
       </div>
 
       <RecordSummaryCard :record="parsedRecord" />
+
+      <!-- Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（仅在 ≥2 份完成时展示） -->
+      <div v-if="timelineSummary && timelineSummary.events && timelineSummary.events.length" class="card" style="background:#eff6ff;border-color:#93c5fd;">
+        <h3 style="margin:0 0 8px;color:#1d4ed8;">疾病发展 & 治疗经过</h3>
+        <p v-if="timelineSummary.summaryNarrative" style="font-size:0.85rem;color:#374151;margin:0 0 10px;line-height:1.6;">
+          {{ timelineSummary.summaryNarrative }}
+        </p>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li v-for="(event, idx) in timelineSummary.events.slice(0, 10)" :key="idx" style="padding:8px 0;border-bottom:1px solid #dbeafe;font-size:0.85rem;">
+            <span style="color:#2563eb;font-weight:500;">{{ event.date || '—' }}</span>
+            <span style="color:#1f2937;margin-left:8px;">{{ event.title }}</span>
+            <span v-if="event.detail" style="display:block;color:#6b7280;margin-top:2px;font-size:0.78rem;">{{ event.detail }}</span>
+          </li>
+        </ul>
+        <p v-if="timelineSummary.events.length > 10" style="font-size:0.78rem;color:#9ca3af;margin:8px 0 0;">
+          展示前 10 项，其余 {{ timelineSummary.events.length - 10 }} 项可在病历详情查看
+        </p>
+      </div>
 
       <div v-if="visibleMissingFields.length" class="card" style="border-color:#fcd34d;background:#fffbeb;">
         <h3 style="margin:0 0 8px;color:#92400e;">再补一点信息会更准</h3>
@@ -212,6 +240,11 @@ const parseProgress = ref(0)
 const parsedRecord = ref<Record<string, unknown>>({})
 const recordId = ref('')
 const fileId = ref('')
+// Phase E.2 / E.3：批量上传跟踪 + 时间线
+const fileIds = ref<string[]>([])
+const isBatchParse = ref(false)
+const batchStats = reactive({ total: 0, completedCount: 0, erroredCount: 0 })
+const timelineSummary = ref<any | null>(null)
 const submitting = ref(false)
 type UploadErrorKind = 'rate_limit' | 'parse' | 'network' | ''
 interface UploadErrorState {
@@ -520,6 +553,49 @@ const onConsentCancel = () => {
   pendingUploadAction.value = false
 }
 
+// Phase E.2：批量上传 + 批量轮询。一次 HTTP 上传（multi-FormData）+ 周期性 batch poll，
+// 而不是 N 次 single upload + N 个 polling timer。
+const POLL_INTERVAL_MS = 2000
+
+const pollBatchOnce = async (): Promise<{ done: boolean; mergedResult: Record<string, unknown>; firstError?: string }> => {
+  const status = await api.getParseStatusBatch(fileIds.value)
+  batchStats.total = status.total
+  batchStats.completedCount = status.completedCount
+  batchStats.erroredCount = status.erroredCount
+
+  // 整体进度：完成 + 失败 占总数的比例
+  const ratio = status.total > 0 ? (status.completedCount + status.erroredCount) / status.total : 0
+  parseProgress.value = Math.floor(ratio * 100)
+
+  // 合并所有 completed 条目的 result
+  let merged: Record<string, unknown> = {}
+  let firstError: string | undefined
+  for (const entry of status.entries) {
+    if (entry.status === 'completed' && entry.result) {
+      merged = mergeRecords(merged, normalizeRecord(entry.result))
+      if (!recordId.value && entry.recordId) recordId.value = entry.recordId
+    } else if (entry.errorMsg && !firstError) {
+      firstError = entry.errorMsg
+    }
+  }
+
+  if (Object.keys(merged).length) {
+    parsedRecord.value = merged
+  }
+
+  return { done: status.done, mergedResult: merged, firstError }
+}
+
+const fetchTimeline = async () => {
+  try {
+    const t = await api.getMedicalTimeline()
+    if (t && t.timeline) timelineSummary.value = t.timeline
+  } catch (err) {
+    // 时间线是 nice-to-have，失败静默
+    console.warn('时间线获取失败', err)
+  }
+}
+
 const uploadAndParse = async () => {
   if (!files.value.length) return
   if (uploading.value) return // 避免用户连点
@@ -532,41 +608,74 @@ const uploadAndParse = async () => {
   parseProgress.value = 0
   clearUploadError()
   uploadIndex.value = 0
-  // Q3-红线 §B.2：upload_start —— 用户实际启动上传那一刻（同意已通过）
+  fileIds.value = []
+  isBatchParse.value = files.value.length > 1
+  timelineSummary.value = null
+  batchStats.total = files.value.length
+  batchStats.completedCount = 0
+  batchStats.erroredCount = 0
   track('upload_start', { fileCount: files.value.length })
 
   try {
-    let mergedResult: Record<string, unknown> = {}
-    for (let i = 0; i < files.value.length; i++) {
-      uploadIndex.value = i + 1
-      const f = files.value[i]
-      const uploadRes = await api.uploadMedicalRecord(f, 'auto', remark.value)
-      if (i === 0) {
-        fileId.value = uploadRes.fileId
-        recordId.value = uploadRes.recordId || ''
-        parseStatus.value = 'uploading'
-        pollStartTime = Date.now()
-        elapsedSeconds.value = 0
-        elapsedTimer = window.setInterval(() => { elapsedSeconds.value = Math.floor((Date.now() - pollStartTime) / 1000) }, 1000)
-        await pollStatus()
-        timer = window.setInterval(async () => { try { await pollStatus() } catch {} }, 2000)
-        const firstResult = await waitForCompletion(uploadRes.fileId)
-        stopPolling()
-        mergedResult = firstResult
-        parsedRecord.value = mergedResult
-      } else {
-        parseStatus.value = 'running'
-        const extraResult = await waitForCompletion(uploadRes.fileId)
-        mergedResult = mergeRecords(mergedResult, extraResult)
-        parsedRecord.value = mergedResult
-        if (recordId.value) {
-          await api.enrichRecord(recordId.value, mergedResult).catch(() => null)
-        }
-      }
+    // Step 1：一次性批量上传（H5 原生支持 <input multiple>）
+    parseStatus.value = 'uploading'
+    pollStartTime = Date.now()
+    elapsedSeconds.value = 0
+    elapsedTimer = window.setInterval(() => {
+      elapsedSeconds.value = Math.floor((Date.now() - pollStartTime) / 1000)
+    }, 1000)
+
+    const uploadRes = await api.uploadMedicalRecordBatch(files.value, 'auto', remark.value)
+    fileIds.value = Array.isArray(uploadRes.fileIds) ? uploadRes.fileIds : []
+    if (!fileIds.value.length) {
+      throw new Error(`所有文件上传失败（共 ${uploadRes.total} 份）`)
     }
-    parseStatus.value = 'completed'
-    // Q3-红线 §B.2：upload_success —— 全部文件解析完成，patient profile 已落地
-    track('upload_success', { recordId: recordId.value, fileCount: files.value.length })
+    fileId.value = fileIds.value[0]
+    if (uploadRes.records && uploadRes.records[0] && uploadRes.records[0].recordId) {
+      recordId.value = uploadRes.records[0].recordId
+    } else {
+      recordId.value = fileIds.value[0]
+    }
+
+    // 上传部分失败：toast 提示但继续
+    if (uploadRes.successCount < uploadRes.total) {
+      showToast(`${uploadRes.total - uploadRes.successCount} 份上传失败，其余 ${uploadRes.successCount} 份继续解析`)
+    }
+
+    // Step 2：批量轮询
+    parseStatus.value = 'running'
+    parseProgress.value = 5
+
+    const startedAt = Date.now()
+    // 单文件 90s；批量 = 90s + (n-1) * 20s，封顶 180s
+    const timeoutMs = Math.min(180_000, 90_000 + Math.max(0, fileIds.value.length - 1) * 20_000)
+
+    while (true) {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`)
+      }
+      const { done, mergedResult, firstError } = await pollBatchOnce()
+      if (done) {
+        if (Object.keys(mergedResult).length) {
+          parseStatus.value = 'completed'
+          // Step 3：跨多份病历的时间线（只在 ≥2 份完成时才有意义；单份后端也会回，但价值小）
+          if (batchStats.completedCount >= 2) {
+            await fetchTimeline()
+          }
+          track('upload_success', {
+            recordId: recordId.value,
+            fileCount: files.value.length,
+            successCount: batchStats.completedCount,
+            errorCount: batchStats.erroredCount
+          })
+        } else {
+          // 全部失败 → 抛 firstError 让 setUploadError 走 parse 分支
+          throw new Error(firstError || '所有文件解析均失败')
+        }
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+    }
   } catch (err: any) {
     setUploadError(err)
   } finally {

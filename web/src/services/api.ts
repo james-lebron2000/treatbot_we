@@ -179,9 +179,48 @@ export const api = {
     const { data } = await http.post<ApiResponse<{ fileId: string; recordId?: string }>>('/api/medical/upload', formData)
     return unwrap<{ fileId: string; recordId?: string }>(data)
   },
+  // Phase E.2：H5 端原生支持 multi-FormData（<input multiple>），所以这里直接命中
+  // /api/medical/upload-batch（一次最多 10 份）。返回 { total, successCount, fileIds, records[] }。
+  async uploadMedicalRecordBatch(files: File[], type: string, remark: string) {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    formData.append('type', type)
+    formData.append('remark', remark)
+    const { data } = await http.post<ApiResponse<{
+      total: number;
+      successCount: number;
+      fileIds: string[];
+      records: Array<{
+        fileId: string; recordId?: string; status: string;
+        ocrQueued?: boolean; isDuplicate?: boolean; uploadedAt?: string;
+        message?: string; originalName?: string;
+      }>;
+    }>>('/api/medical/upload-batch', formData)
+    return unwrap(data)
+  },
   async getParseStatus(fileId: string) {
     const { data } = await http.get<ApiResponse<any>>(`/api/medical/parse-status?fileId=${fileId}`)
     return unwrap<any>(data)
+  },
+  // Phase E.2：批量查询解析状态（POST 体；最多 20 个 fileId）
+  async getParseStatusBatch(fileIds: string[]) {
+    const { data } = await http.post<ApiResponse<{
+      entries: Array<{
+        fileId: string; recordId: string; status: string; progress: number;
+        result?: any; errorMsg?: string; createdAt?: string; updatedAt?: string;
+      }>;
+      total: number; completedCount: number; erroredCount: number; done: boolean;
+    }>>('/api/medical/parse-status-batch', { fileIds })
+    return unwrap(data)
+  },
+  // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线
+  async getMedicalTimeline() {
+    const { data } = await http.get<ApiResponse<{
+      timeline: any;
+      recordCount: number;
+      sourceRecordIds: string[];
+    }>>('/api/medical/timeline')
+    return unwrap(data)
   },
   async enrichRecord(id: string, payload: Record<string, unknown>) {
     const { data } = await http.patch<ApiResponse<any>>(`/api/medical/records/${id}/enrich`, payload)
