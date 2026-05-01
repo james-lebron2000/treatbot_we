@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authMiddleware } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdminToken } = require('../middleware/adminAuth');
 const { idempotencyMiddleware } = require('../middleware/idempotency');
 const { strictLimiter, uploadLimiter } = require('../middleware/rateLimit');
 // PRD-2026Q2 §2.3：Admin 操作审计日志中间件
@@ -97,30 +97,32 @@ router.put('/applications/:id/cancel', authMiddleware, applicationController.can
 
 // ===== 管理后台 API（需要管理员权限）=====
 // PRD-2026Q2 §2.3：所有 admin 路由都挂 logAdmin(action)，在 res finish 后异步落审计。
-router.get('/admin/dashboard', authMiddleware, requireAdmin, logAdmin('view_dashboard'), adminController.getDashboardStats);
-router.get('/admin/users', authMiddleware, requireAdmin, logAdmin('view_users'), adminController.getUserList);
-router.get('/admin/records', authMiddleware, requireAdmin, logAdmin('view_records'), adminController.getRecordList);
-router.get('/admin/applications', authMiddleware, requireAdmin, logAdmin('view_applications'), adminController.getApplicationList);
-router.put('/admin/applications/:id/status', authMiddleware, requireAdmin, logAdmin('update_application_status', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.updateApplicationStatus);
-router.get('/admin/logs', authMiddleware, requireAdmin, logAdmin('view_logs'), adminController.getSystemLogs);
-router.get('/admin/trials', authMiddleware, requireAdmin, logAdmin('view_trials'), adminController.getAdminTrials);
+router.post('/admin/login', strictLimiter, adminController.adminLogin);
+router.get('/admin/session', authMiddleware, requireAdminToken, logAdmin('view_admin_session'), adminController.getAdminSession);
+router.get('/admin/dashboard', authMiddleware, requireAdminToken, logAdmin('view_dashboard'), adminController.getDashboardStats);
+router.get('/admin/users', authMiddleware, requireAdminToken, logAdmin('view_users'), adminController.getUserList);
+router.get('/admin/records', authMiddleware, requireAdminToken, logAdmin('view_records'), adminController.getRecordList);
+router.get('/admin/applications', authMiddleware, requireAdminToken, logAdmin('view_applications'), adminController.getApplicationList);
+router.put('/admin/applications/:id/status', authMiddleware, requireAdminToken, logAdmin('update_application_status', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.updateApplicationStatus);
+router.get('/admin/logs', authMiddleware, requireAdminToken, logAdmin('view_logs'), adminController.getSystemLogs);
+router.get('/admin/trials', authMiddleware, requireAdminToken, logAdmin('view_trials'), adminController.getAdminTrials);
 // PRD-2026Q2 §2.4：试验新鲜度健康度视图（W4 前端消费）
-router.get('/admin/trials/health', authMiddleware, requireAdmin, logAdmin('view_trials_health'), adminController.getTrialsHealth);
-router.post('/admin/applications/:id/notes', authMiddleware, requireAdmin, logAdmin('add_application_note', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.addApplicationNote);
-router.get('/admin/exports/users', authMiddleware, requireAdmin, logAdmin('export_users'), adminController.exportUsers);
-router.get('/admin/exports/records', authMiddleware, requireAdmin, logAdmin('export_records'), adminController.exportRecords);
-router.get('/admin/exports/applications', authMiddleware, requireAdmin, logAdmin('export_applications'), adminController.exportApplications);
-router.get('/admin/cro', authMiddleware, requireAdmin, logAdmin('view_cro'), adminController.getCroList);
-router.post('/admin/cro', authMiddleware, requireAdmin, logAdmin('create_cro'), adminController.createCro);
-router.put('/admin/cro/:id', authMiddleware, requireAdmin, logAdmin('update_cro', (req) => ({ targetType: 'cro', targetId: req.params.id })), adminController.updateCro);
+router.get('/admin/trials/health', authMiddleware, requireAdminToken, logAdmin('view_trials_health'), adminController.getTrialsHealth);
+router.post('/admin/applications/:id/notes', authMiddleware, requireAdminToken, logAdmin('add_application_note', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.addApplicationNote);
+router.get('/admin/exports/users', authMiddleware, requireAdminToken, logAdmin('export_users'), adminController.exportUsers);
+router.get('/admin/exports/records', authMiddleware, requireAdminToken, logAdmin('export_records'), adminController.exportRecords);
+router.get('/admin/exports/applications', authMiddleware, requireAdminToken, logAdmin('export_applications'), adminController.exportApplications);
+router.get('/admin/cro', authMiddleware, requireAdminToken, logAdmin('view_cro'), adminController.getCroList);
+router.post('/admin/cro', authMiddleware, requireAdminToken, logAdmin('create_cro'), adminController.createCro);
+router.put('/admin/cro/:id', authMiddleware, requireAdminToken, logAdmin('update_cro', (req) => ({ targetType: 'cro', targetId: req.params.id })), adminController.updateCro);
 // PRD-2026Q2 §2.3：单字段明文揭示入口（后续加 requireMfa）
-router.get('/admin/users/:id/reveal', authMiddleware, requireAdmin, logAdmin('reveal_field', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.revealField);
+router.get('/admin/users/:id/reveal', authMiddleware, requireAdminToken, logAdmin('reveal_field', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.revealField);
 // Phase E.4：单用户的匹配 + 时间线视图（运营排查 / CRO 推送复核）
-router.get('/admin/users/:id/matches', authMiddleware, requireAdmin, logAdmin('view_user_matches', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.getUserMatches);
+router.get('/admin/users/:id/matches', authMiddleware, requireAdminToken, logAdmin('view_user_matches', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.getUserMatches);
 
 // PRD-2026Q2 §3.2：OCR 队列 DLQ 列表 + 手动重试
-router.get('/admin/ocr-failures', authMiddleware, requireAdmin, logAdmin('view_ocr_failures'), adminController.listOcrFailures);
-router.post('/admin/ocr-failures/:id/retry', authMiddleware, requireAdmin, logAdmin('retry_ocr_failure', (req) => ({ targetType: 'ocr_failure', targetId: req.params.id })), adminController.retryOcrFailure);
+router.get('/admin/ocr-failures', authMiddleware, requireAdminToken, logAdmin('view_ocr_failures'), adminController.listOcrFailures);
+router.post('/admin/ocr-failures/:id/retry', authMiddleware, requireAdminToken, logAdmin('retry_ocr_failure', (req) => ({ targetType: 'ocr_failure', targetId: req.params.id })), adminController.retryOcrFailure);
 
 // ===== CRO API（CRO 账号认证）=====
 router.post('/cro/login', strictLimiter, croController.croLogin);

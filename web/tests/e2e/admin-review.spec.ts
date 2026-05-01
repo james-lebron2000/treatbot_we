@@ -11,12 +11,16 @@ import { envelope, fulfillJson, installApiMocks, collectPageErrors } from './_he
 test('admin 审核全链路', async ({ page }) => {
   const errors = collectPageErrors(page)
 
-  // 路由 guard 只检查 authStore.token，不校验真实 admin 角色（admin 真鉴权在后端）
-  await page.addInitScript(() => {
-    localStorage.setItem('token', 'fake-admin-jwt')
-  })
-
   await installApiMocks(page, {
+    '/api/admin/login': (route) =>
+      fulfillJson(
+        route,
+        envelope({
+          token: 'fake-dedicated-admin-jwt',
+          expiresIn: 3600,
+          admin: { id: 'admin:treatbot_admin', username: 'treatbot_admin', canReveal: true }
+        })
+      ),
     '/api/admin/dashboard': (route) =>
       fulfillJson(
         route,
@@ -120,6 +124,12 @@ test('admin 审核全链路', async ({ page }) => {
 
   await page.goto('/treatbot/admin')
   await page.waitForLoadState('networkidle')
+
+  await expect(page.getByRole('heading', { name: '数愈管理端' })).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('admin-username').fill('treatbot_admin')
+  await page.getByTestId('admin-key').fill('mock-admin-key')
+  await page.getByTestId('admin-login-button').click()
+  await page.waitForURL('**/treatbot/admin/dashboard')
 
   await expect(page.getByText('数愈管理端')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('总注册用户')).toBeVisible()

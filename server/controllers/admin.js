@@ -25,6 +25,12 @@ const { parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('.
 const trialFreshness = require('../services/trialFreshness');
 // PRD-2026Q2 §2.3：PII 脱敏。list 响应出门前走一道 mask，reveal 单字段走审计日志旁路。
 const { maskPhone, maskName } = require('../utils/mask');
+const {
+  ADMIN_TOKEN_EXPIRES_IN,
+  getConfiguredAdmin,
+  issueAdminToken,
+  verifyAdminCredential
+} = require('../utils/adminCredential');
 
 const APPLICATION_STATUS_TEXT = {
   pending: '待联系',
@@ -32,6 +38,65 @@ const APPLICATION_STATUS_TEXT = {
   enrolled: '已入组',
   rejected: '不符合',
   cancelled: '已取消'
+};
+
+const adminLogin = async (req, res, next) => {
+  try {
+    const { username, key } = req.body || {};
+    if (!getConfiguredAdmin()) {
+      return res.status(503).json({
+        code: 503,
+        message: '管理员登录未配置',
+        data: null
+      });
+    }
+
+    const result = verifyAdminCredential({ username, key });
+    if (!result.ok) {
+      logger.warn('[AdminLogin] 管理员登录失败', {
+        username: safeText(username).slice(0, 64),
+        reason: result.reason,
+        ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim()
+      });
+      return res.status(401).json({
+        code: 401,
+        message: '管理员用户名或 key 不正确',
+        data: null
+      });
+    }
+
+    const token = issueAdminToken(result.admin);
+    logger.info('[AdminLogin] 管理员登录成功', {
+      username: result.admin.username,
+      ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim()
+    });
+
+    return res.json(success({
+      token,
+      expiresIn: ADMIN_TOKEN_EXPIRES_IN,
+      admin: {
+        id: result.admin.id,
+        username: result.admin.username,
+        canReveal: result.admin.canReveal
+      }
+    }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getAdminSession = async (req, res, next) => {
+  try {
+    return res.json(success({
+      admin: {
+        id: req.adminUser?.id || req.userId,
+        username: req.adminUser?.username || '',
+        canReveal: Boolean(req.adminUser?.canReveal)
+      }
+    }));
+  } catch (err) {
+    next(err);
+  }
 };
 
 const MAX_EXPORT_MATCHES = 5;
@@ -1243,7 +1308,7 @@ const revealField = async (req, res, next) => {
     }
 
     // TODO(PRD-2026Q2 §2.3 后续)：接入邮箱 OTP / TOTP MFA，移除 ADMIN_MFA_BYPASS。
-    const mfaBypass = process.env.ADMIN_MFA_BYPASS === 'true';
+    const mfaBypass = process.env.ADMIN_MFA_BYPASS === 'true' || req.adminCredential?.canReveal === true;
     if (!mfaBypass) {
       return res.status(403).json({ code: 403, message: '需要 MFA 验证', data: null });
     }
@@ -1487,6 +1552,8 @@ const getUserMatches = async (req, res, next) => {
 };
 
 module.exports = {
+  adminLogin,
+  getAdminSession,
   getDashboardStats,
   getUserList,
   revealField,

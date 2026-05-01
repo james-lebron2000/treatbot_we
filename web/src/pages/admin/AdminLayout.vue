@@ -25,7 +25,10 @@
           <p class="eyebrow">Admin Console</p>
           <h2>{{ currentTitle }}</h2>
         </div>
-        <RouterLink class="back-link" to="/profile">返回个人中心</RouterLink>
+        <div class="top-actions">
+          <span>{{ adminName }}</span>
+          <button class="back-link" type="button" @click="logout">退出管理端</button>
+        </div>
       </header>
       <RouterView />
     </div>
@@ -34,9 +37,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
 
 const navItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: '□' },
@@ -48,6 +52,21 @@ const navItems = [
 const currentTitle = computed(() => {
   return navItems.find((item) => item.to === route.path)?.label || '管理员后台'
 })
+
+const adminName = computed(() => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('adminUser') || '{}')
+    return parsed.username || 'admin'
+  } catch {
+    return 'admin'
+  }
+})
+
+const logout = () => {
+  localStorage.removeItem('adminToken')
+  localStorage.removeItem('adminUser')
+  router.replace('/admin/login')
+}
 </script>
 
 <style scoped>
@@ -130,6 +149,15 @@ const currentTitle = computed(() => {
   text-transform: uppercase;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
 .back-link {
   border: 1px solid #cfd7e6;
   border-radius: 8px;
@@ -137,6 +165,7 @@ const currentTitle = computed(() => {
   padding: 8px 12px;
   font-size: 13px;
   background: #fff;
+  cursor: pointer;
 }
 
 @media (max-width: 760px) {

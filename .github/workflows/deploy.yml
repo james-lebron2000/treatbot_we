@@ -162,11 +162,16 @@ jobs:
         ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
         # 大型扫描 PDF + 多页 vision 调用需要 90s+，benchmark 实测 45s/60s 触发 50% 超时
         ARK_TIMEOUT_MS: '180000'
+        # 管理后台独立登录。这里只注入 key 的 SHA-256 verifier，不注入明文 key。
+        ADMIN_LOGIN_USERNAME: 'treatbot_admin'
+        ADMIN_LOGIN_KEY_HASH: 'sha256:0740e0062f9186d15688ae5fbdbcc35c7a576ac3acd9403ad1576e41a675d60e'
+        ADMIN_LOGIN_TOKEN_TTL: '3600'
+        ADMIN_LOGIN_CAN_REVEAL: 'true'
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: DOCKER_USERNAME,SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS
+        envs: DOCKER_USERNAME,SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
         command_timeout: 15m
         script: |
           set -e
@@ -258,6 +263,10 @@ jobs:
           OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=$ARK_VISION_MODEL")
           OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=$ARK_BASE_URL")
           OCR_ENV_FLAGS+=(-e "ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS")
+          OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_USERNAME=$ADMIN_LOGIN_USERNAME")
+          OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_KEY_HASH=$ADMIN_LOGIN_KEY_HASH")
+          OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_TOKEN_TTL=$ADMIN_LOGIN_TOKEN_TTL")
+          OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_CAN_REVEAL=$ADMIN_LOGIN_CAN_REVEAL")
 
           # 摘要（只显示哪个键有值 + key 长度，避免日志泄漏明文）
           echo "  OCR env override:"
@@ -268,6 +277,11 @@ jobs:
           echo "    ✓ ARK_VISION_MODEL=$ARK_VISION_MODEL"
           echo "    ✓ ARK_BASE_URL=$ARK_BASE_URL"
           echo "    ✓ ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS"
+          echo "  Admin login override:"
+          echo "    ✓ ADMIN_LOGIN_USERNAME=$ADMIN_LOGIN_USERNAME"
+          echo "    ✓ ADMIN_LOGIN_KEY_HASH configured (sha256)"
+          echo "    ✓ ADMIN_LOGIN_TOKEN_TTL=$ADMIN_LOGIN_TOKEN_TTL"
+          echo "    ✓ ADMIN_LOGIN_CAN_REVEAL=$ADMIN_LOGIN_CAN_REVEAL"
 
           docker run -d --name treatbot-api \
             --network server_treatbot-network \

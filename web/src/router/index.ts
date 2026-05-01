@@ -9,6 +9,7 @@ const MatchesView = () => import('../pages/MatchesView.vue')
 const MatchDetailView = () => import('../pages/MatchDetailView.vue')
 const ProfileView = () => import('../pages/ProfileView.vue')
 const ApplicationsView = () => import('../pages/ApplicationsView.vue')
+const AdminLoginView = () => import('../pages/admin/AdminLoginView.vue')
 const AdminLayout = () => import('../pages/admin/AdminLayout.vue')
 const AdminDashboardView = () => import('../pages/admin/DashboardView.vue')
 const AdminUsersView = () => import('../pages/admin/UsersView.vue')
@@ -38,10 +39,11 @@ const router = createRouter({
     { path: '/matches/:id', component: MatchDetailView, meta: { requiresAuth: true } },
     { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
     { path: '/applications', component: ApplicationsView, meta: { requiresAuth: true } },
+    { path: '/admin/login', component: AdminLoginView },
     {
       path: '/admin',
       component: AdminLayout,
-      meta: { requiresAuth: true },
+      meta: { requiresAdminAuth: true },
       children: [
         { path: '', redirect: '/admin/dashboard' },
         { path: 'dashboard', component: AdminDashboardView },
@@ -67,6 +69,18 @@ const hasSeenOnboarding = () => {
 
 router.beforeEach((to) => {
   const authStore = useAuthStore()
+  const adminToken = localStorage.getItem('adminToken') || ''
+  if (to.meta.requiresAdminAuth && !adminToken) {
+    try {
+      sessionStorage.setItem('postAdminLoginPath', `/treatbot${to.fullPath}`)
+    } catch {
+      // ignore storage errors
+    }
+    return '/admin/login'
+  }
+  if (to.path === '/admin/login' && adminToken) {
+    return '/admin/dashboard'
+  }
   if (to.meta.requiresAuth && !authStore.token) {
     return '/login'
   }

@@ -184,12 +184,14 @@ cd server
 ## 管理员导出
 
 ### 权限模型
-- 管理员接口统一走 `Bearer Token + 管理员白名单`
-- 通过以下环境变量声明管理员身份：
+- 管理员 H5 后台优先走独立账号：`POST /api/admin/login` 使用 `ADMIN_LOGIN_USERNAME + ADMIN_LOGIN_KEY_HASH` 登录，返回专用 `adminToken`。
+- `ADMIN_LOGIN_KEY_HASH` 存 key 的 SHA-256 verifier，格式 `sha256:<hex>`，不要把明文 key 写进仓库。
+- 管理员接口仍兼容旧的 `Bearer Token + 管理员白名单`：
   - `ADMIN_USER_IDS=user_xxx,user_yyy`
   - `ADMIN_OPENIDS=oAbc123,oDef456`
   - `ADMIN_PHONES=13800138000,13900139000`
-- 三组选项任意命中一组即可访问 `/api/admin/*`
+- 专用后台入口：`/treatbot/admin/login`
+- 三组选项任意命中一组，或专用 admin token 校验通过，即可访问 `/api/admin/*`
 
 ### 管理接口
 - `GET /api/admin/records`

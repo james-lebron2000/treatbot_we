@@ -69,10 +69,51 @@ const statusRow = (status, count) => ({
 });
 
 describe('admin H5 controller contracts', () => {
+  const originalAdminEnv = {
+    username: process.env.ADMIN_LOGIN_USERNAME,
+    keyHash: process.env.ADMIN_LOGIN_KEY_HASH,
+    canReveal: process.env.ADMIN_LOGIN_CAN_REVEAL
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockTrial.findAll.mockResolvedValue([]);
     mockOss.getRequestAwareUrl.mockResolvedValue('https://signed.example/record.pdf');
+  });
+
+  afterEach(() => {
+    if (originalAdminEnv.username === undefined) delete process.env.ADMIN_LOGIN_USERNAME;
+    else process.env.ADMIN_LOGIN_USERNAME = originalAdminEnv.username;
+    if (originalAdminEnv.keyHash === undefined) delete process.env.ADMIN_LOGIN_KEY_HASH;
+    else process.env.ADMIN_LOGIN_KEY_HASH = originalAdminEnv.keyHash;
+    if (originalAdminEnv.canReveal === undefined) delete process.env.ADMIN_LOGIN_CAN_REVEAL;
+    else process.env.ADMIN_LOGIN_CAN_REVEAL = originalAdminEnv.canReveal;
+  });
+
+  test('adminLogin 使用独立用户名和 key 返回 admin token', async () => {
+    process.env.ADMIN_LOGIN_USERNAME = 'treatbot_admin';
+    process.env.ADMIN_LOGIN_KEY_HASH = 'sha256:0740e0062f9186d15688ae5fbdbcc35c7a576ac3acd9403ad1576e41a675d60e';
+    process.env.ADMIN_LOGIN_CAN_REVEAL = 'true';
+
+    const req = {
+      body: {
+        username: 'treatbot_admin',
+        key: 'x_2qZQ3W2XL06Q5cpbbmPBd1jxyOmGVnjEVuDEd9uJU'
+      },
+      headers: {},
+      ip: '127.0.0.1'
+    };
+    const res = buildRes();
+    res.status = jest.fn(() => res);
+    const next = jest.fn();
+
+    await adminController.adminLogin(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0].data;
+    expect(payload.token).toBeTruthy();
+    expect(payload.admin.username).toBe('treatbot_admin');
+    expect(payload.admin.canReveal).toBe(true);
   });
 
   test('dashboard 返回运营与数据质量聚合', async () => {

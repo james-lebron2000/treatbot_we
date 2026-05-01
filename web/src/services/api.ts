@@ -15,7 +15,11 @@ export const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const url = typeof config.url === 'string' ? config.url : ''
+  const isAdminApi = url.startsWith('/api/admin')
+  const token = isAdminApi
+    ? localStorage.getItem('adminToken')
+    : localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -28,6 +32,7 @@ type RetriableConfig = AxiosRequestConfig & { __retried?: boolean }
 
 let refreshPromise: Promise<string | null> | null = null
 const LOGIN_PATH = '/treatbot/login'
+const ADMIN_LOGIN_PATH = '/treatbot/admin/login'
 const POST_LOGIN_KEY = 'postLoginPath'
 
 const forceRedirectToLogin = () => {
@@ -43,6 +48,22 @@ const forceRedirectToLogin = () => {
   localStorage.removeItem('refreshToken')
   if (window.location.pathname !== LOGIN_PATH) {
     window.location.href = LOGIN_PATH
+  }
+}
+
+const forceRedirectToAdminLogin = () => {
+  try {
+    const current = window.location.pathname + window.location.search
+    if (!current.includes(ADMIN_LOGIN_PATH)) {
+      sessionStorage.setItem('postAdminLoginPath', current)
+    }
+  } catch {
+    // ignore storage errors
+  }
+  localStorage.removeItem('adminToken')
+  localStorage.removeItem('adminUser')
+  if (window.location.pathname !== ADMIN_LOGIN_PATH) {
+    window.location.href = ADMIN_LOGIN_PATH
   }
 }
 
@@ -83,6 +104,16 @@ http.interceptors.response.use(
   async (error: AxiosError) => {
     const status = error.response?.status
     const config = (error.config || {}) as RetriableConfig
+    const requestUrl = typeof config.url === 'string' ? config.url : ''
+    const isAdminCall = requestUrl.startsWith('/api/admin')
+    const isAdminLoginCall = requestUrl.includes('/api/admin/login')
+
+    if (isAdminCall) {
+      if (status === 401 && !isAdminLoginCall) {
+        forceRedirectToAdminLogin()
+      }
+      return Promise.reject(error)
+    }
 
     // refresh 接口本身 401 → 直接跳登录
     const isRefreshCall = typeof config.url === 'string' && config.url.includes('/api/auth/refresh')
@@ -165,6 +196,18 @@ const buildIdempotencyKey = (payload: { trialId: string }) => {
 }
 
 export const api = {
+  async adminLogin(payload: { username: string; key: string }) {
+    const { data } = await http.post<ApiResponse<{
+      token: string;
+      expiresIn: number;
+      admin: { id: string; username: string; canReveal?: boolean };
+    }>>('/api/admin/login', payload)
+    return unwrap(data)
+  },
+  async getAdminSession() {
+    const { data } = await http.get<ApiResponse<any>>('/api/admin/session')
+    return unwrap<any>(data)
+  },
   // PRD-2026Q2 §3.6：可选携带 captcha 票据；未启用 captcha 时不传也能通过。
   async sendCode(phone: string, captcha?: { ticket: string; randstr: string; captchaAppId?: string }) {
     const body: Record<string, unknown> = { phone }

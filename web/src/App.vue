@@ -36,12 +36,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 // Q3-红线 §B.2：漏斗埋点 SDK
 import { track } from './utils/track'
 // PRD-2026Q3 §U5：全局求助按钮，文案来自 shared/copy/help.json。
-import HelpFab from './components/HelpFab.vue'
+const HelpFab = defineAsyncComponent(() => import('./components/HelpFab.vue'))
 
 const route = useRoute()
 const isAdminRoute = computed(() => route.path.startsWith('/admin'))
