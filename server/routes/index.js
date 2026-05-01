@@ -53,13 +53,26 @@ router.post('/me/delete-account', authMiddleware, strictLimiter, meController.de
 router.post('/me/change-password', authMiddleware, strictLimiter, meController.changePassword);
 
 // ===== 病历相关（需要认证） =====
-router.post('/medical/upload', 
-  authMiddleware, 
-  uploadLimiter, 
+router.post('/medical/upload',
+  authMiddleware,
+  uploadLimiter,
   medicalController.uploadMiddleware,
   medicalController.handleUpload
 );
+// Phase E.2：批量上传（最多 10 份；每份独立 record_id；任一失败不阻塞其他）
+router.post('/medical/upload-batch',
+  authMiddleware,
+  uploadLimiter,
+  medicalController.uploadMiddlewareBatch,
+  medicalController.handleUploadBatch
+);
 router.get('/medical/parse-status', authMiddleware, medicalController.getParseStatus);
+// Phase E.2：批量查询解析状态，单次请求最多 20 个 fileId
+router.get('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
+router.post('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
+// Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（MiniMax 优先，规则兜底）。
+// Phase E.6 / Review #3：每次调用都跑 LLM（~$0.05/call），强制走 uploadLimiter (30/h) 防被滥用。
+router.get('/medical/timeline', authMiddleware, uploadLimiter, medicalController.getTimeline);
 router.get('/medical/records', authMiddleware, medicalController.getRecords);
 router.get('/medical/records/:id', authMiddleware, medicalController.getRecordDetail);
 router.get('/medical/records/:id/file', authMiddleware, medicalController.downloadRecordFile);

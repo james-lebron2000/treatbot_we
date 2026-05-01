@@ -27,9 +27,17 @@ const upload = multer({
 });
 
 /**
- * 上传病历文件
+ * 上传病历文件（单文件入口）
  */
 const uploadMiddleware = upload.single('file');
+
+/**
+ * Phase E.2：批量上传中间件 —— 同一次请求最多 10 份文件。
+ * field name 同时接受 `files` 和 `file`，方便客户端从单文件迁移过来。
+ */
+// Phase E.6 / Review #5：multer hard cap 与 BATCH_UPLOAD_MAX 一致（默认 5）。
+// multer 在 array() 阶段就拒掉超额，handleUploadBatch 里再做一次软校验作为兜底。
+const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || '5', 10));
 
 const mapParseStatus = (status) => {
   if (status === 'completed') {
@@ -85,6 +93,137 @@ const normalizeEntities = (value) => {
   return {};
 };
 
+/**
+ * Phase E.2：抽出的「单文件 → record」处理函数，被 handleUpload（单）和 handleUploadBatch（批）共用。
+ * 返回结构与 handleUpload 早期 res.json 完全一致，调用方决定包裹成单条响应还是数组。
+ */
+const processSingleUpload = async ({ file, userId, type, remark, forceReparse }) => {
+  // 计算文件哈希（用于去重）
+  const fileHash = ossService.calculateMD5(file.buffer);
+
+  // 检查是否已存在相同文件
+  // PRD-2026Q2 §3.5：软删除的记录不参与去重，允许用户删了重传。
+  const existingRecord = await MedicalRecord.findOne({
+    where: { user_id: userId, file_hash: fileHash, deleted_at: null }
+  });
+
+  if (existingRecord) {
+    logger.info('检测到重复上传:', { userId, fileHash, existingId: existingRecord.id });
+    const shouldReparse = forceReparse || !hasMeaningfulExtraction(existingRecord);
+    if (shouldReparse) {
+      await existingRecord.update({
+        status: 'pending',
+        diagnosis: null,
+        stage: null,
+        gene_mutation: null,
+        treatment: null,
+        structured: null
+      });
+
+      const imageUrl = await ossService.getInternalUrl(existingRecord.file_key);
+      let reparseQueued = true;
+      try {
+        await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
+          mimeType: file.mimetype,
+          fileKey: existingRecord.file_key
+        });
+      } catch (queueErr) {
+        reparseQueued = false;
+        logger.warn('OCR队列不可用，重新解析任务将稍后重试:', {
+          recordId: existingRecord.id,
+          error: queueErr.message
+        });
+        try {
+          await existingRecord.update({
+            status: 'error',
+            structured: { error: 'OCR队列暂不可用，请稍后重试或手动录入关键信息' }
+          });
+        } catch (statusErr) {
+          logger.error('回写 record.status=error 失败:', {
+            recordId: existingRecord.id,
+            error: statusErr.message
+          });
+        }
+      }
+      logger.info('重复文件触发重新解析:', { userId, recordId: existingRecord.id, forceReparse, reparseQueued });
+      return {
+        fileId: existingRecord.id,
+        recordId: existingRecord.id,
+        status: 'pending',
+        uploadedAt: existingRecord.created_at,
+        isDuplicate: true,
+        reparseTriggered: true,
+        ocrQueued: reparseQueued,
+        message: reparseQueued
+          ? (forceReparse ? '检测到重复文件，已强制重新解析' : '检测到历史识别结果缺失，已自动重新解析')
+          : '上传成功，解析服务暂时繁忙，将自动重试'
+      };
+    }
+    return {
+      fileId: existingRecord.id,
+      recordId: existingRecord.id,
+      status: existingRecord.status,
+      uploadedAt: existingRecord.created_at,
+      isDuplicate: true,
+      message: '该文件已存在，直接返回已有记录'
+    };
+  }
+
+  // 生成存储 Key
+  const fileKey = ossService.generateKey(userId, file.originalname);
+  // 上传到 COS
+  await ossService.uploadFile(file.buffer, fileKey, {
+    contentType: file.mimetype,
+    metadata: { userId, originalName: file.originalname }
+  });
+  // 创建数据库记录
+  const record = await MedicalRecord.create({
+    user_id: userId,
+    type: type || '其他',
+    file_key: fileKey,
+    file_hash: fileHash,
+    file_size: file.size,
+    status: 'pending',
+    remark: remark || null
+  });
+
+  const imageUrl = await ossService.getInternalUrl(fileKey);
+  let ocrQueued = true;
+  try {
+    await queueService.addOCRTask(record.id, imageUrl, userId, {
+      mimeType: file.mimetype,
+      fileKey
+    });
+  } catch (queueErr) {
+    ocrQueued = false;
+    logger.warn('OCR队列不可用，任务将稍后重试:', {
+      recordId: record.id,
+      error: queueErr.message
+    });
+    try {
+      await record.update({
+        status: 'error',
+        structured: { error: 'OCR队列暂不可用，请稍后重试或手动录入关键信息' }
+      });
+    } catch (statusErr) {
+      logger.error('回写 record.status=error 失败:', {
+        recordId: record.id,
+        error: statusErr.message
+      });
+    }
+  }
+  logger.info('病历上传成功:', { recordId: record.id, userId, fileKey, fileSize: file.size, ocrQueued });
+  return {
+    fileId: record.id,
+    recordId: record.id,
+    status: 'pending',
+    ocrQueued,
+    uploadedAt: record.created_at,
+    isDuplicate: false,
+    message: ocrQueued ? '上传成功，正在解析中' : '上传成功，解析服务暂时繁忙，将自动重试'
+  };
+};
+
 const handleUpload = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -94,136 +233,147 @@ const handleUpload = async (req, res, next) => {
     const { type, remark } = req.body;
     const userId = req.userId;
     const file = req.file;
+    const forceReparse = truthyText(req.body.forceReparse);
 
-    // 计算文件哈希（用于去重）
-    const fileHash = ossService.calculateMD5(file.buffer);
-
-    // 检查是否已存在相同文件
-    // PRD-2026Q2 §3.5：软删除的记录不参与去重，允许用户删了重传。
-    const existingRecord = await MedicalRecord.findOne({
-      where: { user_id: userId, file_hash: fileHash, deleted_at: null }
-    });
-
-    if (existingRecord) {
-      logger.info('检测到重复上传:', { userId, fileHash, existingId: existingRecord.id });
-
-      const forceReparse = truthyText(req.body.forceReparse);
-      const shouldReparse = forceReparse || !hasMeaningfulExtraction(existingRecord);
-
-      if (shouldReparse) {
-        await existingRecord.update({
-          status: 'pending',
-          diagnosis: null,
-          stage: null,
-          gene_mutation: null,
-          treatment: null,
-          structured: null
-        });
-
-        const imageUrl = await ossService.getInternalUrl(existingRecord.file_key);
-        let reparseQueued = true;
-        try {
-          await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
-            mimeType: file.mimetype,
-            fileKey: existingRecord.file_key
-          });
-        } catch (queueErr) {
-          reparseQueued = false;
-          logger.warn('OCR队列不可用，重新解析任务将稍后重试:', {
-            recordId: existingRecord.id,
-            error: queueErr.message
-          });
-        }
-
-        logger.info('重复文件触发重新解析:', {
-          userId,
-          recordId: existingRecord.id,
-          forceReparse,
-          reparseQueued
-        });
-
-        return res.json(success({
-          fileId: existingRecord.id,
-          recordId: existingRecord.id,
-          status: 'pending',
-          uploadedAt: existingRecord.created_at,
-          isDuplicate: true,
-          reparseTriggered: true,
-          ocrQueued: reparseQueued
-        }, reparseQueued
-          ? (forceReparse ? '检测到重复文件，已强制重新解析' : '检测到历史识别结果缺失，已自动重新解析')
-          : '上传成功，解析服务暂时繁忙，将自动重试'));
-      }
-
-      return res.json(success({
-        fileId: existingRecord.id,
-        recordId: existingRecord.id,
-        status: existingRecord.status,
-        uploadedAt: existingRecord.created_at,
-        isDuplicate: true
-      }, '该文件已存在，直接返回已有记录'));
-    }
-
-    // 生成存储 Key
-    const fileKey = ossService.generateKey(userId, file.originalname);
-
-    // 上传到 COS
-    const _uploadResult = await ossService.uploadFile(file.buffer, fileKey, {
-      contentType: file.mimetype,
-      metadata: {
-        userId,
-        originalName: file.originalname
-      }
-    });
-
-    // 创建数据库记录
-    const record = await MedicalRecord.create({
-      user_id: userId,
-      type: type || '其他',
-      file_key: fileKey,
-      file_hash: fileHash,
-      file_size: file.size,
-      status: 'pending',
-      remark: remark || null
-    });
-
-    // OCR 优先走服务内网回源，避免依赖对外 HTTPS 域名
-    const imageUrl = await ossService.getInternalUrl(fileKey);
-
-    // 添加 OCR 异步任务（队列失败不影响上传成功响应）
-    let ocrQueued = true;
-    try {
-      await queueService.addOCRTask(record.id, imageUrl, userId, {
-        mimeType: file.mimetype,
-        fileKey
-      });
-    } catch (queueErr) {
-      ocrQueued = false;
-      logger.warn('OCR队列不可用，任务将稍后重试:', {
-        recordId: record.id,
-        error: queueErr.message
-      });
-    }
-
-    logger.info('病历上传成功:', {
-      recordId: record.id,
-      userId,
-      fileKey,
-      fileSize: file.size,
-      ocrQueued
-    });
-
-    res.json(success({
-      fileId: record.id,
-      recordId: record.id,
-      status: 'pending',
-      ocrQueued,
-      uploadedAt: record.created_at
-    }, ocrQueued ? '上传成功，正在解析中' : '上传成功，解析服务暂时繁忙，将自动重试'));
-
+    // Phase E.2：单文件路径委托到 processSingleUpload，与批量入口共享去重 / 入队 / 错误降级逻辑。
+    const result = await processSingleUpload({ file, userId, type, remark, forceReparse });
+    const { message, ...payload } = result;
+    res.json(success(payload, message));
   } catch (err) {
     next(err);
   }
+};
+
+/**
+ * Phase E.2：批量上传 —— 同一次请求最多 10 份文件。
+ * 行为：
+ *   - 每份文件**单独**走 processSingleUpload（拥有独立的 record_id 和 OCR 任务）
+ *   - 单文件失败不影响其他文件（每份返回自己的 status / errorMsg）
+ *   - 整体响应里同时给出 fileIds[] 和 records[] 两份信息，方便客户端轮询批量状态
+ *   - 任何文件成功即返回 200；全部失败时仍返回 200 但 records 里都带 status='error'，
+ *     由客户端负责显示模态（与 handleUpload 的失败语义一致）
+ */
+// Phase E.6 / Review #5：批量上传上限。每份文件都消耗 OCR 配额（~$0.05/份），
+// 同一用户 30/h 上限下每小时最多消化 30 × 10 = 300 份是 10x 放大攻击面，因此降到 5/批。
+// 真要传 6+ 份，让客户端拆两批（间隔 ≥ 60 秒）即可。
+const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || '5', 10);
+
+const handleUploadBatch = async (req, res, next) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (!files.length) {
+      throw new BusinessError('请选择要上传的文件', 400);
+    }
+    // Phase E.6 / Review #5：硬上限收紧到 BATCH_UPLOAD_MAX（默认 5）。
+    if (files.length > BATCH_UPLOAD_MAX) {
+      throw new BusinessError(`一次最多上传 ${BATCH_UPLOAD_MAX} 份文件，请分批上传`, 400);
+    }
+
+    const { type, remark } = req.body;
+    const userId = req.userId;
+    const forceReparse = truthyText(req.body.forceReparse);
+
+    // 串行处理：避免单租户在同一秒并发占满 OCR 队列导致 Bull 入列失败。
+    // 单文件耗时只在「计算 hash + 上传 COS + 入队」级别（毫秒），不是 OCR 本身（异步），所以串行也快。
+    //
+    // Phase E.6 / Review #6：同一批内若用户重复选了同一份文件（手抖 / 拖拽两次），
+    // 用 in-memory hash map 短路重复入队 —— 否则两次 findOne 都会在 create 之前命中"无重复"，
+    // 创建出两条同 file_key 的 record。跨请求竞态需要 DB 唯一索引兜底（见部署清单）。
+    const records = [];
+    const batchHashCache = new Map(); // file_md5 → result from first occurrence
+    for (const file of files) {
+      try {
+        // 计算 hash 看是否已出现过
+        const hash = ossService.calculateMD5(file.buffer);
+        const existingInBatch = batchHashCache.get(hash);
+        if (existingInBatch) {
+          records.push({
+            ...existingInBatch,
+            isDuplicate: true,
+            message: '同一批内重复文件，已合并到首份',
+            originalName: file.originalname
+          });
+          continue;
+        }
+
+        const r = await processSingleUpload({ file, userId, type, remark, forceReparse });
+        const entry = {
+          fileId: r.fileId,
+          recordId: r.recordId,
+          status: r.status,
+          ocrQueued: r.ocrQueued !== false,
+          isDuplicate: !!r.isDuplicate,
+          uploadedAt: r.uploadedAt,
+          message: r.message,
+          originalName: file.originalname
+        };
+        batchHashCache.set(hash, entry);
+        records.push(entry);
+      } catch (perFileErr) {
+        logger.error('批量上传单文件失败', {
+          userId,
+          originalName: file && file.originalname,
+          error: perFileErr.message
+        });
+        records.push({
+          fileId: null,
+          recordId: null,
+          status: 'error',
+          ocrQueued: false,
+          isDuplicate: false,
+          uploadedAt: null,
+          message: perFileErr.message || '该文件上传失败',
+          originalName: file && file.originalname
+        });
+      }
+    }
+
+    const fileIds = records.map((r) => r.fileId).filter(Boolean);
+    const successCount = records.filter((r) => r.fileId && r.status !== 'error').length;
+    const summary = `${successCount}/${records.length} 份文件已入队解析`;
+
+    res.json(success({
+      fileIds,
+      records,
+      total: records.length,
+      successCount
+    }, summary));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Phase E.2：把单条 record 折成 parse-status 响应。
+ * 给 getParseStatus（单）和 getParseStatusBatch（批）共享。
+ */
+const buildParseStatusEntry = (record) => {
+  const mappedStatus = mapParseStatus(record.status);
+  const entry = {
+    fileId: record.id,
+    recordId: record.id,
+    status: mappedStatus.status,
+    progress: mappedStatus.progress,
+    result: null,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at
+  };
+  if (record.status === 'completed' && record.structured) {
+    entry.result = {
+      id: record.id,
+      recordId: record.id,
+      diagnosis: record.diagnosis,
+      stage: record.stage,
+      geneMutation: record.gene_mutation,
+      treatment: record.treatment,
+      confidence: record.structured.confidence || 0.9,
+      rawText: record.structured.text?.substring(0, 500)
+    };
+  }
+  if (record.status === 'error' && record.structured?.error) {
+    entry.errorMsg = record.structured.error;
+  }
+  return entry;
 };
 
 /**
@@ -232,7 +382,7 @@ const handleUpload = async (req, res, next) => {
 const getParseStatus = async (req, res, next) => {
   try {
     const { fileId } = req.query;
-    
+
     if (!fileId) {
       throw new BusinessError('缺少 fileId 参数', 400);
     }
@@ -246,38 +396,72 @@ const getParseStatus = async (req, res, next) => {
       return res.status(404).json({ code: 404, message: '记录不存在', data: null });
     }
 
-    // 构建响应
-    const mappedStatus = mapParseStatus(record.status);
-    const response = {
-      fileId: record.id,
-      recordId: record.id,
-      status: mappedStatus.status,
-      progress: mappedStatus.progress,
-      result: null,
-      createdAt: record.created_at,
-      updatedAt: record.updated_at
-    };
+    res.json(success(buildParseStatusEntry(record)));
+  } catch (err) {
+    next(err);
+  }
+};
 
-    // 如果已完成，返回解析结果
-    if (record.status === 'completed' && record.structured) {
-      response.result = {
-        id: record.id,
-        recordId: record.id,
-        diagnosis: record.diagnosis,
-        stage: record.stage,
-        geneMutation: record.gene_mutation,
-        treatment: record.treatment,
-        confidence: record.structured.confidence || 0.9,
-        rawText: record.structured.text?.substring(0, 500) // 限制返回文本长度
-      };
+/**
+ * Phase E.2：批量查询解析状态。
+ *   GET  /api/medical/parse-status-batch?fileIds=a,b,c
+ *   POST /api/medical/parse-status-batch  body: { fileIds: ['a','b','c'] }
+ *
+ * 客户端用一次请求拿到所有文件的状态，避免 N 次 HTTP 轮询。
+ * 当所有文件都进入终态（completed / error）时响应里 `done=true`，客户端可停轮询。
+ */
+const getParseStatusBatch = async (req, res, next) => {
+  try {
+    const raw = (req.method === 'POST' ? req.body && req.body.fileIds : req.query && req.query.fileIds) || [];
+    let fileIds = [];
+    if (Array.isArray(raw)) {
+      fileIds = raw.map((x) => `${x || ''}`.trim()).filter(Boolean);
+    } else if (typeof raw === 'string') {
+      fileIds = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (!fileIds.length) {
+      throw new BusinessError('缺少 fileIds 参数', 400);
+    }
+    if (fileIds.length > 20) {
+      throw new BusinessError('一次最多查询 20 个 fileId', 400);
+    }
+    // Phase E.6 / Review #8：单 fileId 长度限制，防止 Op.in 子句被巨长字符串撑爆 max_allowed_packet。
+    // Sequelize 用参数化查询保护 SQL 注入；这里只防 DoS。
+    if (fileIds.some((id) => id.length > 64)) {
+      throw new BusinessError('fileId 过长（单个 ≤ 64 字符）', 400);
     }
 
-    // 如果失败，返回错误信息
-    if (record.status === 'error' && record.structured?.error) {
-      response.errorMsg = record.structured.error;
-    }
+    const { Op } = require('sequelize');
+    const records = await MedicalRecord.findAll({
+      where: {
+        id: { [Op.in]: fileIds },
+        user_id: req.userId,
+        deleted_at: null
+      }
+    });
 
-    res.json(success(response));
+    // 用 fileId 做 map，缺失（被删 / 不属于本用户）则填 status='not_found'
+    const byId = new Map(records.map((r) => [String(r.id), r]));
+    const entries = fileIds.map((fid) => {
+      const r = byId.get(String(fid));
+      if (!r) {
+        return { fileId: fid, recordId: fid, status: 'not_found', progress: 0, result: null, errorMsg: '记录不存在或已被删除' };
+      }
+      return buildParseStatusEntry(r);
+    });
+
+    const TERMINAL = new Set(['completed', 'error', 'not_found']);
+    const done = entries.every((e) => TERMINAL.has(e.status));
+    const completed = entries.filter((e) => e.status === 'completed').length;
+    const errored = entries.filter((e) => e.status === 'error' || e.status === 'not_found').length;
+
+    res.json(success({
+      entries,
+      total: entries.length,
+      completedCount: completed,
+      erroredCount: errored,
+      done
+    }));
 
   } catch (err) {
     next(err);
@@ -578,10 +762,60 @@ const softDeleteRecord = async (req, res, next) => {
   }
 };
 
+/**
+ * Phase E.3：跨多份病历的时间线 / 治疗经过聚合。
+ *   GET /api/medical/timeline → 返回当前用户全部 completed record 整合后的时间线
+ *
+ * 调用 timelineService（MiniMax → Kimi → 规则）三段式降级；用户感知是「一定能拿到结果」。
+ */
+const getTimeline = async (req, res, next) => {
+  try {
+    const records = await MedicalRecord.findAll({
+      where: {
+        user_id: req.userId,
+        status: 'completed',
+        deleted_at: null
+      },
+      attributes: [
+        'id', 'diagnosis', 'stage', 'gene_mutation', 'treatment',
+        'treatment_line', 'pdl1', 'structured', 'created_at'
+      ],
+      order: [['created_at', 'DESC']],
+      limit: 6
+    });
+
+    // Phase E.6 / Review #3：少于 2 份完成时不调 LLM —— 单条没有"跨时间线"价值，
+    // 而 LLM 调用按 8000 字 ~ $0.05 计，避免误用为防误调用 burst。
+    if (records.length < 2) {
+      return res.json(success({
+        timeline: null,
+        recordCount: records.length,
+        sourceRecordIds: records.map((r) => r.id),
+        reason: records.length === 0 ? 'no_records' : 'need_more_records'
+      }, '需至少 2 份已完成解析的病历才能生成跨时间线'));
+    }
+
+    const timelineService = require('../services/timelineService');
+    const timeline = await timelineService.generateTimeline(records);
+
+    res.json(success({
+      timeline,
+      recordCount: records.length,
+      sourceRecordIds: records.map((r) => r.id)
+    }));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadMiddleware,
+  uploadMiddlewareBatch,
   handleUpload,
+  handleUploadBatch,
   getParseStatus,
+  getParseStatusBatch,
+  getTimeline,
   getRecords,
   getRecordDetail,
   enrichRecord,

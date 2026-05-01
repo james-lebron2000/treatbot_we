@@ -189,16 +189,51 @@ const MatchScoreItemSchema = z.object({
   confidence: z.number().min(0).max(1).optional()
 }).passthrough();
 
+/**
+ * Phase E.3：跨多份病历聚合时间线 schema。
+ * 由 timelineService.js 调用 MiniMax 后用 schema.safeParse 校验。
+ */
+const TimelineSummaryEventSchema = z.object({
+  date: optionalString,                                                       // YYYY-MM 或 YYYY-MM-DD 或 null
+  type: z.enum([
+    'diagnosis', 'staging', 'gene_test', 'treatment_start',
+    'treatment_response', 'adverse_event', 'imaging', 'lab', 'other'
+  ]),
+  title: z.string().min(1),
+  detail: z.string().optional().default(''),
+  sourceHint: z.union([z.number(), z.null()]).optional()
+}).passthrough();
+
+const TimelinePatientSummarySchema = z.object({
+  diagnosis: optionalString,
+  stage: optionalString,
+  geneMutation: optionalString,
+  pdl1: optionalString,
+  currentLine: optionalNumber,
+  ecog: optionalNumber,
+  age: optionalNumber
+}).passthrough();
+
+const TimelineSchema = z.object({
+  patientSummary: TimelinePatientSummarySchema,
+  events: z.array(TimelineSummaryEventSchema).max(40).default([]),
+  summaryNarrative: z.string().optional().default(''),
+  confidence: z.number().min(0).max(1).optional().default(0)
+}).passthrough();
+
 module.exports = {
   OcrExtractionSchema,
   PatientProfileSchema,
   MatchScoreItemSchema,
+  TimelineSchema,
   // exposed for unit tests
   __internals: {
     LabValueSchema,
     GeneVariantSchema,
     MolecularSchema,
     BiomarkersSchema,
-    OrganoidDrugSensitivitySchema
+    OrganoidDrugSensitivitySchema,
+    TimelineSummaryEventSchema,
+    TimelinePatientSummarySchema
   }
 };
