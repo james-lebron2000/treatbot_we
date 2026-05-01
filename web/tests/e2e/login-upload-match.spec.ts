@@ -19,7 +19,15 @@ test('login → upload → match 全链路', async ({ page }) => {
   })
 
   // ---- mock 字典 ----
+  // Phase E.2：UploadView 已切到批量端点（/upload-batch + /parse-status-batch），
+  // 即便只选 1 份文件也走 batch；legacy single endpoints 仍保留给 retryParse 用。
   let parseStatusCallCount = 0
+  let parseStatusBatchCallCount = 0
+  const parsedResult = {
+    diagnosis: '非小细胞肺癌',
+    stage: 'IV',
+    geneMutation: 'EGFR L858R'
+  }
   await installApiMocks(page, {
     '/api/auth/send-code': (route) => fulfillJson(route, envelope({ ok: true })),
     '/api/auth/h5-login': (route) =>
@@ -44,6 +52,24 @@ test('login → upload → match 全链路', async ({ page }) => {
       ),
     '/api/medical/upload': (route) =>
       fulfillJson(route, envelope({ fileId: 'f1', recordId: 'r1' })),
+    '/api/medical/upload-batch': (route) =>
+      fulfillJson(
+        route,
+        envelope({
+          total: 1,
+          successCount: 1,
+          fileIds: ['f1'],
+          records: [
+            {
+              fileId: 'f1',
+              recordId: 'r1',
+              status: 'queued',
+              ocrQueued: true,
+              originalName: 'fake-report.pdf'
+            }
+          ]
+        })
+      ),
     '/api/medical/parse-status': (route) => {
       parseStatusCallCount += 1
       // 第一次返回 running，第二次起返回 done，模拟真实异步 OCR
@@ -52,14 +78,33 @@ test('login → upload → match 全链路', async ({ page }) => {
           ? envelope({ status: 'running' })
           : envelope({
               status: 'completed',
-              result: {
-                diagnosis: '非小细胞肺癌',
-                stage: 'IV',
-                geneMutation: 'EGFR L858R'
-              }
+              result: parsedResult
             })
       return fulfillJson(route, body)
     },
+    '/api/medical/parse-status-batch': (route) => {
+      parseStatusBatchCallCount += 1
+      const isFirstCall = parseStatusBatchCallCount < 2
+      const body = envelope({
+        total: 1,
+        completedCount: isFirstCall ? 0 : 1,
+        erroredCount: 0,
+        done: !isFirstCall,
+        entries: [
+          {
+            fileId: 'f1',
+            recordId: 'r1',
+            status: isFirstCall ? 'running' : 'completed',
+            progress: isFirstCall ? 30 : 100,
+            ...(isFirstCall ? {} : { result: parsedResult })
+          }
+        ]
+      })
+      return fulfillJson(route, body)
+    },
+    // 单文件场景永远不到 timeline 阈值（≥2 完成才触发），但留个温和的兜底
+    '/api/medical/timeline': (route) =>
+      fulfillJson(route, envelope({ timeline: null, recordCount: 1, sourceRecordIds: [] })),
     '/api/matches': (route) =>
       fulfillJson(
         route,
