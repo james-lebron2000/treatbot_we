@@ -31,6 +31,11 @@ a {
   padding: 12px;
 }
 
+.app-shell-admin {
+  max-width: none;
+  padding: 0;
+}
+
 .app-header {
   background: linear-gradient(130deg, #1f6fff, #1ba6a6);
   border-radius: 16px;
@@ -64,6 +69,14 @@ a {
   padding: 16px;
   padding-bottom: 80px;
   box-shadow: 0 8px 30px rgba(30, 64, 175, 0.08);
+}
+
+.app-main-admin {
+  min-height: 100vh;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  background: #f5f7fb;
 }
 
 .tab-bar {

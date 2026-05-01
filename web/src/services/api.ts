@@ -149,6 +149,15 @@ const extractTrialList = (payload: any): any[] => {
   return payload.list || payload.items || payload.trials || payload.matches || payload.data || []
 }
 
+const buildQueryString = (params: Record<string, unknown>) => {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    query.set(key, String(value))
+  })
+  return query.toString()
+}
+
 // PRD-2026Q2 §2.5：幂等键作用域与后端一致 —— 后端 scope 已含 userId+route+method，
 // 所以前端只需要在 (trial) 维度幂等。保留 recordId 会让同一试验不同病历组合绕过去重。
 const buildIdempotencyKey = (payload: { trialId: string }) => {
@@ -298,8 +307,9 @@ export const api = {
     const { data } = await http.put<ApiResponse<any>>(`/api/applications/${id}/cancel`, { reason })
     return unwrap<any>(data)
   },
-  async getAdminDashboard() {
-    const { data } = await http.get<ApiResponse<any>>('/api/admin/dashboard')
+  async getAdminDashboard(params: Record<string, unknown> = {}) {
+    const query = buildQueryString(params)
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/dashboard${query ? `?${query}` : ''}`)
     return unwrap<any>(data)
   },
   async getAdminApplications(page = 1, pageSize = 20, trialId?: string, groupByStatus = false) {
@@ -321,8 +331,25 @@ export const api = {
     const { data } = await http.post<ApiResponse<any>>(`/api/admin/applications/${id}/notes`, { content })
     return unwrap<any>(data)
   },
-  async getAdminUsers(page = 1, pageSize = 20) {
-    const { data } = await http.get<ApiResponse<any>>(`/api/admin/users?page=${page}&pageSize=${pageSize}`)
+  async getAdminUsers(params: number | Record<string, unknown> = 1, pageSize = 20) {
+    const requestParams = typeof params === 'number' ? { page: params, pageSize } : params
+    const query = buildQueryString(requestParams)
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/users?${query}`)
+    return unwrap<any>(data)
+  },
+  async getAdminRecords(params: Record<string, unknown> = {}) {
+    const query = buildQueryString({ page: 1, pageSize: 20, ...params })
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/records?${query}`)
+    return unwrap<any>(data)
+  },
+  async getAdminUserMatches(id: string, params: Record<string, unknown> = {}) {
+    const query = buildQueryString(params)
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/users/${encodeURIComponent(id)}/matches${query ? `?${query}` : ''}`)
+    return unwrap<any>(data)
+  },
+  async revealAdminUserField(id: string, field: string) {
+    const query = buildQueryString({ field })
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/users/${encodeURIComponent(id)}/reveal?${query}`)
     return unwrap<any>(data)
   },
   async getProfile() {

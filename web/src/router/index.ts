@@ -9,7 +9,11 @@ const MatchesView = () => import('../pages/MatchesView.vue')
 const MatchDetailView = () => import('../pages/MatchDetailView.vue')
 const ProfileView = () => import('../pages/ProfileView.vue')
 const ApplicationsView = () => import('../pages/ApplicationsView.vue')
-const AdminView = () => import('../pages/AdminView.vue')
+const AdminLayout = () => import('../pages/admin/AdminLayout.vue')
+const AdminDashboardView = () => import('../pages/admin/DashboardView.vue')
+const AdminUsersView = () => import('../pages/admin/UsersView.vue')
+const AdminRecordsView = () => import('../pages/admin/RecordsView.vue')
+const AdminOperationsView = () => import('../pages/admin/OperationsView.vue')
 const CroBoardView = () => import('../pages/CroBoardView.vue')
 const CroLoginView = () => import('../pages/CroLoginView.vue')
 const DemoView = () => import('../pages/DemoView.vue')
@@ -34,7 +38,18 @@ const router = createRouter({
     { path: '/matches/:id', component: MatchDetailView, meta: { requiresAuth: true } },
     { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
     { path: '/applications', component: ApplicationsView, meta: { requiresAuth: true } },
-    { path: '/admin', component: AdminView, meta: { requiresAuth: true } },
+    {
+      path: '/admin',
+      component: AdminLayout,
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: '/admin/dashboard' },
+        { path: 'dashboard', component: AdminDashboardView },
+        { path: 'users', component: AdminUsersView },
+        { path: 'records', component: AdminRecordsView },
+        { path: 'operations', component: AdminOperationsView }
+      ]
+    },
     { path: '/cro', component: CroBoardView },
     { path: '/cro/login', component: CroLoginView }
   ]

@@ -1,9 +1,9 @@
-// Q3-红线 §B.3：AdminView 审核台 happy path。
+// Q3-红线 §B.3：Admin H5 后台 happy path。
 //
 // 验证：
 //   1. 注入 fake admin token 跳过 requireAuth
-//   2. mock /api/admin/dashboard /admin/applications /admin/users
-//   3. 列表渲染 + phone 显示已脱敏 (138****1234 形)
+//   2. mock /api/admin/dashboard /admin/users /admin/records
+//   3. Dashboard、注册用户、上传数据页面可切换，phone 显示已脱敏
 
 import { test, expect } from '@playwright/test'
 import { envelope, fulfillJson, installApiMocks, collectPageErrors } from './_helpers'
@@ -21,34 +21,44 @@ test('admin 审核全链路', async ({ page }) => {
       fulfillJson(
         route,
         envelope({
-          totalUsers: 128,
-          totalRecords: 240,
-          totalApplications: 56,
-          totalTrials: 18,
-          todayUsers: 3
-        })
-      ),
-    '/api/admin/applications': (route) =>
-      fulfillJson(
-        route,
-        envelope({
-          list: [
-            {
-              id: 'app-1',
-              userPhone: '138****1234',
-              trialName: 'EGFR 三代靶向 II 期',
-              status: 'pending',
-              createdAt: '2026-04-20T08:30:00Z'
-            },
-            {
-              id: 'app-2',
-              userPhone: '139****5678',
-              trialTitle: 'PD-1 联合化疗 III 期',
-              status: 'approved',
-              createdAt: '2026-04-22T10:15:00Z'
-            }
+          range: { startDate: '2026-04-26', endDate: '2026-05-02' },
+          overview: {
+            totalUsers: 128,
+            uploadedUsers: 76,
+            totalRecords: 240,
+            completedRecords: 218,
+            errorRecords: 4,
+            processingRecords: 18,
+            totalApplications: 56,
+            todayUsers: 3,
+            todayRecords: 9,
+            todayApplications: 2,
+            last7Users: 16,
+            last7Records: 42,
+            last7Applications: 11,
+            appliedUsers: 38
+          },
+          dailyTrend: [
+            { date: '2026-05-01', users: 3, records: 8, applications: 2 },
+            { date: '2026-05-02', users: 2, records: 6, applications: 1 }
           ],
-          total: 2
+          funnel: {
+            landingView: 100,
+            uploadStart: 66,
+            uploadSuccess: 58,
+            matchView: 44,
+            trialApply: 18,
+            applicationSubmitted: 12,
+            uploadToApplicationRate: 20.7
+          },
+          dataQuality: {
+            parseSuccessRate: 90.8,
+            parseErrorRate: 1.7,
+            errorRecords: 4,
+            recentErrors: []
+          },
+          recordStatus: [],
+          applicationStatus: []
         })
       ),
     '/api/admin/users': (route) =>
@@ -56,31 +66,72 @@ test('admin 审核全链路', async ({ page }) => {
         route,
         envelope({
           list: [
-            { id: 'u-1', phone: '138****1234', createdAt: '2026-04-10' },
-            { id: 'u-2', phone: '139****5678', createdAt: '2026-04-11' }
+            {
+              userId: 'u-1',
+              nickname: '张*',
+              phone: '138****1234',
+              recordCount: 2,
+              completedRecordCount: 2,
+              applicationCount: 1,
+              latestDiagnosis: '肺癌',
+              createdAt: '2026-04-10'
+            },
+            {
+              userId: 'u-2',
+              nickname: '李*',
+              phone: '139****5678',
+              recordCount: 1,
+              completedRecordCount: 1,
+              applicationCount: 0,
+              latestDiagnosis: '胃癌',
+              createdAt: '2026-04-11'
+            }
           ],
-          total: 2
+          pagination: { total: 2, page: 1, pageSize: 20, hasMore: false }
         })
       ),
-    '/api/admin/cro/list': (route) =>
-      fulfillJson(route, envelope({ list: [] })),
-    '/api/admin/trials': (route) => fulfillJson(route, envelope({ list: [] })),
+    '/api/admin/records': (route) =>
+      fulfillJson(
+        route,
+        envelope({
+          list: [
+            {
+              recordId: 'rec-1',
+              userId: 'u-1',
+              userNickname: '张*',
+              userPhone: '138****1234',
+              uploadTime: '2026-04-20T08:30:00Z',
+              parseStatus: 'completed',
+              fileType: '病理报告',
+              fileSize: 102400,
+              diagnosis: '肺癌',
+              stage: 'IV期',
+              geneMutation: 'EGFR L858R',
+              matchCount: 5,
+              applicationCount: 1,
+              structured: { entities: { cancerType: '肺癌' } }
+            }
+          ],
+          pagination: { total: 1, page: 1, pageSize: 20, hasMore: false }
+        })
+      ),
     '/api/track': (route) => fulfillJson(route, envelope({ accepted: true }))
   })
 
   await page.goto('/treatbot/admin')
   await page.waitForLoadState('networkidle')
 
-  // 标题
-  await expect(page.getByRole('heading', { name: '管理后台' })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('数愈管理端')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('总注册用户')).toBeVisible()
+  await expect(page.getByText('上传到报名漏斗')).toBeVisible()
 
-  // 默认在"概览"tab —— 切到"申请管理"
-  await page.getByRole('button', { name: '申请管理' }).click()
+  await page.getByRole('link', { name: /注册用户/ }).click()
+  await expect(page.getByRole('heading', { name: '注册用户' }).first()).toBeVisible()
+  await expect(page.getByText(/138\*+1234/).first()).toBeVisible()
 
-  // 应用列表中能看到至少一条试验
-  await expect(page.getByText(/EGFR 三代靶向/).first()).toBeVisible({ timeout: 10_000 })
-
-  // phone 应已脱敏（包含 ****）
+  await page.getByRole('link', { name: /上传数据/ }).click()
+  await expect(page.getByRole('heading', { name: '上传数据' }).first()).toBeVisible()
+  await expect(page.getByText('EGFR L858R').first()).toBeVisible()
   await expect(page.getByText(/138\*+1234/).first()).toBeVisible()
 
   expect(errors, errors.join('\n')).toEqual([])

@@ -1,10 +1,10 @@
 <template>
-  <main class="app-shell">
-    <header class="app-header">
+  <main class="app-shell" :class="{ 'app-shell-admin': isAdminRoute }">
+    <header v-if="!isAdminRoute" class="app-header">
       <h1>数愈健康</h1>
       <p class="app-tagline">您的病历，您做主 · 温和陪伴每一步</p>
     </header>
-    <section class="app-main">
+    <section class="app-main" :class="{ 'app-main-admin': isAdminRoute }">
       <RouterView />
     </section>
     <nav v-if="showTabBar" class="tab-bar">
@@ -25,7 +25,7 @@
         <span class="tab-icon">&#x1F4DD;</span>
         <span class="tab-label">申请</span>
       </RouterLink>
-      <RouterLink to="/profile" class="tab-item" :class="{ active: route.path === '/profile' || route.path === '/admin' }">
+      <RouterLink to="/profile" class="tab-item" :class="{ active: route.path === '/profile' || route.path.startsWith('/admin') }">
         <span class="tab-icon">&#x1F464;</span>
         <span class="tab-label">我的</span>
       </RouterLink>
@@ -44,9 +44,10 @@ import { track } from './utils/track'
 import HelpFab from './components/HelpFab.vue'
 
 const route = useRoute()
-const showTabBar = computed(() => route.path !== '/login' && !route.path.startsWith('/cro'))
+const isAdminRoute = computed(() => route.path.startsWith('/admin'))
+const showTabBar = computed(() => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value)
 const showHelpFab = computed(
-  () => route.path !== '/login' && !route.path.startsWith('/cro') && route.path !== '/onboarding'
+  () => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value && route.path !== '/onboarding'
 )
 
 onMounted(() => {
