@@ -1133,11 +1133,145 @@ const getTrialsHealth = async (req, res, next) => {
   }
 };
 
+/**
+ * Phase E.4：单用户的匹配视图。
+ * 给运营人员排查「这个家属问匹配出错了」时用 —— 一次拿到该用户的全部 record + 已匹配 trial 列表 + 该用户的报名状态。
+ *
+ *   GET /admin/users/:id/matches?topN=10
+ *
+ * 行为：
+ *   - 拿用户全部未删除 records（不限于 completed，便于看到 pending/error 状态）
+ *   - 拉招募中试验做评分（复用 buildRecordMatches）
+ *   - 跨多 record 聚合：同一 trialId 取最高分 + 合并 reasons + 标记来源 record id
+ *   - 同时返回 timelineService 的时间线，便于运营在后台直接看到「疾病和治疗经过」
+ */
+const getUserMatches = async (req, res, next) => {
+  try {
+    // Phase E.6 / Review #2：诊断/分期/治疗等 PHI 默认脱敏，明文需 ADMIN_MFA_BYPASS=true 旁路（与 revealField 同口径）。
+    // 待 PRD-2026Q2 §2.3 后续：接入真 MFA 后移除 bypass。
+    const mfaBypass = process.env.ADMIN_MFA_BYPASS === 'true';
+    const wantReveal = `${req.query.reveal || ''}` === '1';
+    if (wantReveal && !mfaBypass) {
+      return res.status(403).json({ code: 403, message: '查看明文 PHI 需要 MFA（暂未开通）', data: null });
+    }
+
+    const userId = req.params.id;
+    const topN = Math.min(toPositiveInt(req.query.topN, 10), 50);
+    // Phase E.6 / Review #11：默认不跑 timeline（同步 LLM 5-10s），需要时显式 ?withTimeline=1。
+    const wantTimeline = `${req.query.withTimeline || ''}` === '1';
+
+    const user = await User.findOne({
+      where: { id: userId },
+      attributes: ['id', 'nickname', 'phone', 'created_at']
+    });
+    if (!user) {
+      return res.status(404).json({ code: 404, message: '用户不存在', data: null });
+    }
+
+    const records = await MedicalRecord.findAll({
+      where: { user_id: userId, deleted_at: null },
+      attributes: [
+        'id', 'diagnosis', 'stage', 'gene_mutation', 'treatment',
+        'treatment_line', 'pdl1', 'structured', 'status', 'created_at'
+      ],
+      order: [['created_at', 'DESC']],
+      limit: 50
+    });
+
+    // 字段脱敏：默认每个字段截短到 100 字符 + 中段打码；reveal=1 + bypass 才返回明文。
+    const phiField = (value) => {
+      const text = safeText(value);
+      if (wantReveal) return text.slice(0, 200);
+      if (!text) return '';
+      // 简易脱敏：保留首 4 + 末 2 字符，中间打码
+      if (text.length <= 6) return '***';
+      return `${text.slice(0, 4)}***${text.slice(-2)}`;
+    };
+
+    if (!records.length) {
+      return res.ok({
+        user: {
+          id: user.id,
+          nickname: maskName(safeText(user.nickname)),
+          phone: maskPhone(safeText(user.phone))
+        },
+        records: [],
+        matches: [],
+        timeline: null,
+        revealed: wantReveal
+      });
+    }
+
+    // 跨 record 跑评分；同一 trial 留最高分
+    const trials = await getTrialCandidates();
+    const bestByTrial = new Map(); // trialId → match item
+    for (const record of records) {
+      const matches = buildRecordMatches(record, trials);
+      for (const m of matches) {
+        const key = String(m.trialId);
+        const cur = bestByTrial.get(key);
+        if (!cur || m.score > cur.score) {
+          bestByTrial.set(key, { ...m, sourceRecordIds: [record.id] });
+        } else if (cur.score === m.score) {
+          if (!cur.sourceRecordIds.includes(record.id)) {
+            cur.sourceRecordIds.push(record.id);
+          }
+        }
+      }
+    }
+    const matches = Array.from(bestByTrial.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN);
+
+    // 同时跑 timelineService（仅 completed records 才送进 LLM）。
+    // Phase E.6 / Review #4：admin 路径下传 restorePii=false，避免 LLM 把占位符还原成真姓名/电话泄漏给 admin。
+    // Phase E.6 / Review #11：默认不跑（同步 LLM 太慢），需要时 ?withTimeline=1。
+    let timeline = null;
+    if (wantTimeline) {
+      try {
+        const timelineService = require('../services/timelineService');
+        const completedRecords = records.filter((r) => r.status === 'completed');
+        if (completedRecords.length >= 2) {
+          timeline = await timelineService.generateTimeline(completedRecords, { restorePii: false });
+        }
+      } catch (timelineErr) {
+        logger.warn('admin getUserMatches timelineService 失败，跳过时间线', {
+          userId, error: timelineErr.message
+        });
+      }
+    }
+
+    res.ok({
+      user: {
+        id: user.id,
+        nickname: maskName(safeText(user.nickname)),
+        phone: maskPhone(safeText(user.phone)),
+        createdAt: user.created_at
+      },
+      records: records.map((r) => ({
+        recordId: r.id,
+        uploadTime: r.created_at,
+        parseStatus: r.status,
+        diagnosis: phiField(r.diagnosis),
+        stage: phiField(r.stage),
+        geneMutation: phiField(r.gene_mutation),
+        treatment: phiField(r.treatment)
+      })),
+      matches,
+      timeline,
+      revealed: wantReveal
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getUserList,
   revealField,
   getRecordList,
+  getUserMatches,
   getApplicationList,
   updateApplicationStatus,
   getSystemLogs,

@@ -115,6 +115,8 @@ router.post('/admin/cro', authMiddleware, requireAdmin, logAdmin('create_cro'), 
 router.put('/admin/cro/:id', authMiddleware, requireAdmin, logAdmin('update_cro', (req) => ({ targetType: 'cro', targetId: req.params.id })), adminController.updateCro);
 // PRD-2026Q2 §2.3：单字段明文揭示入口（后续加 requireMfa）
 router.get('/admin/users/:id/reveal', authMiddleware, requireAdmin, logAdmin('reveal_field', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.revealField);
+// Phase E.4：单用户的匹配 + 时间线视图（运营排查 / CRO 推送复核）
+router.get('/admin/users/:id/matches', authMiddleware, requireAdmin, logAdmin('view_user_matches', (req) => ({ targetType: 'user', targetId: req.params.id })), adminController.getUserMatches);
 
 // PRD-2026Q2 §3.2：OCR 队列 DLQ 列表 + 手动重试
 router.get('/admin/ocr-failures', authMiddleware, requireAdmin, logAdmin('view_ocr_failures'), adminController.listOcrFailures);
