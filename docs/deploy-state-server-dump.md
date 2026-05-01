@@ -3,20 +3,23 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 25225839974
-- **Commit**: `c18dbbecf35d5b9f48cb78cd2f3635df9adbdc72`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25225839974
-- **Generated at**: 2026-05-01T17:56:56Z
+- **Run**: 25226665003
+- **Commit**: `1a0055f3f734d814eac8557db5738cefa2091f8a`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25226665003
+- **Generated at**: 2026-05-01T18:18:34Z
 
 ---
 
 ```
-===== Deploy 20260502-015500 — SHA=c18dbbecf35d5b9f48cb78cd2f3635df9adbdc72 =====
+===== Deploy 20260502-021635 — SHA=1a0055f3f734d814eac8557db5738cefa2091f8a =====
 ::group::A) Backend container replace
-Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+1a0055f3f734d814eac8557db5738cefa2091f8a: Pulling from jakelebron18/treatbot-api
+Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
   ⚠ docker pull attempt 1/3 失败，30s 后重试…
-Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+1a0055f3f734d814eac8557db5738cefa2091f8a: Pulling from jakelebron18/treatbot-api
+Get "https://registry-1.docker.io/v2/": context deadline exceeded
   ⚠ docker pull attempt 2/3 失败，30s 后重试…
-Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+1a0055f3f734d814eac8557db5738cefa2091f8a: Pulling from jakelebron18/treatbot-api
+Get "https://registry-1.docker.io/v2/": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
   ❌ docker pull 连续 3 次失败 —— 中止 deploy（生产容器未替换，旧版本继续提供服务）
 ```
