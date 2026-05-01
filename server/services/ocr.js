@@ -57,7 +57,9 @@ const hasKimiCredential = !!KIMI_API_KEY;
 // Doubao / 火山方舟 Ark（OpenAI 兼容；本轮仅供 benchVisionLlm 离线脚本调用，
 // 生产 OCR pipeline 的 provider 路由由 Track B 决定后再接入 recognizeGeneral）
 const ARK_API_KEY = process.env.ARK_API_KEY || '';
-const ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, '');
+// llmClient.js 自己从 process.env.ARK_BASE_URL 读，这里只保留供日志/调试参考。
+// 用 _ 前缀避免 no-unused-vars 警告。
+const _ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, '');
 // Ark 必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
 // 备选：doubao-1-5-vision-pro-32k-250115
 const ARK_VISION_MODEL = process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';

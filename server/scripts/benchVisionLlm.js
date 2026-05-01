@@ -30,11 +30,9 @@
 
 /* eslint-disable no-console */
 
-const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const axios = require('axios');
 
@@ -43,7 +41,7 @@ try {
   require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 } catch (_) { /* dotenv 缺失也允许，依赖 shell 注入 */ }
 
-const { computeCost, RATE_TABLE, estimateUpperBound } = require('../utils/llmPricing');
+const { computeCost, estimateUpperBound } = require('../utils/llmPricing');
 const markitdown = require('../services/markitdown');
 
 // ============================================================================
