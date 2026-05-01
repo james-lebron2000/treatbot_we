@@ -806,6 +806,75 @@ const getParseStatus = async (fileId) => {
   }
 }
 
+/**
+ * Phase E.2：批量查询解析状态。
+ *   入参：['id1','id2',...]   出参：原始 server response（data.entries[]）
+ * 服务端不可用时模拟批量 fallback —— 给每个 fileId 返回 completed 占位，让前端走手填路径。
+ */
+const getParseStatusBatch = async (fileIds) => {
+  const ids = (Array.isArray(fileIds) ? fileIds : []).filter(Boolean)
+  if (!ids.length) {
+    return { data: { entries: [], total: 0, completedCount: 0, erroredCount: 0, done: true } }
+  }
+  if (shouldUseLocalFallback() && isEndpointUnavailable('parseStatusBatch')) {
+    return {
+      data: {
+        entries: ids.map((id) => buildParseStatusFallback(id).data),
+        total: ids.length,
+        completedCount: ids.length,
+        erroredCount: 0,
+        done: true
+      },
+      fallback: true,
+      message: '解析接口暂不可用，已进入手动补全模式'
+    }
+  }
+  try {
+    const res = await request({
+      url: '/api/medical/parse-status-batch',
+      method: 'POST',
+      data: { fileIds: ids }
+    })
+    markEndpointAvailable('parseStatusBatch')
+    return res
+  } catch (error) {
+    if (shouldUseLocalFallback() && (error.statusCode === 404 || error.statusCode === 0)) {
+      markEndpointUnavailable('parseStatusBatch')
+      return {
+        data: {
+          entries: ids.map((id) => buildParseStatusFallback(id).data),
+          total: ids.length,
+          completedCount: ids.length,
+          erroredCount: 0,
+          done: true
+        },
+        fallback: true,
+        message: '解析接口暂不可用，已进入手动补全模式'
+      }
+    }
+    throw error
+  }
+}
+
+/**
+ * Phase E.3：跨多份病历的「疾病发展 + 治疗经过」时间线。
+ * server 返回 { timeline, recordCount, sourceRecordIds }；timeline 至少含 events[] / patientSummary。
+ */
+const getMedicalTimeline = async () => {
+  try {
+    const res = await request({
+      url: '/api/medical/timeline',
+      method: 'GET'
+    })
+    return res
+  } catch (error) {
+    if (shouldUseLocalFallback() && (error.statusCode === 404 || error.statusCode === 0)) {
+      return { data: null, fallback: true, message: '时间线接口暂不可用' }
+    }
+    throw error
+  }
+}
+
 const getMedicalRecords = async () => {
   if (shouldUseLocalFallback() && isEndpointUnavailable('medicalRecords')) {
     return {
@@ -1350,6 +1419,9 @@ module.exports = {
   softDeleteMedicalRecord,
   uploadMedicalRecord,
   getParseStatus,
+  // Phase E.2/E.3：批量上传 + 批量轮询 + 时间线
+  getParseStatusBatch,
+  getMedicalTimeline,
   getMedicalRecords,
   getMedicalRecordDetail,
   enrichMedicalRecord,

@@ -45,7 +45,16 @@ Page({
       age: ''
     },
     unknownFields: [],
-    submitting: false
+    submitting: false,
+    // 修复方案 Track 3.6：接收来自 OCR 失败模态的 fileId，让手填值挂到同一条 record_id 上，
+    // 避免「OCR 失败 → 手填 → 又生一条新记录」导致用户回看时同一份病历有两条。
+    fileId: ''
+  },
+
+  onLoad(options) {
+    if (options && options.fileId) {
+      this.setData({ fileId: options.fileId })
+    }
   },
 
   onFieldInput(e) {
@@ -87,7 +96,7 @@ Page({
   },
 
   async submit() {
-    const { form, unknownFields } = this.data
+    const { form, unknownFields, fileId } = this.data
     if (!form.diagnosis && !form.stage) {
       wx.showToast({ title: '至少告诉我们诊断或分期', icon: 'none' })
       return
@@ -109,6 +118,20 @@ Page({
         unknownFields: unknownFields || []
       }
       wx.setStorageSync('structuredRecordDraft', draft)
+
+      // 修复方案 Track 3.6：如果是从 OCR 失败模态过来的（带 fileId），把手填字段
+      // 通过 PATCH /api/medical/records/:id/enrich 挂回同一条 record，让用户的「上传 → OCR 失败 → 手填」
+      // 是同一条病历，不至于在 records 页看到两条同源记录。
+      // enrich 失败仍然继续走 matches 流程（用本地 draft 兜底），不阻塞用户。
+      if (fileId) {
+        try {
+          await api.enrichMedicalRecord(fileId, draft)
+          wx.setStorageSync('currentRecordId', fileId)
+        } catch (enrichErr) {
+          console.warn('manualEntry: enrichMedicalRecord 失败，继续走本地 draft', enrichErr)
+        }
+      }
+
       wx.switchTab({ url: '/pages/matches/matches' })
     } catch (error) {
       wx.showToast({ title: copy.error.unknown, icon: 'none' })
@@ -121,6 +144,3 @@ Page({
     wx.navigateBack({ delta: 1 })
   }
 })
-
-// 让 api 引用不被 lint 判定为 unused —— 保留是为了后续接入 /api/medical/records 创建病历。
-void api

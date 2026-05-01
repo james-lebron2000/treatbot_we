@@ -97,8 +97,9 @@ Page({
     parseStep: 0,
     fileId: '',
     recordId: '',
+    fileIds: [],
+    isBatchParse: false,
     parsedData: {},
-    parsedRows: [],
     parsedSections: [],
     structuredSummary: {
       requiredTotal: 0,
@@ -126,11 +127,20 @@ Page({
   onHide() {
     this.clearPollTimer()
     this.clearProgressTimer()
+    this.clearAutoRedirectTimer()
   },
 
   onUnload() {
     this.clearPollTimer()
     this.clearProgressTimer()
+    this.clearAutoRedirectTimer()
+  },
+
+  clearAutoRedirectTimer() {
+    if (this.autoRedirectTimer) {
+      clearTimeout(this.autoRedirectTimer)
+      this.autoRedirectTimer = null
+    }
   },
 
   chooseImage() {
@@ -152,7 +162,7 @@ Page({
 
   takePhoto() {
     wx.chooseMedia({
-      count: 9 - this.data.tempFiles.length,
+      count: 5 - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['camera'],
       success: (res) => {
@@ -163,7 +173,7 @@ Page({
 
   selectFromAlbum() {
     wx.chooseMedia({
-      count: 9 - this.data.tempFiles.length,
+      count: 5 - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['album'],
       success: (res) => {
@@ -174,7 +184,7 @@ Page({
 
   selectPdfFile() {
     wx.chooseMessageFile({
-      count: 9 - this.data.tempFiles.length,
+      count: 5 - this.data.tempFiles.length,
       type: 'file',
       extension: ['pdf'],
       success: (res) => {
@@ -185,7 +195,7 @@ Page({
 
   selectFromMessage() {
     wx.chooseMessageFile({
-      count: 9 - this.data.tempFiles.length,
+      count: 5 - this.data.tempFiles.length,
       type: 'all',
       success: (res) => {
         this.handleFiles(res.tempFiles || [])
@@ -245,8 +255,9 @@ Page({
       })
     }
 
+    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
     this.setData({
-      tempFiles: [...currentFiles, ...supported].slice(0, 9)
+      tempFiles: [...currentFiles, ...supported].slice(0, 5)
     })
   },
 
@@ -342,13 +353,15 @@ Page({
     TRANSIENT_STORAGE_KEYS.forEach((key) => wx.removeStorageSync(key))
     parseTask.clearCachedMatches()
     parseTask.clearActiveParseTask()
+    parseTask.clearActiveParseBatch()
     this.clearPollTimer()
     this.clearProgressTimer()
     this.setData({
       fileId: '',
       recordId: '',
+      fileIds: [],
+      isBatchParse: false,
       parsedData: {},
-      parsedRows: [],
       parsedSections: [],
       structuredSummary: schema.buildStructuredSummary({}),
       summaryProgressStyle: 'width: 0%;',
@@ -396,46 +409,99 @@ Page({
     try {
       await auth.ensureBaseLogin()
 
-      let fileId = ''
-      let recordId = ''
+      // Phase E.2：批量上传 —— 为每个文件单独 wx.uploadFile（小程序限制），
+      // 收齐 fileIds 后通过 /api/medical/parse-status-batch 一次性轮询全部状态。
+      const fileIds = []
+      const uploadErrors = []
 
       for (let i = 0; i < this.data.tempFiles.length; i += 1) {
-        const res = await api.uploadMedicalRecord({
-          filePath: this.data.tempFiles[i].path,
-          type: 'auto',
-          remark: this.data.remark
-        })
+        const file = this.data.tempFiles[i]
+        // 上传过程中给用户一点进度提示（10% → 30% 平均分摊）
+        const stepProgress = 10 + Math.floor((i / this.data.tempFiles.length) * 20)
+        this.setProgressTarget('uploading', stepProgress)
 
-        const payload = pickPayload(res)
-        if (!fileId) {
-          fileId = payload.fileId || payload.recordId || payload.id || ''
-          recordId = payload.recordId || payload.fileId || payload.id || ''
+        try {
+          const res = await api.uploadMedicalRecord({
+            filePath: file.path,
+            type: 'auto',
+            remark: this.data.remark
+          })
+          const payload = pickPayload(res)
+          const fid = payload.fileId || payload.recordId || payload.id || ''
+          if (fid) {
+            fileIds.push(fid)
+          } else {
+            uploadErrors.push({ name: file.name, message: '服务端未返回 fileId' })
+          }
+        } catch (err) {
+          console.error(`第 ${i + 1} 份文件上传失败:`, err)
+          uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
         }
       }
 
-      if (!fileId) {
-        throw new Error('上传成功但未获取文件ID')
+      if (!fileIds.length) {
+        // 全部失败 → 抛出最后一个错误（保留 statusCode 以便 classifyUploadError 分流）
+        const last = uploadErrors[uploadErrors.length - 1] || { message: '上传成功但未获取文件ID' }
+        throw new Error(last.message)
       }
+
+      // 部分失败：toast 提示但不阻塞（已上传的会继续解析）
+      if (uploadErrors.length) {
+        wx.showToast({
+          title: `${uploadErrors.length} 份上传失败，其余 ${fileIds.length} 份继续解析`,
+          icon: 'none',
+          duration: 2400
+        })
+      }
+
+      // 单文件 / 多文件分流：单文件保持老 path（兼容老 storage / 老页面），多文件走 batch
+      const isBatch = fileIds.length > 1
+      const primaryFileId = fileIds[0]
 
       this.setData({
         uploading: false,
-        fileId,
-        recordId,
+        fileId: primaryFileId,
+        recordId: primaryFileId,
+        fileIds,
+        isBatchParse: isBatch,
         parseStep: 0,
-        processingStatus: '文件已上传，等待AI解析...',
+        processingStatus: isBatch
+          ? `${fileIds.length} 份病历已上传，AI 正在并行解析…`
+          : '文件已上传，等待AI解析...',
         parseFallbackNotified: false,
         hasPdfUpload: this.data.tempFiles.some((file) => file.fileType === 'pdf'),
         pdfQualityHintShown: false
       })
 
-      parseTask.setActiveParseTask({
-        fileId,
-        recordId,
-        status: 'parsing',
-        progress: Math.max(8, Number(this.data.parseProgress || 0)),
+      const taskMeta = {
         startedAt: Date.now(),
         hasPdfUpload: this.data.tempFiles.some((file) => file.fileType === 'pdf')
-      })
+      }
+
+      if (isBatch) {
+        parseTask.setActiveParseBatch({
+          fileIds,
+          status: 'parsing',
+          progress: Math.max(8, Number(this.data.parseProgress || 0)),
+          ...taskMeta
+        })
+        // 同时 set 单任务（让旧的 restoreProcessingSession 路径仍能定位主文件）
+        parseTask.setActiveParseTask({
+          fileId: primaryFileId,
+          recordId: primaryFileId,
+          status: 'parsing',
+          progress: Math.max(8, Number(this.data.parseProgress || 0)),
+          ...taskMeta
+        })
+      } else {
+        parseTask.setActiveParseTask({
+          fileId: primaryFileId,
+          recordId: primaryFileId,
+          status: 'parsing',
+          progress: Math.max(8, Number(this.data.parseProgress || 0)),
+          ...taskMeta
+        })
+      }
       this.setProgressTarget('parsing', Math.max(12, Number(this.data.parseProgress || 0)))
       this.startPolling()
     } catch (error) {
@@ -463,6 +529,101 @@ Page({
 
   async checkParseStatus() {
     try {
+      // 修复方案 Track 3.1：90 秒硬超时（批量场景下按总数缩放，最多 180s）。
+      const activeBatch = parseTask.getActiveParseBatch()
+      const activeTask = parseTask.getActiveParseTask()
+      const startedAt = (activeBatch && activeBatch.startedAt) || (activeTask && activeTask.startedAt)
+      if (startedAt) {
+        const elapsed = Date.now() - Number(startedAt || 0)
+        // 单文件 90s；批量 90s + 每多 1 份 +20s，封顶 180s
+        const fileCount = activeBatch ? activeBatch.fileIds.length : 1
+        const timeoutMs = Math.min(180 * 1000, 90 * 1000 + Math.max(0, fileCount - 1) * 20 * 1000)
+
+        const stuck = activeBatch
+          ? (!activeBatch.done && (activeBatch.completedCount || 0) + (activeBatch.erroredCount || 0) < fileCount)
+          : (activeTask && (activeTask.status === 'parsing' || activeTask.status === 'analyzing' || activeTask.status === 'uploading'))
+
+        if (elapsed > timeoutMs && stuck) {
+          parseTask.clearActiveParseBatch()
+          parseTask.clearActiveParseTask()
+          this.handleParseFailure({
+            errorMsg: `解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙。我们直接帮您手填关键信息？`
+          })
+          return
+        }
+      }
+
+      // 批量分支：用 /api/medical/parse-status-batch 一次拿全部状态
+      if (this.data.isBatchParse && activeBatch) {
+        const batchResult = await parseTask.syncActiveParseBatch()
+        if (!batchResult) {
+          return
+        }
+
+        const res = batchResult.response
+        if (res && res.fallback && !this.data.parseFallbackNotified) {
+          this.setData({ parseFallbackNotified: true })
+          wx.showToast({
+            title: res.message || '解析接口暂不可用，已进入手动补全',
+            icon: 'none'
+          })
+        }
+
+        const total = batchResult.total || 1
+        const completedCount = batchResult.completedCount || 0
+        const erroredCount = batchResult.erroredCount || 0
+        // 整体进度 = (完成 + 失败) / 总数 * 100
+        const overallProgress = Math.floor(((completedCount + erroredCount) / total) * 100)
+        // 状态文案：还没全部完成时显示 analyzing；全部完成或部分完成时根据成功数显示
+        if (!batchResult.done) {
+          this.setProgressTarget('analyzing', Math.max(20, overallProgress))
+          this.setData({
+            processingStatus: `已处理 ${completedCount + erroredCount} / ${total} 份…`,
+            parseProgress: Math.max(20, overallProgress)
+          })
+          return
+        }
+
+        // 全部终态：如果至少一份完成 → 用合并结果走完成路径；否则走失败路径
+        if (completedCount > 0 && batchResult.mergedEntities) {
+          // 把合并字段塞回 result 形态（与单文件 path 兼容）
+          const mergedResult = {
+            id: batchResult.completedRecordIds[0] || this.data.fileId,
+            recordId: batchResult.completedRecordIds[0] || this.data.fileId,
+            diagnosis: batchResult.mergedEntities.diagnosis || '',
+            stage: batchResult.mergedEntities.stage || '',
+            geneMutation: batchResult.mergedEntities.geneMutation || '',
+            treatment: batchResult.mergedEntities.treatment || '',
+            confidence: batchResult.mergedEntities.confidence || 0,
+            sourceRecordIds: batchResult.mergedEntities.sourceRecordIds || []
+          }
+          this.pendingCompletedResult = mergedResult
+          if (!this.completionHandled) {
+            this.handleCompletedResult(mergedResult)
+          }
+
+          // 全部失败的子任务给个轻提示（不阻塞）
+          if (erroredCount > 0) {
+            setTimeout(() => {
+              wx.showToast({
+                title: `${erroredCount} 份解析失败，已显示其余结果`,
+                icon: 'none',
+                duration: 2400
+              })
+            }, 1600)
+          }
+          return
+        }
+
+        // 全部失败 → 取第一条失败的 errorMsg
+        const firstErr = (batchResult.entries || []).find((e) => e.errorMsg) || {}
+        this.handleParseFailure({
+          errorMsg: firstErr.errorMsg || '所有文件解析均失败'
+        })
+        return
+      }
+
+      // 单文件分支（保持老逻辑）
       const syncResult = await parseTask.syncActiveParseTask()
       if (!syncResult) {
         return
@@ -488,42 +649,68 @@ Page({
       })
       this.setProgressTarget(status, progress)
 
-      if (status === 'completed' && payload.result) {
-        this.pendingCompletedResult = payload.result
+      // 修复方案 Track 3.4：放宽到 utils/parse-task.js 暴露的同一组 completed 状态值。
+      if (syncResult.result || (status === 'completed' && payload.result)) {
+        const result = syncResult.result || payload.result
+        this.pendingCompletedResult = result
         if (!this.completionHandled) {
-          this.handleCompletedResult(payload.result)
+          this.handleCompletedResult(result)
         }
         return
       }
 
-      if (status === 'error') {
-        this.clearPollTimer()
-        this.clearProgressTimer()
-        this.setData({
-          uploading: false,
-          currentStep: 1
-        })
-        wx.showToast({
-          // PRD-2026Q2 §3.7：解析态失败统一到 copy.error.parse_failed
-          title: payload.errorMsg || copy.error.parse_failed,
-          icon: 'none'
-        })
+      // 修复方案 Track 3.2 / 3.3：失败不再 currentStep:1 把用户踢回去
+      if (status === 'error' || syncResult.failed) {
+        this.handleParseFailure(payload)
       }
     } catch (error) {
       console.error('轮询解析状态失败:', error)
     }
   },
 
+  // 修复方案 Track 3.2：解析失败统一处理 —— 模态框 + 真实错误信息 + 手填路径。
+  handleParseFailure(payload) {
+    this.clearPollTimer()
+    this.clearProgressTimer()
+    this.setData({ uploading: false })
+
+    const realErrMsg = (payload && (payload.errorMsg || payload.message)) || ''
+    const detail = realErrMsg ? `\n（原因：${realErrMsg}）` : ''
+    const fileId = this.data.fileId || ''
+
+    wx.showModal({
+      title: '我们没能自动看懂这份病历',
+      content: `不要紧，您直接告诉我们关键信息，一样能帮家人找到能用的新药。${detail}`,
+      confirmText: '去手填',
+      cancelText: '换一份',
+      success: (res) => {
+        if (res.confirm) {
+          // 修复方案 Track 3.6：把 fileId 透到 manualEntry，让手填值能挂回同一条 record_id。
+          const url = fileId
+            ? `/pages/manualEntry/manualEntry?fileId=${encodeURIComponent(fileId)}`
+            : '/pages/manualEntry/manualEntry'
+          wx.navigateTo({ url })
+        } else {
+          // 用户选择换一份 → 回到选文件页（清掉旧文件让用户重新选）
+          this.setData({
+            currentStep: 1,
+            tempFiles: []
+          })
+        }
+      }
+    })
+  },
+
   buildParsedPresentation(parsedData) {
     const normalized = schema.normalizeStructuredRecord(parsedData)
-    const parsedRows = schema.buildStructuredRows(normalized)
-    const parsedSections = schema.buildStructuredSections(normalized)
+    // utils/schema.js 现在统一暴露 buildRecordSections（取代历史名 buildStructuredSections /
+    // buildStructuredRows）。wxml 只读 parsedSections，所以 rows 不再产出。
+    const parsedSections = schema.buildRecordSections(normalized)
     const structuredSummary = schema.buildStructuredSummary(normalized)
     const missingFields = schema.getMissingFields(normalized)
 
     return {
       normalized,
-      parsedRows,
       parsedSections,
       structuredSummary,
       missingFields
@@ -534,7 +721,6 @@ Page({
     const presentation = this.buildParsedPresentation(parsedData)
     this.setData({
       parsedData: presentation.normalized,
-      parsedRows: presentation.parsedRows,
       parsedSections: presentation.parsedSections,
       structuredSummary: presentation.structuredSummary,
       summaryProgressStyle: `width: ${presentation.structuredSummary.completeness}%;`,
@@ -563,6 +749,12 @@ Page({
     }
 
     const { normalized, missingFields } = this.applyParsedPresentation(parsedData)
+    // 同时把当前 recordId 也落到 storage —— records/detail 页打开时优先读 storage
+    // 里的结构化数据，避免后端写入有延迟时详情页空白。
+    const resolvedRecordId = this.data.recordId || this.data.fileId || normalized.id || ''
+    if (resolvedRecordId) {
+      wx.setStorageSync('currentRecordId', resolvedRecordId)
+    }
     wx.setStorageSync('structuredRecordDraft', normalized)
 
     this.setData({
@@ -589,6 +781,28 @@ Page({
           duration: 280
         })
       }, 260)
+    }
+
+    // PRD-2026Q3 §U7：上传 + 解析 100% 完成后，停留 ~1.2s 让用户看到完成态
+    // 再自动跳到结构化病历浏览页（pages/records/detail）。这样用户的认知是
+    //   「上传 → 看到完成 → 看到自家病历的完整卡片视图」一气呵成。
+    // 关键缺信息（PDF 模态、缺失字段）会先打断跳转：
+    //   - PDF 模态期间不跳；
+    //   - 仍有 missingFields 时不跳，让用户在当前页用 gapSection 完成补全后再走 startMatching。
+    const shouldAutoRedirect =
+      missingFields.length === 0 &&
+      !this.data.pdfQualityHintShown &&
+      resolvedRecordId
+    if (shouldAutoRedirect) {
+      this.autoRedirectTimer = setTimeout(() => {
+        wx.redirectTo({
+          url: `/pages/records/detail/detail?id=${encodeURIComponent(resolvedRecordId)}&fromUpload=1`,
+          fail: () => {
+            // redirectTo 失败（如目标页未注册）时，至少让用户能手动跳过去
+            wx.showToast({ title: '已为您整理好病历，可在「病历」中查看', icon: 'none' })
+          }
+        })
+      }, 1200)
     }
   },
 
@@ -685,6 +899,21 @@ Page({
   },
 
   restoreProcessingSession() {
+    // 优先复活 batch（多文件）会话；fallback 到单文件
+    const activeBatch = parseTask.getActiveParseBatch()
+    if (activeBatch && activeBatch.fileIds && activeBatch.fileIds.length) {
+      this.setData({
+        currentStep: 2,
+        fileIds: activeBatch.fileIds,
+        fileId: activeBatch.fileIds[0],
+        recordId: activeBatch.fileIds[0],
+        isBatchParse: activeBatch.fileIds.length > 1,
+        hasPdfUpload: !!activeBatch.hasPdfUpload
+      })
+      this.startPolling()
+      return
+    }
+
     const activeTask = parseTask.getActiveParseTask()
     if (!activeTask || !activeTask.fileId) {
       return
@@ -694,6 +923,7 @@ Page({
       currentStep: 2,
       fileId: activeTask.fileId,
       recordId: activeTask.recordId || '',
+      isBatchParse: false,
       hasPdfUpload: !!activeTask.hasPdfUpload
     })
     this.startPolling()

@@ -95,6 +95,6 @@
 
   <view class="action-bar">
     <button class="btn btn-default" bindtap="cancel">{{copy.cta.cancel}}</button>
-    <button class="btn btn-primary" bindtap="submit" loading="{{submitting}}">看看为家人找到的可能性</button>
+    <button class="btn btn-primary" bindtap="submit" loading="{{submitting}}">看看为家人找到的新药</button>
   </view>
 </view>
