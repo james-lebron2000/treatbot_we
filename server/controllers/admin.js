@@ -3,7 +3,17 @@ const path = require('path');
 const dayjs = require('dayjs');
 const { Op, fn, col } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { User, MedicalRecord, TrialApplication, Trial, CroCompany, AdminAuditLog, OcrJobFailure, sequelize } = require('../models');
+const {
+  User,
+  MedicalRecord,
+  TrialApplication,
+  Trial,
+  CroCompany,
+  AdminAuditLog,
+  OcrJobFailure,
+  UserFunnelEvent,
+  sequelize
+} = require('../models');
 // PRD-2026Q2 §3.2：OCR DLQ 管理 API 调 queue.retryFailure 做手动重试
 const queueService = require('../services/queue');
 const { success, pagination } = require('../utils/response');
@@ -49,6 +59,13 @@ const toPositiveInt = (value, fallback) => {
   return num;
 };
 
+const parseBooleanParam = (value) => {
+  const normalized = safeLower(value);
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
+  return null;
+};
+
 const normalizeDateRange = ({ date, startDate, endDate }) => {
   if (date) {
     const day = dayjs(date);
@@ -89,6 +106,39 @@ const applyDateRange = (where, query, field = 'created_at') => {
     },
     range
   };
+};
+
+const countByStatus = (rows) => rows.reduce((acc, item) => {
+  const status = item.status || item.get?.('status') || 'unknown';
+  const count = parseInt(item.get ? item.get('count') : item.count, 10) || 0;
+  acc[status] = count;
+  return acc;
+}, {});
+
+const mapDateCountRows = (rows) => rows.reduce((acc, item) => {
+  const rawDate = item.get ? item.get('date') : item.date;
+  const date = dayjs(rawDate).isValid() ? dayjs(rawDate).format('YYYY-MM-DD') : `${rawDate}`;
+  acc[date] = parseInt(item.get ? item.get('count') : item.count, 10) || 0;
+  return acc;
+}, {});
+
+const buildDailyTrend = ({ start, end, users, records, applications }) => {
+  const result = [];
+  let cursor = dayjs(start).startOf('day');
+  const finalDay = dayjs(end).startOf('day');
+
+  while (cursor.isBefore(finalDay) || cursor.isSame(finalDay)) {
+    const date = cursor.format('YYYY-MM-DD');
+    result.push({
+      date,
+      users: users[date] || 0,
+      records: records[date] || 0,
+      applications: applications[date] || 0
+    });
+    cursor = cursor.add(1, 'day');
+  }
+
+  return result;
 };
 
 const toCsv = (rows) => {
@@ -281,41 +331,144 @@ const sendExport = (res, { format, filename, jsonData, csvRows }) => {
 
 const getDashboardStats = async (req, res, next) => {
   try {
-    const today = dayjs().startOf('day').toDate();
+    const today = dayjs().startOf('day');
+    const last7Start = dayjs().subtract(6, 'day').startOf('day');
+    const now = dayjs().endOf('day');
+    const trendRange = normalizeDateRange(req.query) || {
+      start: last7Start.toDate(),
+      end: now.toDate(),
+      label: 'last_7_days'
+    };
+    const trendWhere = {
+      created_at: {
+        [Op.between]: [trendRange.start, trendRange.end]
+      }
+    };
+    const activeRecordWhere = { deleted_at: null };
     const [
       totalUsers,
+      activeUsers,
+      uploadedUsers,
       totalRecords,
       totalApplications,
       todayUsers,
       todayRecords,
-      todayApplications
+      todayApplications,
+      last7Users,
+      last7Records,
+      last7Applications,
+      appliedUsers
     ] = await Promise.all([
       User.count(),
-      MedicalRecord.count(),
+      User.count({ where: { deleted_at: null } }),
+      MedicalRecord.count({
+        where: activeRecordWhere,
+        distinct: true,
+        col: 'user_id'
+      }),
+      MedicalRecord.count({ where: activeRecordWhere }),
       TrialApplication.count(),
-      User.count({ where: { created_at: { [Op.gte]: today } } }),
-      MedicalRecord.count({ where: { created_at: { [Op.gte]: today } } }),
-      TrialApplication.count({ where: { created_at: { [Op.gte]: today } } })
+      User.count({ where: { created_at: { [Op.gte]: today.toDate() } } }),
+      MedicalRecord.count({ where: { ...activeRecordWhere, created_at: { [Op.gte]: today.toDate() } } }),
+      TrialApplication.count({ where: { created_at: { [Op.gte]: today.toDate() } } }),
+      User.count({ where: { created_at: { [Op.gte]: last7Start.toDate() } } }),
+      MedicalRecord.count({ where: { ...activeRecordWhere, created_at: { [Op.gte]: last7Start.toDate() } } }),
+      TrialApplication.count({ where: { created_at: { [Op.gte]: last7Start.toDate() } } }),
+      TrialApplication.count({ distinct: true, col: 'user_id' })
     ]);
 
-    const recordStatusDistribution = await MedicalRecord.findAll({
-      attributes: ['status', [fn('COUNT', col('*')), 'count']],
-      group: ['status']
-    });
+    const [
+      recordStatusDistribution,
+      applicationStatusDistribution,
+      userTrendRows,
+      recordTrendRows,
+      applicationTrendRows,
+      funnelRows,
+      recentErrorRecords
+    ] = await Promise.all([
+      MedicalRecord.findAll({
+        where: activeRecordWhere,
+        attributes: ['status', [fn('COUNT', col('*')), 'count']],
+        group: ['status']
+      }),
+      TrialApplication.findAll({
+        attributes: ['status', [fn('COUNT', col('*')), 'count']],
+        group: ['status']
+      }),
+      User.findAll({
+        where: trendWhere,
+        attributes: [[fn('DATE', col('created_at')), 'date'], [fn('COUNT', col('id')), 'count']],
+        group: [fn('DATE', col('created_at'))],
+        raw: true
+      }),
+      MedicalRecord.findAll({
+        where: { ...activeRecordWhere, ...trendWhere },
+        attributes: [[fn('DATE', col('created_at')), 'date'], [fn('COUNT', col('id')), 'count']],
+        group: [fn('DATE', col('created_at'))],
+        raw: true
+      }),
+      TrialApplication.findAll({
+        where: trendWhere,
+        attributes: [[fn('DATE', col('created_at')), 'date'], [fn('COUNT', col('id')), 'count']],
+        group: [fn('DATE', col('created_at'))],
+        raw: true
+      }),
+      UserFunnelEvent
+        ? UserFunnelEvent.findAll({
+            where: trendWhere,
+            attributes: ['event', [fn('COUNT', col('*')), 'count']],
+            group: ['event'],
+            raw: true
+          })
+        : Promise.resolve([]),
+      MedicalRecord.findAll({
+        where: { ...activeRecordWhere, status: 'error' },
+        include: [{ model: User, attributes: ['id', 'nickname', 'phone'] }],
+        order: [['updated_at', 'DESC']],
+        limit: 5
+      })
+    ]);
 
-    const applicationStatusDistribution = await TrialApplication.findAll({
-      attributes: ['status', [fn('COUNT', col('*')), 'count']],
-      group: ['status']
-    });
+    const statusCounts = countByStatus(recordStatusDistribution);
+    const completedRecords = statusCounts.completed || 0;
+    const errorRecords = statusCounts.error || 0;
+    const pendingRecords = statusCounts.pending || 0;
+    const runningRecords = statusCounts.running || 0;
+    const processingRecords = pendingRecords + runningRecords;
+    const successRate = totalRecords ? Number(((completedRecords / totalRecords) * 100).toFixed(1)) : 0;
+    const errorRate = totalRecords ? Number(((errorRecords / totalRecords) * 100).toFixed(1)) : 0;
+
+    const funnelMap = funnelRows.reduce((acc, item) => {
+      acc[item.event] = parseInt(item.count, 10) || 0;
+      return acc;
+    }, {});
+    const applicationSubmitted = funnelMap.application_submitted || 0;
+    const uploadSuccess = funnelMap.upload_success || 0;
 
     res.json(success({
+      range: {
+        label: trendRange.label,
+        startDate: dayjs(trendRange.start).format('YYYY-MM-DD'),
+        endDate: dayjs(trendRange.end).format('YYYY-MM-DD')
+      },
       overview: {
         totalUsers,
+        activeUsers,
+        uploadedUsers,
         totalRecords,
+        completedRecords,
+        errorRecords,
+        pendingRecords,
+        runningRecords,
+        processingRecords,
         totalApplications,
         todayUsers,
         todayRecords,
-        todayApplications
+        todayApplications,
+        last7Users,
+        last7Records,
+        last7Applications,
+        appliedUsers
       },
       recordStatus: recordStatusDistribution.map((item) => ({
         status: item.status,
@@ -324,7 +477,43 @@ const getDashboardStats = async (req, res, next) => {
       applicationStatus: applicationStatusDistribution.map((item) => ({
         status: item.status,
         count: parseInt(item.get('count'), 10)
-      }))
+      })),
+      dailyTrend: buildDailyTrend({
+        start: trendRange.start,
+        end: trendRange.end,
+        users: mapDateCountRows(userTrendRows),
+        records: mapDateCountRows(recordTrendRows),
+        applications: mapDateCountRows(applicationTrendRows)
+      }),
+      funnel: {
+        landingView: funnelMap.landing_view || 0,
+        uploadStart: funnelMap.upload_start || 0,
+        uploadSuccess,
+        matchView: funnelMap.match_view || 0,
+        trialApply: funnelMap.trial_apply || 0,
+        applicationSubmitted,
+        uploadedUsers,
+        appliedUsers,
+        uploadToApplicationRate: uploadSuccess
+          ? Number(((applicationSubmitted / uploadSuccess) * 100).toFixed(1))
+          : 0
+      },
+      dataQuality: {
+        parseSuccessRate: successRate,
+        parseErrorRate: errorRate,
+        pendingRecords,
+        runningRecords,
+        errorRecords,
+        recentErrors: recentErrorRecords.map((record) => ({
+          recordId: record.id,
+          userId: record.user_id,
+          userNickname: maskName(safeText(record.User?.nickname)),
+          userPhone: maskPhone(safeText(record.User?.phone)),
+          fileType: safeText(record.type),
+          diagnosis: safeText(record.diagnosis),
+          updatedAt: record.updated_at
+        }))
+      }
     }));
   } catch (err) {
     next(err);
@@ -336,10 +525,13 @@ const getUserList = async (req, res, next) => {
     const page = toPositiveInt(req.query.page, 1);
     const pageSize = Math.min(toPositiveInt(req.query.pageSize, 20), 100);
     const { keyword } = req.query;
+    const includeDeleted = parseBooleanParam(req.query.includeDeleted) === true;
+    const hasRecords = parseBooleanParam(req.query.hasRecords);
 
-    let where = {};
+    let where = includeDeleted ? {} : { deleted_at: null };
     if (keyword) {
       where[Op.or] = [
+        { id: { [Op.like]: `%${escapeLike(keyword)}%` } },
         { nickname: { [Op.like]: `%${escapeLike(keyword)}%` } },
         { phone: { [Op.like]: `%${escapeLike(keyword)}%` } }
       ];
@@ -347,9 +539,24 @@ const getUserList = async (req, res, next) => {
 
     ({ where } = applyDateRange(where, req.query));
 
+    if (hasRecords !== null) {
+      const recordUserRows = await MedicalRecord.findAll({
+        where: { deleted_at: null },
+        attributes: ['user_id'],
+        group: ['user_id'],
+        raw: true
+      });
+      const userIdsWithRecords = recordUserRows.map((item) => item.user_id).filter(Boolean);
+      if (hasRecords) {
+        where.id = { [Op.in]: userIdsWithRecords.length ? userIdsWithRecords : ['__none__'] };
+      } else if (userIdsWithRecords.length) {
+        where.id = { [Op.notIn]: userIdsWithRecords };
+      }
+    }
+
     const { count, rows } = await User.findAndCountAll({
       where,
-      attributes: ['id', 'openid', 'nickname', 'avatar_url', 'phone', 'created_at'],
+      attributes: ['id', 'openid', 'nickname', 'avatar_url', 'phone', 'created_at', 'deleted_at'],
       order: [['created_at', 'DESC']],
       limit: pageSize,
       offset: (page - 1) * pageSize
@@ -360,7 +567,7 @@ const getUserList = async (req, res, next) => {
     // 批量查询代替 N+1
     const [recordStats, appCounts, latestRecords] = userIds.length ? await Promise.all([
       MedicalRecord.findAll({
-        where: { user_id: { [Op.in]: userIds } },
+        where: { user_id: { [Op.in]: userIds }, deleted_at: null },
         attributes: ['user_id', [fn('COUNT', col('id')), 'total'], [fn('SUM', sequelize.literal("status = 'completed'")), 'completed']],
         group: ['user_id'],
         raw: true
@@ -373,9 +580,9 @@ const getUserList = async (req, res, next) => {
       }),
       sequelize.query(
         `SELECT mr.user_id, mr.id, mr.diagnosis FROM medical_records mr
-         INNER JOIN (SELECT user_id, MAX(created_at) as max_ct FROM medical_records WHERE user_id IN (:ids) GROUP BY user_id) latest
+         INNER JOIN (SELECT user_id, MAX(created_at) as max_ct FROM medical_records WHERE user_id IN (:ids) AND deleted_at IS NULL GROUP BY user_id) latest
          ON mr.user_id = latest.user_id AND mr.created_at = latest.max_ct
-         WHERE mr.user_id IN (:ids)`,
+         WHERE mr.user_id IN (:ids) AND mr.deleted_at IS NULL`,
         { replacements: { ids: userIds }, type: sequelize.QueryTypes.SELECT }
       )
     ]) : [[], [], []];
@@ -395,6 +602,7 @@ const getUserList = async (req, res, next) => {
         avatarUrl: safeText(user.avatar_url),
         phone: maskPhone(safeText(user.phone)),
         createdAt: user.created_at,
+        deletedAt: user.deleted_at,
         recordCount: Number(rs.total) || 0,
         completedRecordCount: Number(rs.completed) || 0,
         applicationCount: appCountMap[user.id] || 0,
@@ -421,10 +629,26 @@ const getRecordList = async (req, res, next) => {
     const offset = (page - 1) * pageSize;
     const keyword = safeText(req.query.keyword);
     const status = safeText(req.query.status);
+    const userId = safeText(req.query.userId);
 
-    let where = {};
+    let where = { deleted_at: null };
     if (status) {
       where.status = status;
+    }
+    if (userId) {
+      where.user_id = userId;
+    }
+    if (keyword) {
+      const like = `%${escapeLike(keyword)}%`;
+      where[Op.or] = [
+        { id: { [Op.like]: like } },
+        { diagnosis: { [Op.like]: like } },
+        { stage: { [Op.like]: like } },
+        { gene_mutation: { [Op.like]: like } },
+        { treatment: { [Op.like]: like } },
+        { '$User.nickname$': { [Op.like]: like } },
+        { '$User.phone$': { [Op.like]: like } }
+      ];
     }
 
     ({ where } = applyDateRange(where, req.query));
@@ -432,18 +656,14 @@ const getRecordList = async (req, res, next) => {
     const include = [{
       model: User,
       attributes: ['id', 'nickname', 'phone'],
-      required: Boolean(keyword),
-      where: keyword ? {
-        [Op.or]: [
-          { nickname: { [Op.like]: `%${escapeLike(keyword)}%` } },
-          { phone: { [Op.like]: `%${escapeLike(keyword)}%` } }
-        ]
-      } : undefined
+      required: false
     }];
 
     const { count, rows } = await MedicalRecord.findAndCountAll({
       where,
       include,
+      distinct: true,
+      subQuery: false,
       order: [['created_at', 'DESC']],
       limit: pageSize,
       offset
@@ -643,7 +863,7 @@ const getSystemLogs = async (req, res, next) => {
 const exportRecords = async (req, res, next) => {
   try {
     const format = safeLower(req.query.format) === 'csv' ? 'csv' : 'json';
-    let where = {};
+    let where = { deleted_at: null };
     let range = null;
     ({ where, range } = applyDateRange(where, req.query));
 
@@ -705,7 +925,7 @@ const exportUsers = async (req, res, next) => {
     const [records, applications, trials] = await Promise.all([
       userIds.length
         ? MedicalRecord.findAll({
-            where: { user_id: { [Op.in]: userIds } },
+            where: { user_id: { [Op.in]: userIds }, deleted_at: null },
             order: [['created_at', 'DESC']]
           })
         : Promise.resolve([]),

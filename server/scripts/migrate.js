@@ -163,6 +163,9 @@ const ensureIndexes = async () => {
   await safeAddIndex('medical_records', ['created_at']);
   // PRD-2026Q2 §3.5：多病历管理页 —— "某用户未删除病历"主路径索引
   await safeAddIndex('medical_records', ['user_id', 'deleted_at'], { name: 'idx_user_deleted' });
+  // Admin H5 后台：按用户 / 状态 / 日期筛选上传数据的主路径索引
+  await safeAddIndex('medical_records', ['user_id', 'deleted_at', 'created_at'], { name: 'idx_record_user_deleted_created' });
+  await safeAddIndex('medical_records', ['status', 'deleted_at', 'created_at'], { name: 'idx_record_status_deleted_created' });
   await safeAddIndex('trial_applications', ['user_id']);
   await safeAddIndex('trial_applications', ['trial_id']);
   await safeAddIndex('trial_applications', ['status']);
