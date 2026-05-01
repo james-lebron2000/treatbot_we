@@ -22,7 +22,7 @@
 
 .empty-desc {
   font-size: 36rpx;
-  color: #999;
+  color: #374151;
   margin-bottom: 40rpx;
   text-align: center;
 }

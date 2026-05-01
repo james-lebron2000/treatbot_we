@@ -19,7 +19,7 @@
 .search-icon {
   font-size: 40rpx;
   margin-right: 16rpx;
-  color: #999;
+  color: #374151;
 }
 
 .search-input {
@@ -52,7 +52,7 @@
 
 .filter-btn text {
   font-size: 36rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .filter-arrow {
@@ -94,7 +94,7 @@
   background: #f5f5f5;
   border-radius: 28rpx;
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
   transition: all 0.3s;
 }
 
@@ -121,7 +121,7 @@
 
 .filter-actions .btn-default {
   background: #f5f5f5;
-  color: #666;
+  color: #1e293b;
 }
 
 .filter-actions .btn-primary {
@@ -148,7 +148,7 @@
 
 .clear-history {
   font-size: 34rpx;
-  color: #999;
+  color: #374151;
 }
 
 .history-list {
@@ -172,7 +172,7 @@
 
 .history-text {
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .search-results {
@@ -188,7 +188,7 @@
 
 .results-count {
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .results-list {
@@ -232,7 +232,7 @@
 }
 
 .result-status.completed {
-  color: #999;
+  color: #374151;
 }
 
 .result-name {
@@ -253,7 +253,7 @@
 
 .info-item {
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .result-tags {
@@ -264,7 +264,7 @@
 
 .tag {
   background: #f5f5f5;
-  color: #666;
+  color: #1e293b;
   padding: 8rpx 16rpx;
   border-radius: 8rpx;
   font-size: 32rpx;
@@ -274,7 +274,7 @@
 .no-more {
   text-align: center;
   padding: 40rpx;
-  color: #999;
+  color: #374151;
   font-size: 34rpx;
 }
 
@@ -300,6 +300,6 @@
 
 .empty-desc {
   font-size: 34rpx;
-  color: #999;
+  color: #374151;
   text-align: center;
 }

@@ -15,6 +15,6 @@
 
 .desc {
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
   line-height: 1.8;
 }

@@ -34,7 +34,7 @@
 .institution,
 .apply-time {
   display: block;
-  color: #666;
+  color: #1e293b;
   font-size: 32rpx;
   line-height: 1.6;
 }

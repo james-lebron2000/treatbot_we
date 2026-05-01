@@ -34,7 +34,7 @@
 .status-desc {
   display: block;
   font-size: 36rpx;
-  color: #666;
+  color: #1e293b;
   margin-bottom: 40rpx;
 }
 
@@ -78,7 +78,7 @@
 
 .step-icon {
   font-size: 40rpx;
-  color: #ccc;
+  color: #475569;
 }
 
 .step-item.completed .step-icon {
@@ -91,7 +91,7 @@
 
 .step-name {
   font-size: 32rpx;
-  color: #999;
+  color: #374151;
 }
 
 .step-item.completed .step-name,
@@ -133,7 +133,7 @@
 .success-desc {
   display: block;
   font-size: 36rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .result-card {
@@ -164,7 +164,7 @@
 .info-label {
   width: 160rpx;
   font-size: 36rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .info-value {
@@ -211,6 +211,6 @@
 .error-desc {
   display: block;
   font-size: 36rpx;
-  color: #666;
+  color: #1e293b;
   margin-bottom: 40rpx;
 }

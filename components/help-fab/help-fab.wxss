@@ -65,7 +65,7 @@
   height: 48rpx;
   border-radius: 50%;
   background: #F1F5F9;
-  color: #475569;
+  color: #1e293b;
   font-size: 40rpx;
   line-height: 48rpx;
   text-align: center;
@@ -94,7 +94,7 @@
 }
 
 .help-sheet-item-sub {
-  color: #64748B;
+  color: #1e293b;
   font-size: 32rpx;
   line-height: 1.45;
 }

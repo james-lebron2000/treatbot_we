@@ -19,7 +19,7 @@
   display: block;
   margin-top: 8rpx;
   font-size: 34rpx;
-  color: #666;
+  color: #1e293b;
 }
 
 .state-card {
@@ -29,7 +29,7 @@
   border-radius: 16rpx;
   text-align: center;
   font-size: 36rpx;
-  color: #888;
+  color: #374151;
 }
 
 .state-card.error {
@@ -71,7 +71,7 @@
 
 .consent-version {
   font-size: 32rpx;
-  color: #888;
+  color: #374151;
   background: #f0f1f5;
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
@@ -79,5 +79,5 @@
 
 .consent-time {
   font-size: 32rpx;
-  color: #888;
+  color: #374151;
 }
