@@ -1,0 +1,137 @@
+<view class="container">
+  <!-- 样例标识 -->
+  <view class="sample-banner">
+    <view class="sample-banner-tag">📘 样例</view>
+    <view class="sample-banner-body">
+      <text class="sample-banner-title">{{sampleBanner.title}}</text>
+      <text class="sample-banner-subtitle">{{sampleBanner.subtitle}}</text>
+    </view>
+  </view>
+
+  <!-- 步骤指示器：第 2 步当前激活 -->
+  <view class="step-indicator">
+    <view class="step done">
+      <view class="step-dot">✓</view>
+      <text class="step-text">看懂病历</text>
+    </view>
+    <view class="step-line done"></view>
+    <view class="step active">
+      <view class="step-dot">2</view>
+      <text class="step-text">找到新药</text>
+    </view>
+  </view>
+
+  <!-- 病历回顾条 -->
+  <view class="record-recap">
+    <text class="record-recap-icon">📋</text>
+    <text class="record-recap-text">{{recordRecap}}</text>
+    <text class="record-recap-link" bindtap="goBackToStep1">回看</text>
+  </view>
+
+  <!-- 统计 -->
+  <view class="match-stats">
+    <view class="stat-item">
+      <text class="stat-value">{{matches.length}}</text>
+      <text class="stat-label">找到的新药</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-value">{{highMatches}}</text>
+      <text class="stat-label">高度匹配</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-value">{{readyMatches}}</text>
+      <text class="stat-label">值得优先申请</text>
+    </view>
+  </view>
+
+  <view class="score-rule-tip">
+    <text>我们先展示最匹配的几种新药 · 每一种都说清楚为什么适合您家人。</text>
+  </view>
+
+  <!-- 新药货架列表 -->
+  <view class="matches-list">
+    <view class="match-card" wx:for="{{matches}}" wx:key="id">
+      <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
+
+      <view class="match-card-header" bindtap="toggleMatch" data-id="{{item.id}}">
+        <view class="match-content">
+          <view class="drug-headline">
+            <text class="drug-icon">💊</text>
+            <text class="drug-name">{{item.drug.name}}</text>
+            <text class="drug-code" wx:if="{{item.drug.code}}">/ {{item.drug.code}}</text>
+          </view>
+          <view class="drug-subline">
+            <text class="drug-class">{{item.drug.class}}</text>
+            <text class="drug-form" wx:if="{{item.drug.form}}"> · {{item.drug.form}}</text>
+            <text class="drug-brand" wx:if="{{item.drug.brand}}"> · {{item.drug.brand}}</text>
+          </view>
+        </view>
+        <view class="match-header-right">
+          <view class="match-score-badge level-{{item.matchTone}}">
+            <text class="score">{{item.score}}%</text>
+            <text class="label">匹配度</text>
+          </view>
+          <text class="match-expand-indicator">{{item.expanded ? '收起' : '看详情'}}</text>
+        </view>
+      </view>
+
+      <view class="match-card-summary">
+        <view class="match-tags">
+          <text class="tag tag-free" wx:if="{{item.drug.freeAccess}}">免费用药</text>
+          <text class="tag tag-level level-{{item.matchTone}}">{{item.matchLevel}}</text>
+          <text class="tag tag-primary">{{item.phase}}</text>
+        </view>
+        <text class="match-indication">主治：{{item.indication}}</text>
+        <text class="match-source">提供：{{item.drug.manufacturer}} ｜ {{item.institution}}</text>
+      </view>
+
+      <view wx:if="{{item.expanded}}" class="match-card-expanded">
+        <view class="decision-banner tone-{{item.decisionTone}}">
+          <text class="decision-label">我们的看法</text>
+          <text class="decision-text">{{item.decisionHint}}</text>
+        </view>
+
+        <view class="detail-panel">
+          <text class="detail-panel-title">提供这种新药的医院</text>
+          <view class="sub-center-list">
+            <text class="sub-center-chip" wx:for="{{item.subCenters}}" wx:for-item="center" wx:key="*this">{{center}}</text>
+          </view>
+        </view>
+
+        <view class="detail-panel">
+          <text class="detail-panel-title">来源信息</text>
+          <text class="meta-line">药企：{{item.drug.manufacturer}}</text>
+          <text class="meta-line">主导医院：{{item.institution}}</text>
+          <text class="meta-line">研究编号：{{item.nctId}}</text>
+          <text class="meta-line">招募状态：{{item.status}}</text>
+        </view>
+
+        <view class="detail-panel">
+          <text class="detail-panel-title">能用这种新药的条件</text>
+          <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="c" wx:key="*this">
+            <text class="criteria-icon">+</text>
+            <text class="criteria-text">{{c}}</text>
+          </view>
+        </view>
+
+        <view class="detail-panel">
+          <text class="detail-panel-title">不能用这种新药的情况</text>
+          <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="c" wx:key="*this">
+            <text class="criteria-icon">-</text>
+            <text class="criteria-text">{{c}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 转化 CTA -->
+  <view class="cta-section">
+    <text class="cta-title">看完了？换您家人的真实病历，找能用的新药</text>
+    <text class="cta-subtitle">几分钟就能帮您看懂 + 找到免费用药 —— 数据完全由您掌管，随时可带走或删除。</text>
+    <view class="cta-button" bindtap="goToUpload" hover-class="cta-button-hover">
+      <text class="cta-button-text">上传我的病历</text>
+    </view>
+    <text class="cta-back" bindtap="goBack">先返回</text>
+  </view>
+</view>

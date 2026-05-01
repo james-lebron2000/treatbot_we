@@ -1,207 +1,256 @@
-// PRD-2026Q3 §U7：「先看个例子」——
-// 给 0 医学基础家属一个无门槛预览入口，看一份完整的样例病历 + 匹配结果，
-// 帮他熟悉「上传后能拿到什么」，再决定要不要把家人的病历交给我们。
+// PRD-2026Q3 §U7（迭代）：「先看个例子」演示页 第 1 步——
+// 全面仿真实际上传 + 提取流程，让 0 医学基础家属在不冒险的前提下
+// 看明白「如果传一份病历，会发生什么」。
 //
-// 数据全部 mock，刻意做得真实但有「样例」明确标识。
-// - 样例病人：王女士，65 岁，右肺腺癌 III 期，EGFR 19 缺失阳性
-// - 治疗史：手术 → 化疗 → 一线靶向（奥希替尼） → 进展
-// - 影像：靶病灶 32mm，新发肝转移
-// - 匹配 4 个临床试验：1 高度匹配 / 2 中等 / 1 待补
+// 三阶段动效（与真实 pages/upload/upload.js 流水线 1:1 对齐）：
+//   phase = 'uploading'  → 0–30%  仿真上传，文件缩略图 + 进度条
+//   phase = 'parsing'    → 30–95% 4 个 step 卡顺序点亮（OCR / 找关键信息 /
+//                                整理结构 / 匹配预取），并伴随「字段一条
+//                                一条 reveal」的 mock 提取效果
+//   phase = 'done'       → 100%   显示完整结构化病历卡片 + 「下一步」
 //
-// 真实数据走 utils/api.js → server/controllers/matches.js；这里完全离线，
-// 不打 /api/matches，避免没登录的访客访问被 401。
+// 第 2 步（匹配结果）放到 /pages/demo/matches/matches，wx.navigateTo 跳转。
+// 数据完全 mock，不打 /api/matches。
+
+const TIMING = {
+  // 总时长 ~6 秒，刻意比真实接口快但不能瞬移；让用户能看清流程。
+  uploadingMs: 1800,        // 0 → 30%
+  parsingMs: 3600,          // 30 → 95%（4 个 step 各 ~900ms）
+  doneSettleMs: 600,        // 95 → 100% 收尾
+  fieldRevealStaggerMs: 280 // 字段逐条出现间隔
+}
+
+const PARSE_STEPS = [
+  { key: 'ocr', title: '看清病历写了什么', desc: '识别图像 / PDF 里的所有文字' },
+  { key: 'keyInfo', title: '找诊断、分期、基因这些关键信息', desc: '从识别结果中圈出医生说过的关键字段' },
+  { key: 'struct', title: '整理成可读的病历卡片', desc: '把诊断 / 治疗 / 影像按时间线和分组排好' },
+  { key: 'prefetch', title: '为您预取可能的临床试验', desc: '同步从公开试验库检索匹配项，下一页就能看' }
+]
+
+// 字段 reveal 顺序（按医生看病历的自然阅读顺序）。每条对应到 record 里的字段路径。
+const FIELD_REVEAL_ORDER = [
+  'patient.basic',      // 姓名 / 年龄 / 性别 / ECOG
+  'diagnosis.primary',  // 原发病
+  'diagnosis.stage',    // 分期
+  'diagnosis.pathology',// 病理类型
+  'genes',              // 基因检测（一组）
+  'labs',               // 化验
+  'treatments',         // 治疗时间线
+  'imaging',            // 影像
+  'summary'             // 摘要（最后一条点亮）
+]
+
+// 与第二页共享的 mock 病历快照（写到 storage 让 /pages/demo/matches 取）
+const SAMPLE_RECORD = {
+  patient: {
+    nickName: '王女士（样例）',
+    age: 65,
+    sex: '女',
+    weight: '52 kg',
+    height: '160 cm'
+  },
+  diagnosis: {
+    primary: '右肺腺癌',
+    pathology: '腺癌（中分化）',
+    stage: 'III B 期（cT4N2M0）',
+    diagnosedAt: '2024-03'
+  },
+  genes: [
+    { name: 'EGFR', detail: '19 外显子缺失（阳性）', highlight: true },
+    { name: 'ALK', detail: '阴性' },
+    { name: 'ROS1', detail: '阴性' },
+    { name: 'PD-L1', detail: 'TPS 30%' }
+  ],
+  ecog: '1（能下床走动，做轻活）',
+  labs: [
+    { name: '血红蛋白', value: '118 g/L', range: '120-160', flag: 'low' },
+    { name: '中性粒细胞', value: '3.2×10⁹/L', range: '2-7' },
+    { name: '肝功能 ALT', value: '28 U/L', range: '<40' },
+    { name: '肌酐', value: '64 μmol/L', range: '50-90' }
+  ],
+  treatments: [
+    { date: '2024-04', name: '右肺上叶切除术 + 纵隔淋巴结清扫', kind: '手术' },
+    { date: '2024-05', name: '培美曲塞 + 顺铂 4 个周期', kind: '辅助化疗' },
+    { date: '2024-09', name: '奥希替尼 80mg 每日一次', kind: '靶向（一线）' },
+    { date: '2026-02', name: '影像评估：肝新发病灶，疾病进展（PD）', kind: '复查' }
+  ],
+  imaging: {
+    targetLesion: '右下肺结节 32mm（基线）',
+    newLesion: '肝右叶 18mm 新发病灶（2026-02）',
+    latestExam: '2026-02 胸腹增强 CT'
+  },
+  summary: '右肺腺癌 III B 期，EGFR 19 缺失阳性，奥希替尼治疗后进展，PD-L1 TPS 30%；体力良好（ECOG 1）。'
+}
 
 Page({
   data: {
-    // 顶部样例标识
+    phase: 'uploading',          // 'uploading' | 'parsing' | 'done'
+    progress: 0,                 // 0-100
+    progressStyle: 'width: 0%;',
+    parseSteps: PARSE_STEPS,
+    parseStepIndex: -1,          // -1=未开始；0~3 对应 PARSE_STEPS
+    revealedFields: {},          // { 'patient.basic': true, ... }
+    record: SAMPLE_RECORD,
+    sampleFile: {
+      name: '出院小结-王女士-2026.pdf',
+      kind: 'PDF',
+      pages: 6
+    },
     sampleBanner: {
       title: '这是一份样例数据',
-      subtitle: '帮您熟悉上传后能拿到什么 —— 不是真实的匹配结果。'
-    },
+      subtitle: '我们仿真演示「上传 → 看懂 → 匹配」全流程，您看完再决定是否上传家人的真实病历。'
+    }
+  },
 
-    // 样例结构化病历卡（与 records/detail 字段对齐）
-    record: {
-      patient: {
-        nickName: '王女士（样例）',
-        age: 65,
-        sex: '女',
-        weight: '52 kg',
-        height: '160 cm'
-      },
-      diagnosis: {
-        primary: '右肺腺癌',
-        pathology: '腺癌（中分化）',
-        stage: 'III B 期（cT4N2M0）',
-        diagnosedAt: '2024-03'
-      },
-      genes: [
-        { name: 'EGFR', detail: '19 外显子缺失（阳性）', highlight: true },
-        { name: 'ALK', detail: '阴性' },
-        { name: 'ROS1', detail: '阴性' },
-        { name: 'PD-L1', detail: 'TPS 30%' }
-      ],
-      // 体力评分 + 关键化验
-      ecog: '1（能下床走动，做轻活）',
-      labs: [
-        { name: '血红蛋白', value: '118 g/L', range: '120-160', flag: 'low' },
-        { name: '中性粒细胞', value: '3.2×10⁹/L', range: '2-7' },
-        { name: '肝功能 ALT', value: '28 U/L', range: '<40' },
-        { name: '肌酐', value: '64 μmol/L', range: '50-90' }
-      ],
-      // 治疗时间线
-      treatments: [
-        { date: '2024-04', name: '右肺上叶切除术 + 纵隔淋巴结清扫', kind: '手术' },
-        { date: '2024-05', name: '培美曲塞 + 顺铂 4 个周期', kind: '辅助化疗' },
-        { date: '2024-09', name: '奥希替尼 80mg 每日一次', kind: '靶向（一线）' },
-        { date: '2026-02', name: '影像评估：肝新发病灶，疾病进展（PD）', kind: '复查' }
-      ],
-      // 影像 / 病灶
-      imaging: {
-        targetLesion: '右下肺结节 32mm（基线）',
-        newLesion: '肝右叶 18mm 新发病灶（2026-02）',
-        latestExam: '2026-02 胸腹增强 CT'
-      },
-      summary: '右肺腺癌 III B 期，EGFR 19 缺失阳性，奥希替尼治疗后进展，PD-L1 TPS 30%；体力良好（ECOG 1）。'
-    },
+  onLoad() {
+    // 进入页面立刻自动开始仿真。如果将来要让用户手动「点开始」可以拆出来。
+    // 这里把 mock 病历也写到 storage，让第二页能读到（保持与「上传完保存到本地」对齐的语义）。
+    wx.setStorageSync('demoSampleRecord', SAMPLE_RECORD)
+    this.startSimulation()
+  },
 
-    // 4 条样例匹配结果（与 matches.wxml 字段对齐）
-    matches: [
-      {
-        id: 'demo-trial-001',
-        name: 'EGFR T790M 阳性 NSCLC 三代靶向耐药后续治疗 II 期研究',
-        nctId: 'NCT05XXXXXX1',
-        institution: '中国医学科学院肿瘤医院',
-        subCenters: ['北京', '上海', '广州'],
-        phase: 'II 期',
-        type: '靶向 + 化疗',
-        indication: '奥希替尼治疗后进展的非小细胞肺癌',
-        status: '招募中',
-        score: 92,
-        matchLevel: '高度匹配',
-        matchTone: 'high',
-        humanReason: '基因结果完全吻合，正好是这个研究招募的人群；奥希替尼耐药后继续治疗的方案，您家人的情况非常对得上',
-        decisionTone: 'positive',
-        decisionHint: '强烈建议优先看这个 —— 入组条件几乎全中，您家人就是这个研究的目标人群。',
-        inclusion: [
-          'EGFR 19 外显子缺失或 L858R 突变阳性',
-          '一代/三代 EGFR-TKI 治疗后疾病进展',
-          'ECOG 0-1，预期生存 ≥ 3 个月',
-          '至少一处可测量病灶（RECIST 1.1）'
-        ],
-        exclusion: [
-          '存在不可控的脑转移',
-          '入组前 4 周内接受过其他抗肿瘤治疗',
-          '严重心肝肾功能不全'
-        ],
-        expanded: false
-      },
-      {
-        id: 'demo-trial-002',
-        name: 'EGFR 突变 NSCLC 联合 PD-1 抑制剂耐药后 III 期注册研究',
-        nctId: 'NCT05XXXXXX2',
-        institution: '上海市肺科医院',
-        subCenters: ['上海', '杭州', '南京'],
-        phase: 'III 期',
-        type: '免疫 + 化疗',
-        indication: 'EGFR 突变型晚期非小细胞肺癌',
-        status: '招募中',
-        score: 78,
-        matchLevel: '比较匹配',
-        matchTone: 'mid',
-        humanReason: '诊断、分期、基因都对得上；PD-L1 TPS 30% 也在这个研究的入组范围内',
-        decisionTone: 'positive',
-        decisionHint: '适合看 —— 您家人 PD-L1 表达水平在该研究的获益人群范围里。',
-        inclusion: [
-          'EGFR 敏感突变阳性 + 一代/三代 TKI 治疗后进展',
-          'PD-L1 TPS ≥ 1%',
-          '年龄 18-75 岁',
-          '可测量病灶 + 充足脏器功能'
-        ],
-        exclusion: [
-          '既往使用过 PD-1/PD-L1 抑制剂',
-          '活动性自身免疫性疾病',
-          '间质性肺疾病史'
-        ],
-        expanded: false
-      },
-      {
-        id: 'demo-trial-003',
-        name: '晚期实体瘤新型 ADC 药物 I/II 期剂量递增研究',
-        nctId: 'NCT05XXXXXX3',
-        institution: '复旦大学附属肿瘤医院',
-        subCenters: ['上海'],
-        phase: 'I/II 期',
-        type: 'ADC 药物',
-        indication: '多种实体瘤（含非小细胞肺癌）',
-        status: '招募中',
-        score: 64,
-        matchLevel: '比较匹配',
-        matchTone: 'mid',
-        humanReason: '诊断和分期对得上；研究覆盖多瘤种，对基因要求不严，您家人能进',
-        decisionTone: 'neutral',
-        decisionHint: '可以作为备选 —— 这是一个新型药物的早期研究，安全性数据还在积累，副作用情况需要您和医生再权衡。',
-        inclusion: [
-          '组织学确诊的晚期/转移性实体瘤',
-          '至少经过一线标准治疗失败',
-          'ECOG 0-1',
-          '可测量病灶'
-        ],
-        exclusion: [
-          '入组前 2 周接受过其他抗肿瘤治疗',
-          '未控制的中枢神经系统转移',
-          '严重周围神经病变（≥ 2 级）'
-        ],
-        expanded: false
-      },
-      {
-        id: 'demo-trial-004',
-        name: '晚期 NSCLC 抗血管生成联合化疗 II 期临床研究',
-        nctId: 'NCT05XXXXXX4',
-        institution: '北京协和医院',
-        subCenters: ['北京'],
-        phase: 'II 期',
-        type: '抗血管 + 化疗',
-        indication: '驱动基因阳性 NSCLC 后线治疗',
-        status: '招募中',
-        score: 52,
-        matchLevel: '可以考虑',
-        matchTone: 'low',
-        humanReason: '诊断和基因对得上；分中心目前只有北京，看您家人是否方便',
-        decisionTone: 'caution',
-        decisionHint: '看就医地点 —— 这个研究目前只有北京中心招募，需要您评估异地就诊的实际情况。',
-        inclusion: [
-          'EGFR 突变阳性 + TKI 进展后',
-          '年龄 18-70 岁',
-          '足够的骨髓 / 肝肾功能'
-        ],
-        exclusion: [
-          '近 6 个月内有动脉血栓事件',
-          '活动性出血',
-          '高血压控制不佳'
-        ],
-        expanded: false
+  onUnload() {
+    this.cleanupTimers()
+  },
+
+  cleanupTimers() {
+    this.timers && this.timers.forEach((t) => clearTimeout(t))
+    this.intervals && this.intervals.forEach((t) => clearInterval(t))
+    this.timers = []
+    this.intervals = []
+  },
+
+  // 进度推进的统一封装：在 [from, to] 之间用 ~durationMs 平滑递增，
+  // 期间每 80ms 触发一次 setData，避免 15+ fps 不流畅。
+  rampProgress(from, to, durationMs, onDone) {
+    const startedAt = Date.now()
+    const tick = () => {
+      const elapsed = Date.now() - startedAt
+      const t = Math.min(1, elapsed / durationMs)
+      // ease-out cubic：开头快收尾慢，更像真实进度条
+      const eased = 1 - Math.pow(1 - t, 3)
+      const value = Math.round(from + (to - from) * eased)
+      this.setData({
+        progress: value,
+        progressStyle: `width: ${value}%;`
+      })
+      if (t >= 1) {
+        clearInterval(handle)
+        onDone && onDone()
       }
-    ]
+    }
+    const handle = setInterval(tick, 80)
+    this.intervals.push(handle)
+    tick()
   },
 
-  toggleMatch(e) {
-    const { id } = e.currentTarget.dataset
-    if (!id) return
-    const matches = this.data.matches.map((item) => {
-      if (`${item.id}` !== `${id}`) return item
-      return { ...item, expanded: !item.expanded }
+  startSimulation() {
+    this.timers = []
+    this.intervals = []
+
+    // ===== Phase A: 上传 0 → 30% =====
+    this.setData({ phase: 'uploading' })
+    this.rampProgress(0, 30, TIMING.uploadingMs, () => {
+      // ===== Phase B: 解析 30 → 95%，4 个 step 顺序点亮 =====
+      this.setData({ phase: 'parsing', parseStepIndex: 0 })
+      this.runParsingPhase()
     })
-    this.setData({ matches })
   },
 
-  // 「上传我的病历」—— 看完样例后的主转化路径
-  goToUpload() {
+  runParsingPhase() {
+    const stepCount = PARSE_STEPS.length
+    const stepDuration = TIMING.parsingMs / stepCount
+    const baseProgress = 30
+    const span = 95 - 30
+
+    // 字段 reveal 与解析进度并行：用一个独立 interval 在解析阶段把 9 个字段
+    // 平摊到 ~3.6s 内逐条点亮（即 fieldRevealStaggerMs ≈ 400ms 一条）。
+    const totalReveals = FIELD_REVEAL_ORDER.length
+    const stagger = Math.max(200, Math.floor(TIMING.parsingMs / totalReveals))
+    let revealIdx = 0
+    const revealHandle = setInterval(() => {
+      if (revealIdx >= totalReveals) {
+        clearInterval(revealHandle)
+        return
+      }
+      const key = FIELD_REVEAL_ORDER[revealIdx]
+      this.setData({
+        [`revealedFields.${key}`]: true
+      })
+      revealIdx++
+    }, stagger)
+    this.intervals.push(revealHandle)
+
+    // step 顺序推进
+    const advanceStep = (i) => {
+      const stepStart = baseProgress + (span / stepCount) * i
+      const stepEnd = baseProgress + (span / stepCount) * (i + 1)
+      this.setData({ parseStepIndex: i })
+      this.rampProgress(Math.round(stepStart), Math.round(stepEnd), stepDuration, () => {
+        if (i + 1 < stepCount) {
+          advanceStep(i + 1)
+        } else {
+          // ===== Phase C: 收尾 95 → 100% =====
+          this.rampProgress(95, 100, TIMING.doneSettleMs, () => {
+            // 等所有字段都 reveal 完再切到 done 视图
+            const remaining = totalReveals - revealIdx
+            const wait = Math.max(0, remaining * stagger + 200)
+            const t = setTimeout(() => {
+              // 确保所有字段都 reveal（防止 stagger 余数）
+              const allRevealed = {}
+              FIELD_REVEAL_ORDER.forEach((k) => { allRevealed[k] = true })
+              this.setData({
+                phase: 'done',
+                parseStepIndex: stepCount, // 所有 step 完成
+                revealedFields: allRevealed
+              })
+            }, wait)
+            this.timers.push(t)
+          })
+        }
+      })
+    }
+    advanceStep(0)
+  },
+
+  // 跳过仿真，直接看结果（给已经看过流程的用户）
+  skipSimulation() {
+    this.cleanupTimers()
+    const allRevealed = {}
+    FIELD_REVEAL_ORDER.forEach((k) => { allRevealed[k] = true })
+    this.setData({
+      phase: 'done',
+      progress: 100,
+      progressStyle: 'width: 100%;',
+      parseStepIndex: PARSE_STEPS.length,
+      revealedFields: allRevealed
+    })
+  },
+
+  // 重新看一遍仿真
+  replaySimulation() {
+    this.cleanupTimers()
+    this.setData({
+      phase: 'uploading',
+      progress: 0,
+      progressStyle: 'width: 0%;',
+      parseStepIndex: -1,
+      revealedFields: {}
+    })
+    this.startSimulation()
+  },
+
+  // 下一步：去样例匹配结果页
+  goToDemoMatches() {
     wx.navigateTo({
-      url: '/pages/upload/upload'
+      url: '/pages/demo/matches/matches'
     })
   },
 
-  // 二级出口：返回首页
+  goToUpload() {
+    wx.navigateTo({ url: '/pages/upload/upload' })
+  },
+
   goBack() {
     wx.navigateBack({ delta: 1 })
   }

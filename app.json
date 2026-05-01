@@ -11,6 +11,7 @@
     "pages/profile/profile",
     "pages/profile/consent/consent",
     "pages/demo/demo",
+    "pages/demo/matches/matches",
     "pages/records/detail/detail"
   ],
   "window": {
