@@ -3,15 +3,15 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 25123302343
-- **Commit**: `d1e669851bf0bd11b2636ce7876f6c42b1f2b36e`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25123302343
-- **Generated at**: 2026-04-29T17:20:26Z
+- **Run**: 25221713652
+- **Commit**: `743fde13c4018c9f2ad0c15afd70e6dacad311f0`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25221713652
+- **Generated at**: 2026-05-01T16:06:46Z
 
 ---
 
 ```
-===== Deploy 20260430-011957 — SHA=d1e669851bf0bd11b2636ce7876f6c42b1f2b36e =====
+===== Deploy 20260502-000616 — SHA=743fde13c4018c9f2ad0c15afd70e6dacad311f0 =====
 ::group::A) Backend container replace
-Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+Error response from daemon: Get "https://registry-1.docker.io/v2/": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
 ```
