@@ -33,6 +33,15 @@ services:
       - OCR_SECRET_KEY=${OCR_SECRET_KEY}
       - OCR_REGION=${OCR_REGION:-ap-shanghai}
       - OCR_PROVIDER=${OCR_PROVIDER:-auto}
+      # MiniMax（主推 provider，替换原 Kimi 默认）
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+      - MINIMAX_BASE_URL=${MINIMAX_BASE_URL:-https://api.minimaxi.com/v1}
+      - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
+      # 多模态（image OCR）需要单独的 vision 模型；留空则降级到 Kimi vision。
+      - MINIMAX_VISION_MODEL=${MINIMAX_VISION_MODEL:-}
+      - MINIMAX_TIMEOUT_MS=${MINIMAX_TIMEOUT_MS:-45000}
+      - MINIMAX_CHAT_PATH=${MINIMAX_CHAT_PATH:-/text/chatcompletion_v2}
+      # Kimi（fallback；MiniMax 不可用时启用）
       - KIMI_API_KEY=${KIMI_API_KEY:-}
       - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
       - KIMI_MODEL=${KIMI_MODEL:-kimi-k2.5}

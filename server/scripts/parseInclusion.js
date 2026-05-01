@@ -2,8 +2,12 @@
  * 批量解析试验入组条件 → 结构化 JSON
  * 使用 OpenAI 兼容 API（支持自定义 base_url）
  *
- * 用法：
+ * 主推 provider 顺序：MiniMax → OpenAI → Kimi
+ *
+ * 用法（任选一组凭证）：
+ *   MINIMAX_API_KEY=xxx node scripts/parseInclusion.js
  *   OPENAI_API_KEY=xxx OPENAI_BASE_URL=xxx node scripts/parseInclusion.js
+ *   KIMI_API_KEY=xxx node scripts/parseInclusion.js
  *
  * 支持断点续跑：已有 structured_inclusion 的记录会跳过
  */
@@ -11,13 +15,47 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 
-// ---- 配置（默认用 Kimi，也兼容 OpenAI 格式 API）----
+// ---- 配置（默认用 MiniMax，兼容 OpenAI / Kimi）----
 const dotenvPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
 
-const API_KEY = process.env.OPENAI_API_KEY || process.env.KIMI_API_KEY || '';
-const BASE_URL = (process.env.OPENAI_BASE_URL || process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '');
-const MODEL = process.env.OPENAI_MODEL || process.env.KIMI_MODEL || 'kimi-k2.5';
+// MiniMax 走 /text/chatcompletion_v2，body 为 OpenAI 兼容；Kimi/OpenAI 走 /chat/completions。
+const PROVIDER_PRIORITY = (() => {
+  if (process.env.MINIMAX_API_KEY) {
+    return {
+      apiKey: process.env.MINIMAX_API_KEY,
+      baseUrl: (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/+$/, ''),
+      model: process.env.MINIMAX_MODEL || 'MiniMax-Text-01',
+      chatPath: process.env.MINIMAX_CHAT_PATH || '/text/chatcompletion_v2',
+      label: 'minimax'
+    };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      apiKey: process.env.OPENAI_API_KEY,
+      baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      chatPath: '/chat/completions',
+      label: 'openai'
+    };
+  }
+  if (process.env.KIMI_API_KEY) {
+    return {
+      apiKey: process.env.KIMI_API_KEY,
+      baseUrl: (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, ''),
+      model: process.env.KIMI_MODEL || 'kimi-k2.5',
+      chatPath: '/chat/completions',
+      label: 'kimi'
+    };
+  }
+  return null;
+})();
+
+const API_KEY = PROVIDER_PRIORITY?.apiKey || '';
+const BASE_URL = PROVIDER_PRIORITY?.baseUrl || '';
+const MODEL = PROVIDER_PRIORITY?.model || '';
+const CHAT_PATH = PROVIDER_PRIORITY?.chatPath || '/chat/completions';
+const PROVIDER_LABEL = PROVIDER_PRIORITY?.label || 'unknown';
 const CONCURRENCY = parseInt(process.env.PARSE_CONCURRENCY || '3', 10);
 const TIMEOUT_MS = 90000;
 const DATA_PATH = process.env.TRIAL_DATA_PATH
@@ -25,9 +63,10 @@ const DATA_PATH = process.env.TRIAL_DATA_PATH
 const OUTPUT_PATH = path.join(__dirname, '..', 'data', 'structured_inclusion.json');
 
 if (!API_KEY) {
-  console.error('请设置 OPENAI_API_KEY 环境变量');
+  console.error('请设置 MINIMAX_API_KEY（推荐）/ OPENAI_API_KEY / KIMI_API_KEY 任一环境变量');
   process.exit(1);
 }
+console.log(`[parseInclusion] provider=${PROVIDER_LABEL} model=${MODEL} baseUrl=${BASE_URL}`);
 
 // ---- Prompt ----
 const SYSTEM_PROMPT = `你是临床试验入排标准解析专家。从入组条件文本中提取结构化信息，返回 JSON。
@@ -80,18 +119,19 @@ const callLLM = async (userPrompt, retries = 2) => {
     try {
       const body = {
         model: MODEL,
+        // Kimi 模型在 temperature=0 时偶发 schema 漂移；MiniMax / OpenAI 用 0 更稳。
         temperature: MODEL.includes('kimi') ? 1 : 0,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
         ]
       };
-      // 只有 OpenAI 系模型才加 response_format（Kimi 不支持）
-      if (MODEL.startsWith('gpt') || MODEL.includes('claude')) {
+      // OpenAI / MiniMax 都支持 response_format=json_object；Kimi 不支持。
+      if (PROVIDER_LABEL !== 'kimi') {
         body.response_format = { type: 'json_object' };
       }
       const resp = await axios.post(
-        `${BASE_URL}/chat/completions`,
+        `${BASE_URL}${CHAT_PATH}`,
         body,
         {
           timeout: TIMEOUT_MS,

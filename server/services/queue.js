@@ -93,7 +93,11 @@ ocrQueue.process(async (job) => {
     });
 
     if (!hasMeaningfulOcrResult(result)) {
-      throw new Error('OCR未识别到有效文本');
+      // 修复方案 Track 2.2：错误信息带 provider + text.length，写到 structured.error
+      // 让客户端模态/手填路径能展示真实失败原因（比如 "markitdown+rule" 表示已经走到最末端正则兜底）。
+      const provider = (result && result.provider) || 'unknown';
+      const textLen = `${(result && result.text) || ''}`.length;
+      throw new Error(`OCR未识别到有效文本（provider=${provider}, text=${textLen}字）`);
     }
     
     // 更新数据库

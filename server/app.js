@@ -190,6 +190,20 @@ app.use(sentry.errorHandler);
 app.use(errorHandler);
 
 if (require.main === module) {
+  // 修复方案 Track 2.5：启动时校验 OCR 凭证。未配置不阻断 listen
+  // （手动录入路径仍可用），但日志里 logger.error 让运维 deploy 后立刻可见，
+  // 避免「上线后 PDF 上传永远 OCR_NOT_CONFIGURED」这种事故没人知道。
+  try {
+    const ocrConfig = require('./utils/ocrConfig');
+    if (!ocrConfig.isOcrEnabled()) {
+      logger.error('[STARTUP] OCR 服务未配置 (MINIMAX_API_KEY / KIMI_API_KEY / OCR_SECRET_ID 均缺失)，所有 PDF 上传将立即返回 OCR_NOT_CONFIGURED。请检查 server/.env');
+    } else {
+      logger.info(`[STARTUP] OCR 凭证已配置: providers=${ocrConfig.describeOcrProviders()}`);
+    }
+  } catch (e) {
+    logger.warn('[STARTUP] OCR 配置检查模块加载失败:', { error: e.message });
+  }
+
   app.listen(PORT, () => {
     logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
     logger.info(`Health check: http://localhost:${PORT}/health`);
