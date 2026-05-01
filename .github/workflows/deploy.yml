@@ -60,22 +60,32 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
 
-    - name: Login to Docker Hub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - name: Build and push Docker image
+    # Phase E.7+：脱离 Docker Hub —— 国内 VM 多次 docker pull registry-1.docker.io
+    # context deadline exceeded（GH runs 25221303969 / 25221713652 / 25227394183 等）。
+    # 改走「build → save tarball → 走已有 SSH 通道 scp 到 VM → docker load」，
+    # 零外网 registry 依赖。Buildx layer cache 仍走 type=gha，增量构建不受影响。
+    - name: Build API image (load into local daemon)
       uses: docker/build-push-action@v4
       with:
         context: ./server
-        push: true
-        tags: |
-          ${{ secrets.DOCKER_USERNAME }}/treatbot-api:latest
-          ${{ secrets.DOCKER_USERNAME }}/treatbot-api:${{ github.sha }}
+        load: true
+        tags: treatbot-api:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Save image as gzipped tarball
+      run: |
+        docker save "treatbot-api:${{ github.sha }}" | gzip > treatbot-api.tar.gz
+        ls -lh treatbot-api.tar.gz
+        # 体积参考：node:18-alpine 多阶段 + app 代码 ≈ 100-150 MB.gz；scp 到 CN VM 60-150s
+
+    - name: Upload API tarball artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: treatbot-api-tarball
+        path: treatbot-api.tar.gz
+        retention-days: 3                # 部署用完就丢；要长期归档以后再补 ACR
+        compression-level: 0             # 已是 gzip，再压只浪费 runner CPU
 
   build-web:
     needs: test
@@ -132,20 +142,28 @@ jobs:
         tar -czf web-dist.tar.gz -C web-dist .
         ls -lh web-dist.tar.gz
 
-    - name: Upload web tarball + Caddyfile + nginx patch to server
+    # Phase E.7+：API 镜像走 tarball 通道（替代 docker pull）。download-artifact
+    # 默认把 build-api 上传的 treatbot-api-tarball 解到 path 指定目录，
+    # path:. 让它落到 workspace 根，正好让下面 scp source 用相对路径引用。
+    - name: Download API tarball
+      uses: actions/download-artifact@v4
+      with:
+        name: treatbot-api-tarball
+        path: .
+
+    - name: Upload API + web tarballs + Caddyfile + nginx patch to server
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "web-dist.tar.gz,deploy/Caddyfile,deploy/nginx-patch.conf"
+        source: "treatbot-api.tar.gz,web-dist.tar.gz,deploy/Caddyfile,deploy/nginx-patch.conf"
         target: "/tmp/"
 
     # ---- Step 2: SSH 进服务器执行替换 ----
     - name: Deploy backend container + promote web + patch nginx
       uses: appleboy/ssh-action@v0.1.10
       env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         SHA: ${{ github.sha }}
         # OCR / LLM provider 凭证从 GitHub Secrets 注入容器（替代手动 ssh 改 .env）。
         # 命中策略：docker run 同时使用 --env-file 和 -e 时，-e last-wins 覆盖 file 中同名 KEY；
@@ -171,7 +189,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: DOCKER_USERNAME,SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
+        envs: SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
         command_timeout: 15m
         script: |
           set -e
@@ -187,28 +205,27 @@ jobs:
           ###############################################
           echo "::group::A) Backend container replace"
 
-          if [ -z "$DOCKER_USERNAME" ] || [ -z "$SHA" ]; then
-            echo "Missing DOCKER_USERNAME or SHA env"; exit 1
+          if [ -z "$SHA" ]; then
+            echo "Missing SHA env"; exit 1
           fi
 
-          # A.1 拉新镜像
-          # 生产 VM 在国内，到 registry-1.docker.io 经常 context deadline exceeded —— 同一 SHA 已多次因
-          # 单次 pull 超时整个 Deploy 失败（见 GH Actions run 25221303969 / 25221713652）。
-          # 加 3 次重试 + 30s 间隔，覆盖瞬时网络抖动；3 次都失败再放行原报错给后续步骤定位。
-          NEW_IMG="${DOCKER_USERNAME}/treatbot-api:${SHA}"
-          for attempt in 1 2 3; do
-            if docker pull "$NEW_IMG"; then
-              echo "  ✓ docker pull 成功 (attempt $attempt/3)"
-              break
-            fi
-            if [ "$attempt" = "3" ]; then
-              echo "  ❌ docker pull 连续 3 次失败 —— 中止 deploy（生产容器未替换，旧版本继续提供服务）"
-              exit 1
-            fi
-            echo "  ⚠ docker pull attempt $attempt/3 失败，30s 后重试…"
-            sleep 30
-          done
-          docker tag  "$NEW_IMG" "treatbot-api:${SHA}"
+          # A.1 加载新镜像（Phase E.7+：放弃 Docker Hub，改走 CI scp tarball + docker load）
+          # 历史背景：生产 VM 在国内，到 registry-1.docker.io 高频 context deadline exceeded
+          # —— 同一 SHA 多次因单次 pull 超时整个 Deploy 失败（见 run 25221303969 / 25221713652）。
+          # 现在的链路：CI 里 `docker save | gzip` → upload-artifact → download-artifact → scp
+          # → 生产机 `docker load`。零外部 registry 依赖，节点出网压力降至 0，纯走原有 SSH 通道。
+          TARBALL=/tmp/treatbot-api.tar.gz
+          if [ ! -f "$TARBALL" ]; then
+            echo "  ❌ API tarball $TARBALL 不存在 —— 上一步 scp 失败？"; exit 1
+          fi
+          TARBALL_SIZE=$(stat -c '%s' "$TARBALL" 2>/dev/null || stat -f '%z' "$TARBALL")
+          echo "  ✓ tarball size: $((TARBALL_SIZE / 1024 / 1024)) MB"
+          gunzip -c "$TARBALL" | docker load
+          rm -f "$TARBALL"
+          if ! docker image inspect "treatbot-api:${SHA}" >/dev/null 2>&1; then
+            echo "  ❌ docker load 完成但找不到 treatbot-api:${SHA}"; exit 1
+          fi
+          echo "  ✓ Image treatbot-api:${SHA} loaded into local daemon"
 
           # A.2 备份旧镜像 + 旧 env 到独立 tag/file，永久保留
           OLD_IMG=$(docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "")
