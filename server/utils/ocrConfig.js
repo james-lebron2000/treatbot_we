@@ -7,7 +7,6 @@
 //   - 线上 hot-reload .env（pm2 reload）也能立刻生效，不需要重启 Node 进程
 //
 // 生产 OCR 主路径：Doubao/ARK -> Kimi -> Tencent -> rule。
-// MiniMax 仅保留给历史脚本/旧测试，不能再作为 isOcrEnabled 或 auto fallback 的依据。
 const hasDoubaoCredential = () => {
   return Boolean(`${process.env.ARK_API_KEY || ''}`.trim());
 };

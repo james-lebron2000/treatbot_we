@@ -766,7 +766,7 @@ const softDeleteRecord = async (req, res, next) => {
  * Phase E.3：跨多份病历的时间线 / 治疗经过聚合。
  *   GET /api/medical/timeline → 返回当前用户全部 completed record 整合后的时间线
  *
- * 调用 timelineService（MiniMax → Kimi → 规则）三段式降级；用户感知是「一定能拿到结果」。
+ * 调用 timelineService（Doubao → Kimi → 规则）三段式降级；用户感知是「一定能拿到结果」。
  */
 const getTimeline = async (req, res, next) => {
   try {

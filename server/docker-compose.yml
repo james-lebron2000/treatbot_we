@@ -36,14 +36,6 @@ services:
       - OCR_QUEUE_CONCURRENCY=${OCR_QUEUE_CONCURRENCY:-2}
       - OCR_PDF_VISION_MAX_PAGES=${OCR_PDF_VISION_MAX_PAGES:-3}
       - OCR_PDF_VISION_DPI=${OCR_PDF_VISION_DPI:-150}
-      # MiniMax（历史兼容；不再进入生产 OCR auto 路径）
-      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
-      - MINIMAX_BASE_URL=${MINIMAX_BASE_URL:-https://api.minimaxi.com/v1}
-      - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
-      # 多模态（image OCR）需要单独的 vision 模型；留空则降级到 Kimi vision。
-      - MINIMAX_VISION_MODEL=${MINIMAX_VISION_MODEL:-}
-      - MINIMAX_TIMEOUT_MS=${MINIMAX_TIMEOUT_MS:-45000}
-      - MINIMAX_CHAT_PATH=${MINIMAX_CHAT_PATH:-/text/chatcompletion_v2}
       # Kimi（Doubao 不可用时的 fallback）
       - KIMI_API_KEY=${KIMI_API_KEY:-}
       - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.moonshot.cn/v1}

@@ -8,7 +8,6 @@ describe('ocrConfig provider detection', () => {
   });
 
   test('ARK_API_KEY alone enables OCR and reports doubao', () => {
-    delete process.env.MINIMAX_API_KEY;
     delete process.env.KIMI_API_KEY;
     delete process.env.OCR_SECRET_ID;
     delete process.env.OCR_SECRET_KEY;
@@ -19,8 +18,7 @@ describe('ocrConfig provider detection', () => {
     expect(ocrConfig.describeOcrProviders()).toBe('doubao');
   });
 
-  test('MiniMax key alone no longer enables production OCR', () => {
-    process.env.MINIMAX_API_KEY = 'legacy-minimax-key';
+  test('no credentials → OCR disabled', () => {
     delete process.env.ARK_API_KEY;
     delete process.env.KIMI_API_KEY;
     delete process.env.OCR_SECRET_ID;

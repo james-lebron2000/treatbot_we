@@ -22,10 +22,18 @@ const OCR_JOB_BACKOFF_MAX = 90000;
 const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURRENCY || '2', 10));
 
 // Redis 连接配置
+//
+// 修复方案 Track 4.1：撞 Redis 不可用时立即抛错，不要让 ioredis 内部一直 reconnect。
+// 生产观察到的故障模式：Redis 容器没起来 → Bull 的 `ocrQueue.add()` 卡住 → handleUpload
+// 等 30s+ 把客户端 wx.uploadFile 拖到超时 → 客户端报 statusCode:0 → 文案「网络有点卡」。
+// 加这三条配置后，撞 Redis 不可用时 add() 在 ~3s 内即抛错，addOCRTask 走进程内兜底。
 const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
   port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD || undefined
+  password: process.env.REDIS_PASSWORD || undefined,
+  maxRetriesPerRequest: 1,        // 单条 Redis 命令最多重试 1 次
+  connectTimeout: 3000,           // 初次连接 Redis 必须 3 秒内成功
+  enableOfflineQueue: false       // Redis 离线时不缓冲命令，让 add() 立即报错而非堆积
 };
 
 // 创建队列
@@ -69,24 +77,27 @@ const hasMeaningfulOcrResult = (result = {}) => {
 };
 
 /**
- * OCR 任务处理器
+ * 修复方案 Track 4.1：抽出 OCR 任务主体，让 Bull processor 与进程内兜底共用同一段逻辑。
+ *   - Bull processor → runOcrTask(job.data) （Redis 可用时走队列，享受重试 + 并发）
+ *   - 进程内兜底 → setImmediate(runOcrTask(...)) （Redis 挂掉时不阻塞 HTTP 请求）
+ * 共享语义：
+ *   - 入口先 update status=running
+ *   - 调 processMedicalImage 拿 OCR 结果
+ *   - 空结果显式 throw（带 provider + 字数）让 catch 写 status=error
+ *   - 成功 → update 全部结构化字段 + ocrMeta，再发完成通知
+ *   - 任何失败 → update status=error + structured.error
  */
-ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
-  const { recordId, imageUrl, mimeType, fileKey } = job.data;
-  
-  logger.info('开始OCR处理:', { recordId, jobId: job.id });
-  
+const runOcrTask = async (data, opts = {}) => {
+  const { recordId, imageUrl, mimeType, fileKey, userId } = data;
+  const { jobId } = opts;
+  logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
+
   try {
-    // 更新状态为处理中
     await MedicalRecord.update(
       { status: 'running' },
       { where: { id: recordId } }
     );
-    
-    // 发送进度更新（50%）
-    await job.progress(50);
-    
-    // 执行 OCR
+
     const result = await processMedicalImage({
       sourceUrl: imageUrl,
       mimeType,
@@ -100,8 +111,7 @@ ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
       const textLen = `${(result && result.text) || ''}`.length;
       throw new Error(`OCR未识别到有效文本（provider=${provider}, text=${textLen}字）`);
     }
-    
-    // 更新数据库
+
     await MedicalRecord.update({
       status: 'completed',
       diagnosis: result.entities.diagnosis,
@@ -124,35 +134,57 @@ ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
     }, {
       where: { id: recordId }
     });
-    
-    // 发送完成通知
-    await notificationQueue.add({
-      type: 'ocr_completed',
-      recordId,
-      userId: job.data.userId
-    });
-    
+
+    // 完成通知（best-effort：通知队列也要 Redis，挂掉不影响主流程）
+    if (userId) {
+      try {
+        await Promise.race([
+          notificationQueue.add({ type: 'ocr_completed', recordId, userId }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('notify_add_timeout_2s')), 2000)
+          )
+        ]);
+      } catch (notifyErr) {
+        logger.warn('完成通知入队失败（忽略，不影响 OCR 结果）', {
+          recordId,
+          error: notifyErr.message
+        });
+      }
+    }
+
     logger.info('OCR处理完成:', { recordId });
-    
     return { success: true, recordId };
   } catch (error) {
     logger.error('OCR处理失败:', { recordId, error: error.message });
     // Q3-红线 §A.3：上报到 Sentry（DSN 未配置时静默 noop）
     captureException(error, {
       tags: { component: 'ocr_queue', stage: 'process' },
-      extra: { recordId, jobId: job?.id }
+      extra: { recordId, jobId: jobId || 'inproc' }
     });
 
-    // 更新失败状态
-    await MedicalRecord.update({
-      status: 'error',
-      structured: { error: error.message }
-    }, {
-      where: { id: recordId }
-    });
+    // 失败状态回写也用 try/catch，避免再次抛异常吃掉原始错误
+    try {
+      await MedicalRecord.update({
+        status: 'error',
+        structured: { error: error.message }
+      }, {
+        where: { id: recordId }
+      });
+    } catch (dbErr) {
+      logger.error('OCR 失败状态回写失败:', { recordId, error: dbErr.message });
+    }
 
     throw error;
   }
+};
+
+/**
+ * OCR 任务处理器（Bull 路径）
+ */
+ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
+  // 兼容旧 progress 接口
+  try { await job.progress(50); } catch (_e) { /* progress 失败可忽略 */ }
+  return runOcrTask(job.data, { jobId: job.id });
 });
 
 /**
@@ -170,28 +202,60 @@ notificationQueue.process(async (job) => {
 
 /**
  * 添加 OCR 任务
+ *
+ * 修复方案 Track 4.1：双管齐下，撞 Redis 不可用时不让 HTTP 请求挂死：
+ *   1) Promise.race + 5s timeout —— 即使 ioredis 配置兜不住，这里也保底兜
+ *   2) Bull add 失败 → 进程内 OCR 兜底（fire-and-forget），HTTP 立即 ack，
+ *      客户端轮询 parse-status 拿结果（与正常路径一致）。
+ * 设计取舍：
+ *   - 进程内兜底失去 Bull 的重试 + 多 worker 并发，但单次 OCR 仍可完成，
+ *     比让用户看到"网络有点卡"靠谱得多。
+ *   - 重试机制由客户端"换一份/重试"按钮承担。
+ *   - DLQ 仅对 Bull 路径有效；进程内失败只落 logger.error + structured.error。
  */
 const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
-  // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
-  // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
-  const job = await ocrQueue.add({
+  const taskData = {
     recordId,
     imageUrl,
     userId,
     mimeType: options.mimeType || null,
     fileKey: options.fileKey || null
-  }, {
-    attempts: OCR_JOB_ATTEMPTS,
-    backoff: {
-      type: 'ocrExponential',
-      delay: OCR_JOB_BACKOFF_DELAY
-    },
-    removeOnComplete: 10,
-    removeOnFail: false
-  });
-  
-  logger.info('OCR任务已添加:', { recordId, jobId: job.id });
-  return job.id;
+  };
+
+  try {
+    // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
+    // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
+    const job = await Promise.race([
+      ocrQueue.add(taskData, {
+        attempts: OCR_JOB_ATTEMPTS,
+        backoff: {
+          type: 'ocrExponential',
+          delay: OCR_JOB_BACKOFF_DELAY
+        },
+        removeOnComplete: 10,
+        removeOnFail: false
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('bull_add_timeout_5s')), 5000)
+      )
+    ]);
+
+    logger.info('OCR任务已添加:', { recordId, jobId: job.id });
+    return job.id;
+  } catch (queueErr) {
+    // Bull 入队失败（多半是 Redis 不可达 / connectTimeout 触发 / enableOfflineQueue=false 直接抛）
+    // → 进程内兜底，让用户至少能拿到结果。
+    logger.warn('Bull 入队失败，转入进程内 OCR 兜底（不阻塞 HTTP 请求）', {
+      recordId,
+      error: queueErr.message
+    });
+    setImmediate(() => {
+      runOcrTask(taskData).catch((err) => {
+        logger.error('进程内 OCR 兜底失败', { recordId, error: err.message });
+      });
+    });
+    return `inproc:${recordId}`;
+  }
 };
 
 /**

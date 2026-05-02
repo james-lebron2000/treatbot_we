@@ -2,10 +2,10 @@
  * 批量解析试验入组条件 → 结构化 JSON
  * 使用 OpenAI 兼容 API（支持自定义 base_url）
  *
- * 主推 provider 顺序：MiniMax → OpenAI → Kimi
+ * 主推 provider 顺序：Doubao → OpenAI → Kimi
  *
  * 用法（任选一组凭证）：
- *   MINIMAX_API_KEY=xxx node scripts/parseInclusion.js
+ *   ARK_API_KEY=xxx node scripts/parseInclusion.js
  *   OPENAI_API_KEY=xxx OPENAI_BASE_URL=xxx node scripts/parseInclusion.js
  *   KIMI_API_KEY=xxx node scripts/parseInclusion.js
  *
@@ -15,19 +15,20 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 
-// ---- 配置（默认用 MiniMax，兼容 OpenAI / Kimi）----
+// ---- 配置（默认用 Doubao，兼容 OpenAI / Kimi）----
 const dotenvPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
 
-// MiniMax 走 /text/chatcompletion_v2，body 为 OpenAI 兼容；Kimi/OpenAI 走 /chat/completions。
+// 全部 provider 都走 OpenAI 兼容 /chat/completions。
 const PROVIDER_PRIORITY = (() => {
-  if (process.env.MINIMAX_API_KEY) {
+  if (process.env.ARK_API_KEY) {
     return {
-      apiKey: process.env.MINIMAX_API_KEY,
-      baseUrl: (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/+$/, ''),
-      model: process.env.MINIMAX_MODEL || 'MiniMax-Text-01',
-      chatPath: process.env.MINIMAX_CHAT_PATH || '/text/chatcompletion_v2',
-      label: 'minimax'
+      apiKey: process.env.ARK_API_KEY,
+      baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
+      // Doubao 视觉模型也接受纯文本输入；如有 ARK_TEXT_MODEL 则优先用它
+      model: process.env.ARK_TEXT_MODEL || process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+      chatPath: '/chat/completions',
+      label: 'doubao'
     };
   }
   if (process.env.OPENAI_API_KEY) {
@@ -63,7 +64,7 @@ const DATA_PATH = process.env.TRIAL_DATA_PATH
 const OUTPUT_PATH = path.join(__dirname, '..', 'data', 'structured_inclusion.json');
 
 if (!API_KEY) {
-  console.error('请设置 MINIMAX_API_KEY（推荐）/ OPENAI_API_KEY / KIMI_API_KEY 任一环境变量');
+  console.error('请设置 ARK_API_KEY（推荐）/ OPENAI_API_KEY / KIMI_API_KEY 任一环境变量');
   process.exit(1);
 }
 console.log(`[parseInclusion] provider=${PROVIDER_LABEL} model=${MODEL} baseUrl=${BASE_URL}`);
@@ -119,14 +120,14 @@ const callLLM = async (userPrompt, retries = 2) => {
     try {
       const body = {
         model: MODEL,
-        // Kimi 模型在 temperature=0 时偶发 schema 漂移；MiniMax / OpenAI 用 0 更稳。
+        // Kimi 模型在 temperature=0 时偶发 schema 漂移；Doubao / OpenAI 用 0 更稳。
         temperature: MODEL.includes('kimi') ? 1 : 0,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
         ]
       };
-      // OpenAI / MiniMax 都支持 response_format=json_object；Kimi 不支持。
+      // OpenAI / Doubao 都支持 response_format=json_object；Kimi 不支持。
       if (PROVIDER_LABEL !== 'kimi') {
         body.response_format = { type: 'json_object' };
       }

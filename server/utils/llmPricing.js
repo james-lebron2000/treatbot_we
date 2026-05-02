@@ -16,16 +16,6 @@
  */
 
 const RATE_TABLE = {
-  minimax: {
-    // 主力多模态视觉模型（abab6.5s 系列）
-    'abab6.5s-chat':                        { inputPerM: 2.16, outputPerM: 8.64,  unit: 'CNY' },
-    'abab6.5s':                             { inputPerM: 2.16, outputPerM: 8.64,  unit: 'CNY' },
-    // 文本主模型（结构化抽取兜底）
-    'MiniMax-Text-01':                      { inputPerM: 1.00, outputPerM: 5.00,  unit: 'CNY' },
-    'MiniMax-VL-01':                        { inputPerM: 2.16, outputPerM: 8.64,  unit: 'CNY' },
-    // Coding Plan 限定模型（sk-cp- 前缀凭证仅可访问 M2，文本+推理）
-    'MiniMax-M2':                           { inputPerM: 1.20, outputPerM: 6.00,  unit: 'CNY' }
-  },
   kimi: {
     'moonshot-v1-128k-vision-preview':      { inputPerM: 6.84, outputPerM: 28.80, unit: 'CNY' },
     'moonshot-v1-128k':                     { inputPerM: 4.00, outputPerM: 12.00, unit: 'CNY' },
@@ -52,7 +42,7 @@ const RATE_TABLE = {
 /**
  * 把 token 用量换算为 CNY 成本。
  *
- * @param {string} provider 'minimax' | 'kimi' | 'doubao' | 'openai'
+ * @param {string} provider 'doubao' | 'kimi' | 'openai'
  * @param {string} model    具体模型名（例如 'abab6.5s-chat'）
  * @param {object} usage    { prompt_tokens, completion_tokens, total_tokens? }
  *                          字段缺失时按 0 处理；usage=null/undefined 整体当未知。

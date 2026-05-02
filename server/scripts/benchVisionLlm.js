@@ -2,7 +2,7 @@
 /**
  * Vision-LLM Benchmark Runner
  * --------------------------------------------------------------------
- * 对一组病历文件（PDF / 图片）跑 MiniMax / Kimi / Doubao 三家视觉 LLM，
+ * 对一组病历文件（PDF / 图片）跑 Doubao / Kimi 视觉 LLM，
  * 采集 token 用量、耗时、CNY 成本、产出 markdown，便于人工对比质量。
  *
  * 设计要点：
@@ -20,7 +20,7 @@
  * CLI:
  *   node server/scripts/benchVisionLlm.js \
  *     [--files <comma-paths|"default">]   # 默认 6 份 fixture
- *     [--providers minimax,kimi,doubao]   # 默认三家全跑
+ *     [--providers doubao,kimi]            # 默认两家全跑
  *     [--out ./bench-out]                  # 输出目录（CSV + markdown + summary）
  *     [--max-pages 3]                      # PDF vision 模式拆页上限
  *     [--repeat 1]                         # 同组合重复次数取均值（默认 1）
@@ -65,14 +65,6 @@ const DEFAULT_FIXTURES = [
 ];
 
 const PROVIDER_CFG = {
-  minimax: () => ({
-    apiKey: process.env.MINIMAX_API_KEY || '',
-    baseUrl: (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/+$/, ''),
-    chatPath: process.env.MINIMAX_CHAT_PATH || '/text/chatcompletion_v2',
-    visionModel: process.env.MINIMAX_VISION_MODEL || 'abab6.5s-chat',
-    textModel: process.env.MINIMAX_MODEL || 'MiniMax-Text-01',
-    timeoutMs: parseInt(process.env.MINIMAX_TIMEOUT_MS || '60000', 10)
-  }),
   kimi: () => ({
     apiKey: process.env.KIMI_API_KEY || '',
     baseUrl: (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, ''),
@@ -107,7 +99,7 @@ const parseArgs = () => {
   const argv = process.argv.slice(2);
   const opts = {
     files: null,
-    providers: ['minimax', 'kimi', 'doubao'],
+    providers: ['doubao', 'kimi'],
     out: path.resolve(process.cwd(), 'bench-out'),
     maxPages: 3,
     repeat: 1,
@@ -152,7 +144,7 @@ Usage:
 
 Options:
   --files <paths|"default">   Comma-separated file paths, or "default" for built-in 6 fixtures
-  --providers <list>          minimax,kimi,doubao (default: all three)
+  --providers <list>          doubao,kimi (default: both)
   --out <dir>                 Output dir (default: ./bench-out)
   --max-pages <n>             PDF vision mode page limit (default: 3)
   --repeat <n>                Repeat same combo n times (default: 1)
@@ -161,9 +153,8 @@ Options:
   -h, --help                  Show this help
 
 Required env (per provider):
-  MINIMAX_API_KEY  + MINIMAX_VISION_MODEL (e.g. abab6.5s-chat)
+  ARK_API_KEY      + ARK_VISION_MODEL (default: doubao-seed-1-6-vision-250815)
   KIMI_API_KEY     + KIMI_VISION_MODEL (default: moonshot-v1-128k-vision-preview)
-  ARK_API_KEY      + ARK_VISION_MODEL (default: doubao-seed-1.6-vision)
 
 Outputs (in --out dir):
   bench-results.csv          (one row per file × provider × repeat)
@@ -317,7 +308,7 @@ const callProvider = async ({ provider, model, messages, timeoutMs, maxTokens = 
 
   const choice = resp?.data?.choices?.[0];
   const content = choice?.message?.content || '';
-  // OpenAI / MiniMax / Kimi / Doubao Ark usage 字段都叫这名
+  // OpenAI / Kimi / Doubao Ark usage 字段都叫这名
   const usage = resp?.data?.usage || null;
 
   return {
@@ -606,7 +597,7 @@ const validateProviderCreds = (providers) => {
     }
     const cfg = PROVIDER_CFG[p]();
     if (!cfg.apiKey) {
-      console.warn(`[warn] ${p} 缺凭证（${p === 'minimax' ? 'MINIMAX_API_KEY' : p === 'kimi' ? 'KIMI_API_KEY' : 'ARK_API_KEY'}），跳过该 provider 的所有 task`);
+      console.warn(`[warn] ${p} 缺凭证（${p === 'kimi' ? 'KIMI_API_KEY' : 'ARK_API_KEY'}），跳过该 provider 的所有 task`);
       continue;
     }
     valid.push(p);
