@@ -19,6 +19,7 @@ const captureException = (_sentry && _sentry.captureException)
 const OCR_JOB_ATTEMPTS = 5;
 const OCR_JOB_BACKOFF_DELAY = 8000;
 const OCR_JOB_BACKOFF_MAX = 90000;
+const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURRENCY || '2', 10));
 
 // Redis 连接配置
 const redisConfig = {
@@ -70,7 +71,7 @@ const hasMeaningfulOcrResult = (result = {}) => {
 /**
  * OCR 任务处理器
  */
-ocrQueue.process(async (job) => {
+ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
   const { recordId, imageUrl, mimeType, fileKey } = job.data;
   
   logger.info('开始OCR处理:', { recordId, jobId: job.id });
@@ -113,7 +114,12 @@ ocrQueue.process(async (job) => {
         text: result.text,
         entities: result.entities,
         confidence: result.confidence,
-        detections: result.detections
+        detections: result.detections,
+        ocrMeta: {
+          provider: result.provider || 'unknown',
+          pageCount: result.pageCount || null,
+          completedAt: new Date().toISOString()
+        }
       }
     }, {
       where: { id: recordId }
@@ -295,5 +301,5 @@ module.exports = {
   addOCRTask,
   getJobStatus,
   retryFailure,
-  __testables: { handleOcrJobFailed, classifyError }
+  __testables: { handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY }
 };

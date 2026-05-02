@@ -135,7 +135,7 @@ const callOnce = async (providerKey, messages, opts = {}) => {
  * 主入口：调一次 → schema 不通过则换 temperature=0 重试一次 → 仍失败抛 LlmSchemaError。
  * 调用方按需在 catch 块里 fallback 到下一个 provider / 规则兜底。
  *
- * @param {string} provider 'minimax' | 'kimi' | 'openai'
+ * @param {string} provider 'doubao' | 'kimi' | 'minimax' | 'openai'
  * @param {Array} messages OpenAI 风格 messages 数组（已 PII 脱敏）
  * @param {import('zod').ZodTypeAny} schema zod schema
  * @param {object} [opts] 透传给 callOnce 的额外参数

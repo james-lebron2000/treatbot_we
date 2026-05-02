@@ -22,9 +22,9 @@ RUN npm ci --omit=dev
 FROM node:18-alpine AS runtime
 WORKDIR /app
 
-# 运行时需要 python3 + markitdown（文档转 Markdown），但不再装 make/g++
-RUN apk add --no-cache python3 py3-pip \
- && pip3 install --no-cache-dir --break-system-packages markitdown \
+# 运行时需要 python3 + markitdown[pdf]（文本 PDF）+ poppler-utils/pdftoppm（扫描 PDF 拆页）
+RUN apk add --no-cache python3 py3-pip poppler-utils \
+ && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]' \
  && rm -rf /root/.cache /var/cache/apk/*
 
 # 从 deps 阶段拷贝已编译好的 node_modules

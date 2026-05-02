@@ -8,9 +8,9 @@
  *
  * 设计要点：
  *   - 输入：本用户全部 status='completed' 的 record，按 created_at 倒序，最多 6 条
- *     （MiniMax 输入限到 ~8000 字以内即可保证 OCR-PDF 等场景稳定）
+ *     （LLM 输入限到 ~8000 字以内即可保证 OCR-PDF 等场景稳定）
  *   - PII 全程通过 scrubForLlm 占位符化；mapping 严格活到本函数返回
- *   - 主 provider：MiniMax；缺凭证时降级到 Kimi → 仍失败则返回规则兜底（按 created_at 排序的事件列）
+ *   - 主 provider：Doubao/ARK；缺凭证时降级到 Kimi → 仍失败则返回规则兜底（按 created_at 排序的事件列）
  *   - 任何返回都通过 TimelineSchema 校验 —— 解析失败抛 LlmSchemaError 由调用方决定降级
  */
 
@@ -159,9 +159,9 @@ const generateTimeline = async (records, opts = {}) => {
     return parsed;
   };
 
-  // 主路径：MiniMax → 备路：Kimi → 最终兜底：规则
+  // 主路径：Doubao/ARK → 备路：Kimi → 最终兜底：规则
   const providerOrder = [];
-  if (ocrConfig.hasMinimaxCredential()) providerOrder.push('minimax');
+  if (ocrConfig.hasDoubaoCredential()) providerOrder.push('doubao');
   if (ocrConfig.hasKimiCredential()) providerOrder.push('kimi');
 
   let lastErr;

@@ -2,6 +2,8 @@ const axios = require('axios');
 const fs = require('fs/promises');
 const FormData = require('form-data');
 const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
 const pdfParse = require('pdf-parse');
 const tencentcloud = require('tencentcloud-sdk-nodejs');
 const logger = require('../utils/logger');
@@ -48,14 +50,14 @@ const hasMinimaxVisionCredential = !!MINIMAX_API_KEY && !!MINIMAX_VISION_MODEL;
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
 const KIMI_BASE_URL = (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '');
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.5';
+const KIMI_VISION_MODEL = process.env.KIMI_VISION_MODEL || 'moonshot-v1-128k-vision-preview';
 const _KIMI_TIMEOUT_MS = parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10);
 
 // 修复方案 Track 2.4：仍保留模块级 boolean 给现有调用点（多处 if (hasKimiCredential)），
 // 但同时 require ocrConfig 用于「入口早抛」场景，避免静默走 4 层降级。
 const hasKimiCredential = !!KIMI_API_KEY;
 
-// Doubao / 火山方舟 Ark（OpenAI 兼容；本轮仅供 benchVisionLlm 离线脚本调用，
-// 生产 OCR pipeline 的 provider 路由由 Track B 决定后再接入 recognizeGeneral）
+// Doubao / 火山方舟 Ark（OpenAI 兼容；生产 OCR 推荐主路径）
 const ARK_API_KEY = process.env.ARK_API_KEY || '';
 // llmClient.js 自己从 process.env.ARK_BASE_URL 读，这里只保留供日志/调试参考。
 // 用 _ 前缀避免 no-unused-vars 警告。
@@ -70,6 +72,10 @@ const hasDoubaoVisionCredential = !!ARK_API_KEY;
 
 const hasTencentCredential = !!(process.env.OCR_SECRET_ID && process.env.OCR_SECRET_KEY);
 const ocrConfig = require('../utils/ocrConfig');
+
+const OCR_PDF_VISION_MAX_PAGES = Math.max(1, Math.min(5, parseInt(process.env.OCR_PDF_VISION_MAX_PAGES || '3', 10)));
+const OCR_PDF_VISION_DPI = Math.max(96, Math.min(200, parseInt(process.env.OCR_PDF_VISION_DPI || '150', 10)));
+const OCR_PDF_RENDER_TIMEOUT_MS = parseInt(process.env.OCR_PDF_RENDER_TIMEOUT_MS || '25000', 10);
 
 const OcrClient = tencentcloud.ocr.v20181119.Client;
 const tencentClient = hasTencentCredential
@@ -273,6 +279,64 @@ const readPdfBuffer = async ({ sourceUrl, fileKey }) => {
     return Buffer.from(resp.data);
   }
   throw new Error('无法读取 PDF 内容：缺少 fileKey 和 sourceUrl');
+};
+
+const execFileAsync = (cmd, args, opts = {}) => new Promise((resolve, reject) => {
+  execFile(cmd, args, opts, (error, stdout, stderr) => {
+    if (error) {
+      error.stderr = stderr;
+      return reject(error);
+    }
+    resolve({ stdout, stderr });
+  });
+});
+
+const sortPdfPageImages = (files = []) => files
+  .filter((name) => /^page-\d+\.png$/i.test(name))
+  .sort((a, b) => {
+    const ai = Number((a.match(/page-(\d+)\.png/i) || [])[1] || 0);
+    const bi = Number((b.match(/page-(\d+)\.png/i) || [])[1] || 0);
+    return ai - bi;
+  });
+
+const renderPdfPagesToDataUrls = async ({ sourceUrl, fileKey, maxPages = OCR_PDF_VISION_MAX_PAGES }) => {
+  const pdfBuffer = await readPdfBuffer({ sourceUrl, fileKey });
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'treatbot-pdf-vision-'));
+  const inputPath = path.join(tmpDir, 'input.pdf');
+  const outputPrefix = path.join(tmpDir, 'page');
+
+  try {
+    await fs.writeFile(inputPath, pdfBuffer);
+    await execFileAsync(
+      'pdftoppm',
+      [
+        '-png',
+        '-r', String(OCR_PDF_VISION_DPI),
+        '-f', '1',
+        '-l', String(maxPages),
+        inputPath,
+        outputPrefix
+      ],
+      {
+        timeout: OCR_PDF_RENDER_TIMEOUT_MS,
+        maxBuffer: 2 * 1024 * 1024
+      }
+    );
+
+    const pageFiles = sortPdfPageImages(await fs.readdir(tmpDir)).slice(0, maxPages);
+    if (!pageFiles.length) {
+      throw new Error('pdftoppm 未生成页面图片');
+    }
+
+    const dataUrls = [];
+    for (const file of pageFiles) {
+      const buffer = await fs.readFile(path.join(tmpDir, file));
+      dataUrls.push(`data:image/png;base64,${buffer.toString('base64')}`);
+    }
+    return dataUrls;
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
 };
 
 // ============================================================================
@@ -940,8 +1004,8 @@ const requestKimi = async (imageRef) => {
 
   // Q3-红线 §A.3.2：LLM 调用埋点（图片/视觉模式）
   const parsed = await instrumentLlmCall(
-    { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_image' },
-    () => chatJson('kimi', messages, OcrExtractionSchema)
+    { provider: 'kimi', model: KIMI_VISION_MODEL, operation: 'ocr_image' },
+    () => chatJson('kimi', messages, OcrExtractionSchema, { model: KIMI_VISION_MODEL })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -1043,29 +1107,34 @@ const requestKimiText = async (text) => {
 //   - requestDoubaoText(text)              → 纯文本结构化抽取
 //   - requestDoubaoPdf({ sourceUrl, ... }) → PDF 抽文本后走 requestDoubaoText
 //                                            （Ark 暂未稳定提供文件抽取端点，故走 pdf-parse）
-// 本轮（Track A）仅供 server/scripts/benchVisionLlm.js 离线 benchmark 使用；
-// 生产 OCR pipeline 的 provider 路由（recognizeGeneral / processMedicalImage）暂不挂接。
+// 生产 OCR pipeline 已接入 recognizeGeneral / processMedicalImage。
 // ============================================================================
 
-const requestDoubao = async (imageRef) => {
+const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerName = 'doubao') => {
   if (!hasDoubaoVisionCredential) {
     throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
+  const refs = Array.isArray(imageRefs) ? imageRefs.filter(Boolean) : [imageRefs].filter(Boolean);
+  if (!refs.length) {
+    throw new Error('Doubao 视觉识别缺少图片内容');
+  }
   // Q3-红线 §B.1：与 MiniMax/Kimi 共享 prompts/v1/ocr-image.md
   const imagePrompt = getPrompt('ocr-image', 'v1', {});
+  const userContent = [{ type: 'text', text: imagePrompt.user }];
+  refs.forEach((ref) => {
+    userContent.push({ type: 'image_url', image_url: { url: ref } });
+  });
+
   const messages = [
     { role: 'system', content: imagePrompt.system },
     {
       role: 'user',
-      content: [
-        { type: 'text', text: imagePrompt.user },
-        { type: 'image_url', image_url: { url: imageRef } }
-      ]
+      content: userContent
     }
   ];
 
   const parsed = await instrumentLlmCall(
-    { provider: 'doubao', model: ARK_VISION_MODEL, operation: 'ocr_image' },
+    { provider: 'doubao', model: ARK_VISION_MODEL, operation },
     () => chatJson('doubao', messages, OcrExtractionSchema, { model: ARK_VISION_MODEL })
   );
 
@@ -1074,7 +1143,7 @@ const requestDoubao = async (imageRef) => {
 
   return {
     success: true,
-    provider: 'doubao',
+    provider: providerName,
     text: (parsed.rawText || '').toString(),
     entities,
     confidence: Number.isFinite(normalizedConfidence)
@@ -1083,6 +1152,8 @@ const requestDoubao = async (imageRef) => {
     detections: []
   };
 };
+
+const requestDoubao = async (imageRef) => requestDoubaoImages(imageRef, 'ocr_image', 'doubao');
 
 const requestDoubaoText = async (text) => {
   if (!hasDoubaoCredential) {
@@ -1179,24 +1250,32 @@ const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
   return { ...result, provider: 'doubao_pdf' };
 };
 
-// MiniMax 替换 Kimi 后，主推 MiniMax；保留 Kimi 作为可选 fallback。
-// recognizeByMinimax 与 recognizeByKimi 同 shape：URL 优先，私网/失败回退到 base64。
-const recognizeByMinimax = async ({ imageUrl, fileKey, mimeType }) => {
-  if (!hasMinimaxCredential) {
-    throw new Error('MiniMax API Key 未配置');
+const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }) => {
+  const dataUrls = await renderPdfPagesToDataUrls({ sourceUrl, fileKey });
+  const result = await requestDoubaoImages(dataUrls, 'ocr_pdf', 'doubao_pdf_vision');
+  return {
+    ...result,
+    provider: 'doubao_pdf_vision',
+    pageCount: dataUrls.length
+  };
+};
+
+const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }) => {
+  if (!hasDoubaoVisionCredential) {
+    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
 
-  if (isPrivateOrIpUrl(imageUrl)) {
+  if (!imageUrl || isPrivateOrIpUrl(imageUrl)) {
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestMinimax(dataUrl);
+    return requestDoubao(dataUrl);
   }
 
   try {
-    return await requestMinimax(imageUrl);
+    return await requestDoubao(imageUrl);
   } catch (firstError) {
-    logger.warn('MiniMax URL 模式失败，尝试 Base64 回退', { error: firstError.message });
+    logger.warn('Doubao URL 模式失败，尝试 Base64 回退', { error: firstError.message });
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestMinimax(dataUrl);
+    return requestDoubao(dataUrl);
   }
 };
 
@@ -1205,7 +1284,7 @@ const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
     throw new Error('Kimi API Key 未配置');
   }
 
-  if (isPrivateOrIpUrl(imageUrl)) {
+  if (!imageUrl || isPrivateOrIpUrl(imageUrl)) {
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
     return requestKimi(dataUrl);
   }
@@ -1295,13 +1374,10 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
   const attemptedProviders = new Set();
 
   try {
-    // 主路径：MiniMax（替换原 Kimi 默认主路径）
-    // - OCR_PROVIDER=minimax → 强制 MiniMax
-    // - OCR_PROVIDER=auto + 有 MiniMax vision 凭证 → 优先 MiniMax
-    // 注意（Phase E.6 / Review #1）：image OCR 必须用 hasMinimaxVisionCredential，纯文本模型 MiniMax-Text-01 无法接受 image_url。
-    if (providerPreference === 'minimax' || (providerPreference === 'auto' && hasMinimaxVisionCredential)) {
-      attemptedProviders.add('minimax');
-      return await recognizeByMinimax({ imageUrl, fileKey, mimeType });
+    // 主路径：Doubao/ARK。MiniMax 不再进入 auto 视觉 OCR，避免 coding-plan key 忽略图像导致空转。
+    if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential)) {
+      attemptedProviders.add('doubao');
+      return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
     }
 
     if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential)) {
@@ -1324,13 +1400,13 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     const fromProvider = [...attemptedProviders][0] || providerPreference || 'unknown';
     const fallbackReason = classifyLlmError(error);
 
-    // 回退顺序：MiniMax(vision) → Kimi → Tencent → 规则。
-    if (hasMinimaxVisionCredential && providerPreference !== 'minimax' && !attemptedProviders.has('minimax')) {
+    // 回退顺序：Doubao → Kimi → Tencent → 规则。
+    if (hasDoubaoVisionCredential && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
       try {
-        recordLlmFallback(fromProvider, 'minimax', fallbackReason);
-        return await recognizeByMinimax({ imageUrl, fileKey, mimeType });
+        recordLlmFallback(fromProvider, 'doubao', fallbackReason);
+        return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
       } catch (e) {
-        logger.warn('MiniMax 回退失败', { error: e.message });
+        logger.warn('Doubao 回退失败', { error: e.message });
       }
     }
 
@@ -1396,21 +1472,21 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
     markdownLength: markdown.length
   });
 
-  // 优先用 MiniMax 进行结构化抽取（替换原 Kimi 主路径）
-  if (hasMinimaxCredential) {
+  // 优先用 Doubao/ARK 进行结构化抽取；MiniMax 已退出生产 OCR 路径。
+  if (hasDoubaoCredential) {
     try {
-      const mmResult = await requestMinimaxText(markdown);
+      const doubaoResult = await requestDoubaoText(markdown);
       return {
         success: true,
-        text: mmResult.text || markdown,
-        entities: mmResult.entities,
-        confidence: mmResult.confidence,
+        text: doubaoResult.text || markdown,
+        entities: doubaoResult.entities,
+        confidence: doubaoResult.confidence,
         detections: [],
         // 修复方案 Track 2.2：返回 provider 让 queue 在解析失败时能在错误信息里写明具体哪一层降级。
-        provider: 'markitdown+minimax'
+        provider: 'markitdown+doubao'
       };
-    } catch (mmErr) {
-      logger.warn('markitdown + MiniMax 文本抽取失败，尝试 Kimi 回退', { error: mmErr.message });
+    } catch (doubaoErr) {
+      logger.warn('markitdown + Doubao 文本抽取失败，尝试 Kimi 回退', { error: doubaoErr.message });
     }
   }
 
@@ -1453,7 +1529,7 @@ const processMedicalImage = async (imageUrl) => {
       : (imageUrl || {});
     const sourceUrl = source.sourceUrl || source.imageUrl || '';
 
-    if (!sourceUrl) {
+    if (!sourceUrl && !source.fileKey) {
       throw new Error('缺少可识别的文件地址');
     }
 
@@ -1461,7 +1537,7 @@ const processMedicalImage = async (imageUrl) => {
     // 不再走 4 层降级让用户白等 30 秒最后落到一句通用 toast。
     // 客户端会展示 errorMsg + 让用户跳手动录入。
     if (!ocrConfig.isOcrEnabled()) {
-      const err = new Error('OCR_NOT_CONFIGURED: 该环境暂不支持自动解析，请联系管理员配置 MINIMAX_API_KEY（推荐）/ KIMI_API_KEY 或腾讯云 OCR 凭证');
+      const err = new Error('OCR_NOT_CONFIGURED: 该环境暂不支持自动解析，请联系管理员配置 ARK_API_KEY（Doubao，推荐）/ KIMI_API_KEY 或腾讯云 OCR 凭证');
       err.code = 'OCR_NOT_CONFIGURED';
       throw err;
     }
@@ -1487,28 +1563,49 @@ const processMedicalImage = async (imageUrl) => {
       mimeType: source.mimeType,
       fileKey: source.fileKey
     })) {
-      // 主路径：MiniMax File API（替换原 Kimi 主路径）
-      if (hasMinimaxCredential) {
+      // 主路径：Doubao。先尝试 PDF 文本层，抽空时立即转扫描件 vision 路径。
+      if (hasDoubaoCredential) {
         try {
-          const mmPdfResult = await requestMinimaxPdf({
+          const doubaoPdfResult = await requestDoubaoPdf({
             sourceUrl,
             fileKey: source.fileKey
           });
-          logger.info('PDF 走 MiniMax File API 模式完成', { provider: mmPdfResult.provider });
+          logger.info('PDF 走 Doubao 文本模式完成', { provider: doubaoPdfResult.provider });
           return {
             success: true,
-            text: mmPdfResult.text,
-            entities: mmPdfResult.entities,
-            confidence: mmPdfResult.confidence,
+            text: doubaoPdfResult.text,
+            entities: doubaoPdfResult.entities,
+            confidence: doubaoPdfResult.confidence,
             detections: [],
-            provider: mmPdfResult.provider || 'minimax_pdf'
+            provider: doubaoPdfResult.provider || 'doubao_pdf'
           };
-        } catch (mmPdfErr) {
-          logger.warn('MiniMax File API 处理 PDF 失败，尝试 Kimi File API 回退', { error: mmPdfErr.message });
+        } catch (doubaoTextErr) {
+          logger.warn('Doubao PDF 文本路径失败，尝试扫描件 vision 路径', { error: doubaoTextErr.message });
+          try {
+            const doubaoVisionResult = await requestDoubaoPdfVision({
+              sourceUrl,
+              fileKey: source.fileKey
+            });
+            logger.info('PDF 走 Doubao vision 拆页模式完成', {
+              provider: doubaoVisionResult.provider,
+              pageCount: doubaoVisionResult.pageCount
+            });
+            return {
+              success: true,
+              text: doubaoVisionResult.text,
+              entities: doubaoVisionResult.entities,
+              confidence: doubaoVisionResult.confidence,
+              detections: [],
+              provider: doubaoVisionResult.provider || 'doubao_pdf_vision',
+              pageCount: doubaoVisionResult.pageCount
+            };
+          } catch (doubaoVisionErr) {
+            logger.warn('Doubao PDF vision 路径失败，尝试 Kimi 回退', { error: doubaoVisionErr.message });
+          }
         }
       }
 
-      // 次选：Kimi File API（fallback，原 Kimi 主路径）
+      // 次选：Kimi File API（fallback）
       if (hasKimiCredential) {
         try {
           const kimiPdfResult = await requestKimiPdf({
@@ -1539,21 +1636,21 @@ const processMedicalImage = async (imageUrl) => {
         logger.warn('PDF 文本层解析失败', { error: pdfError.message });
       }
 
-      // 有文本则优先用 MiniMax 文本模式结构化
-      if (text && hasMinimaxCredential) {
+      // 有文本则优先用 Doubao 文本模式结构化
+      if (text && hasDoubaoCredential) {
         try {
-          const mmResult = await requestMinimaxText(text);
-          logger.info('PDF 走 MiniMax 文本模式结构化完成');
+          const doubaoResult = await requestDoubaoText(text);
+          logger.info('PDF 走 Doubao 文本模式结构化完成');
           return {
             success: true,
-            text: mmResult.text || text,
-            entities: mmResult.entities,
-            confidence: mmResult.confidence,
+            text: doubaoResult.text || text,
+            entities: doubaoResult.entities,
+            confidence: doubaoResult.confidence,
             detections: [],
-            provider: mmResult.provider || 'pdf_minimax_text'
+            provider: doubaoResult.provider || 'pdf_doubao_text'
           };
-        } catch (mmErr) {
-          logger.warn('PDF MiniMax 文本模式失败，尝试 Kimi 文本模式回退', { error: mmErr.message });
+        } catch (doubaoTextErr) {
+          logger.warn('PDF Doubao 文本模式失败，尝试 Kimi 文本模式回退', { error: doubaoTextErr.message });
         }
       }
 
@@ -1623,10 +1720,12 @@ module.exports = {
   requestDoubao,
   requestDoubaoText,
   requestDoubaoPdf,
+  requestDoubaoPdfVision,
   // exposed for unit tests
   __testables: {
     isPrivateOrIpUrl,
     assertSafeImageUrl,
-    fetchImageAsDataUrl
+    fetchImageAsDataUrl,
+    renderPdfPagesToDataUrls
   }
 };

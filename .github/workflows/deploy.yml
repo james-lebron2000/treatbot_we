@@ -172,9 +172,14 @@ jobs:
         MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
+        OCR_PROVIDER: 'auto'
+        OCR_QUEUE_CONCURRENCY: '2'
+        OCR_PDF_VISION_MAX_PAGES: '3'
+        OCR_PDF_VISION_DPI: '150'
         # ↓ 非敏感（公开端点 / 模型 ID / 超时）：固定字面量，便于单一来源 + 一眼可读
         # MiniMax vision 模型留空 → 走代码默认 fallback（图像 OCR 跳到 Kimi vision）
         MINIMAX_VISION_MODEL: ${{ secrets.MINIMAX_VISION_MODEL }}
+        KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
         # Doubao Ark：Ark 控制台必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）
         ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
         ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
@@ -189,7 +194,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
+        envs: SHA,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
         command_timeout: 15m
         script: |
           set -e
@@ -275,11 +280,16 @@ jobs:
           [ -n "$MINIMAX_API_KEY" ]      && OCR_ENV_FLAGS+=(-e "MINIMAX_API_KEY=$MINIMAX_API_KEY")
           [ -n "$MINIMAX_VISION_MODEL" ] && OCR_ENV_FLAGS+=(-e "MINIMAX_VISION_MODEL=$MINIMAX_VISION_MODEL")
           [ -n "$KIMI_API_KEY" ]         && OCR_ENV_FLAGS+=(-e "KIMI_API_KEY=$KIMI_API_KEY")
+          OCR_ENV_FLAGS+=(-e "KIMI_VISION_MODEL=$KIMI_VISION_MODEL")
           [ -n "$ARK_API_KEY" ]          && OCR_ENV_FLAGS+=(-e "ARK_API_KEY=$ARK_API_KEY")
           # 以下三项是 workflow 里写死的字面量（非 secret），所以这里一定有值
           OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=$ARK_VISION_MODEL")
           OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=$ARK_BASE_URL")
           OCR_ENV_FLAGS+=(-e "ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS")
+          OCR_ENV_FLAGS+=(-e "OCR_PROVIDER=$OCR_PROVIDER")
+          OCR_ENV_FLAGS+=(-e "OCR_QUEUE_CONCURRENCY=$OCR_QUEUE_CONCURRENCY")
+          OCR_ENV_FLAGS+=(-e "OCR_PDF_VISION_MAX_PAGES=$OCR_PDF_VISION_MAX_PAGES")
+          OCR_ENV_FLAGS+=(-e "OCR_PDF_VISION_DPI=$OCR_PDF_VISION_DPI")
           OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_USERNAME=$ADMIN_LOGIN_USERNAME")
           OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_KEY_HASH=$ADMIN_LOGIN_KEY_HASH")
           OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_TOKEN_TTL=$ADMIN_LOGIN_TOKEN_TTL")
@@ -290,10 +300,15 @@ jobs:
           [ -n "$MINIMAX_API_KEY" ]      && echo "    ✓ MINIMAX_API_KEY (len=${#MINIMAX_API_KEY})"      || echo "    ⚠ MINIMAX_API_KEY: 未设置 → 沿用旧 env"
           [ -n "$MINIMAX_VISION_MODEL" ] && echo "    ✓ MINIMAX_VISION_MODEL=$MINIMAX_VISION_MODEL"     || echo "    ⚠ MINIMAX_VISION_MODEL: 未设置（图像 OCR 会跳到 Kimi vision）"
           [ -n "$KIMI_API_KEY" ]         && echo "    ✓ KIMI_API_KEY (len=${#KIMI_API_KEY})"            || echo "    ⚠ KIMI_API_KEY: 未设置 → 沿用旧 env"
+          echo "    ✓ KIMI_VISION_MODEL=$KIMI_VISION_MODEL"
           [ -n "$ARK_API_KEY" ]          && echo "    ✓ ARK_API_KEY (len=${#ARK_API_KEY})"              || echo "    ⚠ ARK_API_KEY: 未设置（Doubao 路径不可用）"
           echo "    ✓ ARK_VISION_MODEL=$ARK_VISION_MODEL"
           echo "    ✓ ARK_BASE_URL=$ARK_BASE_URL"
           echo "    ✓ ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS"
+          echo "    ✓ OCR_PROVIDER=$OCR_PROVIDER"
+          echo "    ✓ OCR_QUEUE_CONCURRENCY=$OCR_QUEUE_CONCURRENCY"
+          echo "    ✓ OCR_PDF_VISION_MAX_PAGES=$OCR_PDF_VISION_MAX_PAGES"
+          echo "    ✓ OCR_PDF_VISION_DPI=$OCR_PDF_VISION_DPI"
           echo "  Admin login override:"
           echo "    ✓ ADMIN_LOGIN_USERNAME=$ADMIN_LOGIN_USERNAME"
           echo "    ✓ ADMIN_LOGIN_KEY_HASH configured (sha256)"

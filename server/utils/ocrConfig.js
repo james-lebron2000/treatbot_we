@@ -6,9 +6,10 @@
 //   - 测试可以临时改 env 再 isOcrEnabled() 判断
 //   - 线上 hot-reload .env（pm2 reload）也能立刻生效，不需要重启 Node 进程
 //
-// MiniMax 替换 Kimi 后，主推 provider 为 MiniMax；Kimi 保留为 fallback。
-const hasMinimaxCredential = () => {
-  return Boolean(`${process.env.MINIMAX_API_KEY || ''}`.trim());
+// 生产 OCR 主路径：Doubao/ARK -> Kimi -> Tencent -> rule。
+// MiniMax 仅保留给历史脚本/旧测试，不能再作为 isOcrEnabled 或 auto fallback 的依据。
+const hasDoubaoCredential = () => {
+  return Boolean(`${process.env.ARK_API_KEY || ''}`.trim());
 };
 
 const hasKimiCredential = () => {
@@ -23,20 +24,20 @@ const hasTencentCredential = () => {
 };
 
 const isOcrEnabled = () => {
-  return hasMinimaxCredential() || hasKimiCredential() || hasTencentCredential();
+  return hasDoubaoCredential() || hasKimiCredential() || hasTencentCredential();
 };
 
-// 给日志/错误信息用的 provider 摘要：'minimax' / 'kimi' / 'tencent' / 'minimax+tencent' / 'none' 等
+// 给日志/错误信息用的 provider 摘要：'doubao' / 'kimi' / 'tencent' / 'doubao+kimi' / 'none' 等
 const describeOcrProviders = () => {
   const providers = [];
-  if (hasMinimaxCredential()) providers.push('minimax');
+  if (hasDoubaoCredential()) providers.push('doubao');
   if (hasKimiCredential()) providers.push('kimi');
   if (hasTencentCredential()) providers.push('tencent');
   return providers.length ? providers.join('+') : 'none';
 };
 
 module.exports = {
-  hasMinimaxCredential,
+  hasDoubaoCredential,
   hasKimiCredential,
   hasTencentCredential,
   isOcrEnabled,

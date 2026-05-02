@@ -191,7 +191,7 @@ const MatchScoreItemSchema = z.object({
 
 /**
  * Phase E.3：跨多份病历聚合时间线 schema。
- * 由 timelineService.js 调用 MiniMax 后用 schema.safeParse 校验。
+ * 由 timelineService.js 调用当前 LLM provider 后用 schema.safeParse 校验。
  */
 const TimelineSummaryEventSchema = z.object({
   date: optionalString,                                                       // YYYY-MM 或 YYYY-MM-DD 或 null

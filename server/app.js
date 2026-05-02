@@ -196,7 +196,7 @@ if (require.main === module) {
   try {
     const ocrConfig = require('./utils/ocrConfig');
     if (!ocrConfig.isOcrEnabled()) {
-      logger.error('[STARTUP] OCR 服务未配置 (MINIMAX_API_KEY / KIMI_API_KEY / OCR_SECRET_ID 均缺失)，所有 PDF 上传将立即返回 OCR_NOT_CONFIGURED。请检查 server/.env');
+      logger.error('[STARTUP] OCR 服务未配置 (ARK_API_KEY / KIMI_API_KEY / OCR_SECRET_ID 均缺失)，所有 PDF 上传将立即返回 OCR_NOT_CONFIGURED。请检查 server/.env');
     } else {
       logger.info(`[STARTUP] OCR 凭证已配置: providers=${ocrConfig.describeOcrProviders()}`);
     }
