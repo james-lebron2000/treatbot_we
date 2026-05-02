@@ -1,5 +1,6 @@
 {
   "description": "项目配置文件",
+  "_ignore_note": "packOptions.ignore 决定 DevTools『上传』时哪些文件不打包进微信后台。任何含 PII / 密钥 / 服务器逻辑的目录与文件都必须在此屏蔽 —— 一旦上传，就被微信审核团队和后续所有体验版都看得见。",
   "packOptions": {
     "ignore": [
       { "value": "server", "type": "folder" },
@@ -18,22 +19,67 @@
       { "value": "coverage", "type": "folder" },
       { "value": "dist", "type": "folder" },
       { "value": "build", "type": "folder" },
+
+      { "value": "logs", "type": "folder" },
+      { "value": "log", "type": "folder" },
+      { "value": "tmp", "type": "folder" },
+      { "value": "temp", "type": "folder" },
+      { "value": ".cache", "type": "folder" },
+      { "value": ".tmp", "type": "folder" },
+      { "value": ".nyc_output", "type": "folder" },
+      { "value": ".npm", "type": "folder" },
+      { "value": ".claude", "type": "folder" },
+      { "value": "claude-worktrees", "type": "folder" },
+
+      { "value": "bench-out", "type": "folder" },
+      { "value": "bench-out-run1", "type": "folder" },
+      { "value": "bench-out-run2", "type": "folder" },
+
+      { "value": "data", "type": "folder" },
+      { "value": "dataset_patient", "type": "folder" },
+      { "value": "fixtures", "type": "folder" },
+      { "value": "snapshots", "type": "folder" },
+      { "value": "__snapshots__", "type": "folder" },
+      { "value": "__pycache__", "type": "folder" },
+
       { "value": "md", "type": "suffix" },
       { "value": "sh", "type": "suffix" },
       { "value": "log", "type": "suffix" },
+      { "value": "tmp", "type": "suffix" },
+      { "value": "bak", "type": "suffix" },
+      { "value": "swp", "type": "suffix" },
+      { "value": "swo", "type": "suffix" },
+      { "value": "tgz", "type": "suffix" },
+      { "value": "tar", "type": "suffix" },
+      { "value": "zip", "type": "suffix" },
+      { "value": "csv", "type": "suffix" },
+      { "value": "pyc", "type": "suffix" },
+
+      { "value": ".env", "type": "prefix" },
+
       { "value": "Makefile", "type": "file" },
       { "value": ".gitignore", "type": "file" },
       { "value": ".gitattributes", "type": "file" },
       { "value": ".editorconfig", "type": "file" },
       { "value": ".prettierrc", "type": "file" },
+      { "value": ".prettierrc.js", "type": "file" },
+      { "value": ".prettierrc.json", "type": "file" },
+      { "value": ".prettierignore", "type": "file" },
       { "value": ".eslintrc", "type": "file" },
       { "value": ".eslintrc.js", "type": "file" },
       { "value": ".eslintrc.json", "type": "file" },
+      { "value": ".eslintignore", "type": "file" },
+      { "value": ".eslintcache", "type": "file" },
+      { "value": ".pre-commit-config.yaml", "type": "file" },
       { "value": ".DS_Store", "type": "file" },
+      { "value": "Thumbs.db", "type": "file" },
       { "value": "package.json", "type": "file" },
       { "value": "package-lock.json", "type": "file" },
       { "value": "yarn.lock", "type": "file" },
-      { "value": "pnpm-lock.yaml", "type": "file" }
+      { "value": "pnpm-lock.yaml", "type": "file" },
+
+      { "value": "bench-results.csv", "type": "file" },
+      { "value": "bench-summary.json", "type": "file" }
     ],
     "include": []
   },

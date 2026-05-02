@@ -344,6 +344,15 @@
   line-height: 1.5;
 }
 
+/* Track C-3（PRD-2026Q3）：ETA 倒数文案，比"切到其他页面"提示更醒目 */
+.progress-eta {
+  display: block;
+  font-size: 28rpx;
+  color: #12796b;
+  font-weight: 600;
+  margin-bottom: 6rpx;
+}
+
 .background-tip {
   margin-bottom: 28rpx;
   padding: 22rpx 24rpx;
@@ -717,6 +726,20 @@
   padding: 20rpx 0;
 }
 
+/* Track C-2（PRD-2026Q3）：第三步（结果页）的 action-bar 在 missingFields 较多时
+   会被 gap-section 顶到屏外，主按钮「看看为家人找到的新药」无法直接点。改为 sticky
+   到底，并在背景上加微阴影区分 gap-section 黄底，让用户随时能看到 CTA。
+   备注：第一步上传页的 action-bar 没有 gap-section 同台，sticky 也无害（仍贴底）。 */
+.result-section .action-bar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 24rpx;
+  padding: 24rpx 0;
+  background: #fafafa;
+  box-shadow: 0 -4rpx 12rpx rgba(0, 0, 0, 0.04);
+  z-index: 10;
+}
+
 .action-bar .btn {
   flex: 1;
   margin-bottom: 20rpx;
@@ -797,6 +820,100 @@
   border-radius: 10rpx;
   padding: 18rpx 20rpx;
   font-size: 28rpx;
+}
+
+/* Track C-2（PRD-2026Q3）：missingFields 多到 8+ 时的 UX 重做 ——
+     头部进度条 + 分组折叠卡片，让用户一眼看到「还差几项」+ 在不展开全部的情况下
+     仍能看到底部 sticky CTA。 */
+.gap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+  gap: 24rpx;
+}
+
+.gap-header-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.gap-subtitle {
+  font-size: 24rpx;
+  color: #92400e;
+  margin-top: 6rpx;
+}
+
+.gap-progress {
+  width: 180rpx;
+  height: 10rpx;
+  background: #fff1d6;
+  border-radius: 6rpx;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.gap-progress-fill {
+  height: 100%;
+  background: #fa8c16;
+  transition: width 240ms ease-out;
+}
+
+.gap-group-card {
+  background: #fff;
+  border-radius: 14rpx;
+  margin-bottom: 16rpx;
+  padding: 22rpx 24rpx;
+  border: 1rpx solid #ffe7ba;
+}
+
+.gap-group-card:last-child {
+  margin-bottom: 0;
+}
+
+.gap-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.gap-group-title {
+  font-size: 28rpx;
+  color: #1e293b;
+  font-weight: 600;
+  flex: 1;
+}
+
+.gap-group-count {
+  font-size: 24rpx;
+  color: #d46b08;
+  background: #fff7e6;
+  padding: 4rpx 14rpx;
+  border-radius: 12rpx;
+}
+
+.gap-group-toggle {
+  font-size: 24rpx;
+  color: #fa8c16;
+}
+
+.gap-group-body {
+  margin-top: 18rpx;
+}
+
+.gap-label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+  flex-wrap: wrap;
+}
+
+.gap-hint {
+  font-size: 22rpx;
+  color: #94a3b8;
 }
 
 /* 细节字号统一 */

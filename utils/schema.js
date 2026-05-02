@@ -478,6 +478,50 @@ const buildStructuredSummary = (record) => {
   }
 }
 
+/**
+ * Track C-2（PRD-2026Q3）：把 missingFields 按 GROUP_META.order 分组，
+ * 让上传页 `gap-section` 不再一字排开堆 8+ 项的视觉墙。
+ *
+ * 与 buildRecordSections 的区别：
+ *   - 只保留 required && empty 的字段（与 getMissingFields 同口径）
+ *   - 字段携带 select/text/number 的 type、options、hint，让 wxml 直接渲染
+ *   - filter 掉 fields=0 的空组，避免渲染空卡片
+ */
+const buildGapSections = (record) => {
+  const normalized = normalizeStructuredRecord(record)
+  const missing = FIELD_SCHEMAS.filter(
+    (field) => field.required && isEmptyValue(normalized[field.key])
+  )
+
+  const grouped = {}
+  Object.keys(GROUP_META).forEach((groupKey) => {
+    grouped[groupKey] = []
+  })
+
+  missing.forEach((field) => {
+    const targetGroup = grouped[field.group] ? field.group : 'other'
+    grouped[targetGroup].push({
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      options: Array.isArray(field.options) ? field.options : [],
+      hint: field.hint || '',
+      required: field.required,
+      currentValue: ''
+    })
+  })
+
+  return Object.keys(GROUP_META)
+    .sort((a, b) => GROUP_META[a].order - GROUP_META[b].order)
+    .map((groupKey) => ({
+      key: groupKey,
+      title: GROUP_META[groupKey].title,
+      fields: grouped[groupKey],
+      totalCount: grouped[groupKey].length
+    }))
+    .filter((section) => section.fields.length > 0)
+}
+
 const buildRecordPreview = (record) => {
   const normalized = normalizeStructuredRecord(record)
   return [
@@ -500,6 +544,7 @@ module.exports = {
   buildRecordPreview,
   buildRecordSections,
   buildStructuredSummary,
+  buildGapSections,
   // 暴露共享 schema 给上游消费方（如 H5 后续 zod 包装）：
   sharedUploadSchema
 }

@@ -105,6 +105,8 @@
           <view class="progress-shine"></view>
         </view>
         <view class="progress-meta">
+          <!-- Track C-3（PRD-2026Q3）：基于预期时长的 ETA 倒数，给用户「快好了」的体感 -->
+          <text class="progress-eta" wx:if="{{etaText}}">{{etaText}}</text>
           <text>您可以切到其他页面，我们会继续帮您看</text>
         </view>
       </view>
@@ -136,12 +138,7 @@
 
       <view class="background-tip">
         <text class="background-tip-title">不用一直等着</text>
-        <text class="background-tip-text">我们会在后台继续帮您看懂这份病历，好了会通知您，可能能用的新药也一并准备好。</text>
-      </view>
-
-      <view class="background-actions">
-        <button class="btn btn-default" bindtap="goToRecords">先看病历</button>
-        <button class="btn btn-primary" bindtap="goToMatchesPage">等会儿看新药</button>
+        <text class="background-tip-text">看好后会自动跳到下一步，您可以放心等待。</text>
       </view>
     </view>
   </view>
@@ -194,43 +191,67 @@
       </view>
     </view>
 
+    <!-- Track C-2（PRD-2026Q3）：missingFields 多到 8+ 时一字排开会把主按钮推出屏。
+         改为「头部进度条 + 按 GROUP_META 分组的折叠卡片」，默认只展开第一组（基本入组），
+         其它组折叠让用户一眼看到底部 sticky CTA。 -->
     <view id="gapSection" class="gap-section" wx:if="{{missingFields.length > 0}}">
-      <view class="gap-title">再补一点信息会更准（{{missingFields.length}} 项）</view>
-      <view class="gap-item" wx:for="{{missingFields}}" wx:key="key" wx:for-item="field">
-        <view class="gap-label">{{field.label}}</view>
+      <view class="gap-header">
+        <view class="gap-header-left">
+          <text class="gap-title">再补 {{gapSummary.totalMissing}} 项会更准</text>
+          <text class="gap-subtitle">已补 {{gapSummary.filledNow}} / {{gapSummary.totalMissing}}</text>
+        </view>
+        <view class="gap-progress">
+          <view class="gap-progress-fill" style="width: {{gapSummary.percent}}%;"></view>
+        </view>
+      </view>
 
-        <view wx:if="{{field.type === 'select'}}" class="gap-options">
-          <view
-            class="gap-option {{field.currentValue === option ? 'active' : ''}}"
-            wx:for="{{field.options}}"
-            wx:key="*this"
-            wx:for-item="option"
-            bindtap="selectGapOption"
-            data-key="{{field.key}}"
-            data-value="{{option}}"
-          >
-            {{option}}
+      <view class="gap-group-card" wx:for="{{gapSections}}" wx:key="key" wx:for-item="section">
+        <view class="gap-group-head" bindtap="toggleGapGroup" data-key="{{section.key}}">
+          <text class="gap-group-title">{{section.title}}</text>
+          <text class="gap-group-count">{{section.fields.length}} 项</text>
+          <text class="gap-group-toggle">{{collapsedGroups[section.key] ? '展开' : '收起'}}</text>
+        </view>
+        <view wx:if="{{!collapsedGroups[section.key]}}" class="gap-group-body">
+          <view class="gap-item" wx:for="{{section.fields}}" wx:key="key" wx:for-item="field">
+            <view class="gap-label-row">
+              <text class="gap-label">{{field.label}}</text>
+              <text class="gap-hint" wx:if="{{field.hint}}">{{field.hint}}</text>
+            </view>
+
+            <view wx:if="{{field.type === 'select'}}" class="gap-options">
+              <view
+                class="gap-option {{parsedData[field.key] === option ? 'active' : ''}}"
+                wx:for="{{field.options}}"
+                wx:key="*this"
+                wx:for-item="option"
+                bindtap="selectGapOption"
+                data-key="{{field.key}}"
+                data-value="{{option}}"
+              >
+                {{option}}
+              </view>
+            </view>
+
+            <input
+              wx:elif="{{field.type === 'number'}}"
+              class="gap-input"
+              type="number"
+              placeholder="请输入{{field.label}}"
+              value="{{parsedData[field.key]}}"
+              bindinput="onGapInput"
+              data-key="{{field.key}}"
+            />
+
+            <input
+              wx:else
+              class="gap-input"
+              placeholder="请输入{{field.label}}"
+              value="{{parsedData[field.key]}}"
+              bindinput="onGapInput"
+              data-key="{{field.key}}"
+            />
           </view>
         </view>
-
-        <input
-          wx:elif="{{field.type === 'number'}}"
-          class="gap-input"
-          type="number"
-          placeholder="请输入{{field.label}}"
-          value="{{field.currentValue}}"
-          bindinput="onGapInput"
-          data-key="{{field.key}}"
-        />
-
-        <input
-          wx:else
-          class="gap-input"
-          placeholder="请输入{{field.label}}"
-          value="{{field.currentValue}}"
-          bindinput="onGapInput"
-          data-key="{{field.key}}"
-        />
       </view>
     </view>
 

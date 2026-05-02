@@ -594,16 +594,36 @@ const requestWithRetry = async (options, retryCount = 1) => {
 // Q3-红线 §A.1（补丁）：上传同样要走 single-flight refresh，否则病历上传到一半
 // 撞上 token 过期 → 用户面前直接红屏失败。复用 request() 的同一个 refreshing Promise，
 // 保证多个上传并发时只发一次 /auth/refresh。
+//
+// Track C-1（PRD-2026Q3）：批量上传偶发「2 张传 1 张失败」根因 —— 此前 wx.uploadFile
+//   30s 硬超时 + 0 重试 + fail 回调直接 reject，弱网下任何一次 ETIMEDOUT / 5xx /
+//   COS 抖动都会让这一份永久失败。补丁：
+//     1. timeout 30s → 60s（multer 30MB cap + COS putObject 在弱网下偶尔 35-50s）
+//     2. 网络层 fail（statusCode=0）+ 服务端 5xx（>= 500）退避 1500ms × 1 次重试
+//     3. 401（已有路径）+ 4xx（4xx 通常是参数错误，不重试）保持不变
+//   注意：retry 计数走两条独立通道 —— authRetried 给 401 token 刷新用；transientRetried
+//   给 5xx / 网络层用 —— 同一个 doUpload 调用最多消耗这两次中的一次（401 通常不会同时
+//   伴随 5xx）。
+const TRANSIENT_RETRY_DELAY_MS = 1500
+const isTransientUploadError = (statusCode) => {
+  const sc = Number(statusCode || 0)
+  // statusCode === 0 → wx.uploadFile fail 回调（DNS / 超时 / 网络断开）
+  // sc >= 500 → 服务端瞬时错误（502 / 503 / 504 / COS 透传 5xx）
+  return sc === 0 || sc >= 500
+}
+
 const uploadFile = (options) => {
   return new Promise((resolve, reject) => {
-    const doUpload = (retried) => {
+    // authRetried：401 → token refresh → 重试（旧逻辑）
+    // transientRetried：超时/5xx → 退避后重试（新增，每次上传最多 1 次）
+    const doUpload = (authRetried, transientRetried) => {
       const token = wx.getStorageSync('token')
       const baseUrl = getRuntimeBaseUrl()
       wx.uploadFile({
         url: `${baseUrl}${options.url}`,
         filePath: options.filePath,
         name: options.name || 'file',
-        timeout: options.timeout || 30000,
+        timeout: options.timeout || 60000,
         header: {
           Authorization: token ? `Bearer ${token}` : ''
         },
@@ -619,9 +639,9 @@ const uploadFile = (options) => {
             return
           }
 
-          if (res.statusCode === 401 && !retried) {
+          if (res.statusCode === 401 && !authRetried) {
             tryRefreshToken()
-              .then(() => doUpload(true))
+              .then(() => doUpload(true, transientRetried))
               .catch(() => {
                 clearAuth()
                 wx.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
@@ -630,15 +650,28 @@ const uploadFile = (options) => {
             return
           }
 
+          // Track C-1：5xx 瞬时错误退避后重试一次（同一上传最多 1 次）
+          if (isTransientUploadError(res.statusCode) && !transientRetried) {
+            console.warn(`[uploadFile] transient ${res.statusCode}, retry after ${TRANSIENT_RETRY_DELAY_MS}ms`)
+            setTimeout(() => doUpload(authRetried, true), TRANSIENT_RETRY_DELAY_MS)
+            return
+          }
+
           reject(buildHttpError('上传失败', { statusCode: res.statusCode, response: res.data }))
         },
         fail: (err) => {
+          // 网络层失败（statusCode 隐式 0）：超时 / DNS / 网络断 → 退避后重试一次
+          if (!transientRetried) {
+            console.warn('[uploadFile] network fail, retry after', TRANSIENT_RETRY_DELAY_MS, 'ms', err)
+            setTimeout(() => doUpload(authRetried, true), TRANSIENT_RETRY_DELAY_MS)
+            return
+          }
           console.error('上传失败:', err)
           reject(buildHttpError('网络上传失败', { statusCode: 0, response: err }))
         }
       })
     }
-    doUpload(false)
+    doUpload(false, false)
   })
 }
 

@@ -46,13 +46,131 @@ const resolveErrorCopy = (error) => {
   return copy.error[key] || copy.error.unknown
 }
 
+// Track C-3（PRD-2026Q3）：进度条改为「基于预期时长的平滑爬升 + status 阈值」。
+//   - minProgress：后端推到这个 status 时，UI 最少要爬到这个值（form a floor）
+//   - completed 是唯一允许 UI 冲到 100% 的状态；其它状态最多顶到 92%
+//   - text / step：保留原语义，驱动 processing-shell 的步骤卡片
+//
+// 阈值取值理由（与 server/services/queue.js 状态机对齐）：
+//   uploading → 0-12%   ：刚发起，给一点初始动；
+//   parsing   → 28%     ：multer 收完 + OCR provider 已开始；
+//   analyzing → 58%     ：vision LLM 抽取阶段；
+//   structuring → 82%   ：抽取完成，规整结构；
+//   completed → 100%    ：终态，立刻冲。
 const STATUS_TEXT_MAP = {
-  uploading: { progress: 10, uiTarget: 18, step: 0, text: copy.status.pending },
-  parsing: { progress: 45, uiTarget: 58, step: 1, text: copy.status.parsing },
-  analyzing: { progress: 75, uiTarget: 82, step: 2, text: '找诊断、分期、基因这些关键信息…' },
-  structuring: { progress: 90, uiTarget: 96, step: 3, text: '整理成一份能看懂的摘要…' },
-  completed: { progress: 100, uiTarget: 100, step: 3, text: copy.status.completed }
+  uploading:   { minProgress: 12, step: 0, text: copy.status.pending },
+  parsing:     { minProgress: 28, step: 1, text: copy.status.parsing },
+  analyzing:   { minProgress: 58, step: 2, text: '找诊断、分期、基因这些关键信息…' },
+  structuring: { minProgress: 82, step: 3, text: '整理成一份能看懂的摘要…' },
+  completed:   { minProgress: 100, step: 3, text: copy.status.completed }
 }
+
+// Track C-3：进度条曲线参数。
+//   PROGRESS_CEIL_DURING_RUN —— 模拟阶段最高 92%，避免抢答（剩 8% 留给 completed）
+//   PROGRESS_TICK_MS         —— 每 250ms 重算一次，肉眼平滑且不抢主线程
+//   PROGRESS_EASE_K          —— logistic 减速系数；越大越快接近上限
+const PROGRESS_CEIL_DURING_RUN = 92
+const PROGRESS_TICK_MS = 250
+// PROGRESS_EASE_K：logistic 减速系数。
+//   K=2.4 → 前段窜得快（t=1s 到 19%）；
+//   K=2.0 → 前段沉稳（t=1s 到 ~9%, t=ETA 到 80%）；
+//   K=1.6 → 前段太慢（t=1s 到 ~7%, 用户觉得"没动"）。
+//   2.0 是"从 1% 慢慢爬"+"ETA 时刻给后端 20% 冲刺空间"的折中。
+const PROGRESS_EASE_K = 2.0
+
+// 单文件耗时基线（秒）—— 实测分布：
+//   图片 OCR：8-14s，取 11s
+//   PDF（markitdown 文本路径）：12-18s
+//   PDF（vision 路径，扫描件）：18-30s，统一按 22s 估
+const ETA_PER_IMAGE_SECONDS = 11
+const ETA_PER_PDF_SECONDS = 22
+// 多文件并行加成：服务端 queue concurrency=2，多出来的份按 0.4× 累加
+//   1 份 image：11s
+//   3 份 image：11 + 0.4×11 + 0.4×11 ≈ 19.8s
+//   2 份 pdf：22 + 0.4×22 ≈ 30.8s
+const ETA_CONCURRENCY_FACTOR = 0.4
+
+const estimateEtaSeconds = (files) => {
+  if (!Array.isArray(files) || !files.length) {
+    return ETA_PER_IMAGE_SECONDS
+  }
+  const perFile = files.map((f) =>
+    f && f.fileType === 'pdf' ? ETA_PER_PDF_SECONDS : ETA_PER_IMAGE_SECONDS
+  )
+  // 由大到小排序：最慢的那份决定底线，其它按并发因子加权累计
+  const sorted = [...perFile].sort((a, b) => b - a)
+  let total = sorted[0]
+  for (let i = 1; i < sorted.length; i += 1) {
+    total += sorted[i] * ETA_CONCURRENCY_FACTOR
+  }
+  return Math.max(8, Math.round(total))
+}
+
+const formatEtaText = (secondsRemaining, isOverdue) => {
+  if (isOverdue) {
+    return '即将完成…'
+  }
+  const s = Math.max(0, Math.ceil(secondsRemaining))
+  if (s <= 0) {
+    return '即将完成…'
+  }
+  if (s <= 5) {
+    return '马上就好…'
+  }
+  return `预计还需 ~${s} 秒`
+}
+
+// PRD-2026Q3 §U5（增量修复 errCode 80051）：
+//   wx.uploadFile 生产硬上限 10MB；WeChat DevTools 默认 2MB（详情→本地设置可调高）。
+//   服务端 multer fileSize=30MB（server/controllers/medical.js:14）—— 瓶颈始终在客户端这一层。
+//
+// 策略：图片 > 1.5MB 一律先 wx.compressImage 重采样到长边 2400px、jpg 质量 70 ——
+//   多数手机原图 5-15MB，压完通常 0.4-1.2MB，OCR 文字仍清晰。
+//   压缩后或 PDF 仍 > 9MB 的（留 1MB headroom 给 multipart 表单字段）直接拒掉这一份，
+//   走 shared/copy/upload.js 的 file_too_large 友好提示，不阻塞其它文件继续上传。
+const MAX_UPLOAD_BYTES = 9 * 1024 * 1024
+const IMAGE_COMPRESS_THRESHOLD = 1.5 * 1024 * 1024
+const IMAGE_COMPRESS_LONG_EDGE = 2400
+
+const compressImageAsync = (src) =>
+  new Promise((resolve) => {
+    wx.compressImage({
+      src,
+      quality: 70,
+      // 只设 compressedHeight：让 WeChat 按比例自动计算另一边，避免强制双向 dim 把图片压扁。
+      // 对竖向拍的病历这是长边；横向稍微吃亏但 quality 70 仍能压缩。
+      compressedHeight: IMAGE_COMPRESS_LONG_EDGE,
+      success: (res) => resolve((res && res.tempFilePath) || src),
+      fail: () => resolve(src)
+    })
+  })
+
+const getFileSizeAsync = (filePath) =>
+  new Promise((resolve) => {
+    try {
+      const fsm = wx.getFileSystemManager && wx.getFileSystemManager()
+      if (fsm && typeof fsm.getFileInfo === 'function') {
+        fsm.getFileInfo({
+          filePath,
+          success: (res) => resolve(Number((res && res.size) || 0)),
+          fail: () => resolve(0)
+        })
+        return
+      }
+      // 老版基础库兜底：直接用全局 wx.getFileInfo
+      if (typeof wx.getFileInfo === 'function') {
+        wx.getFileInfo({
+          filePath,
+          success: (res) => resolve(Number((res && res.size) || 0)),
+          fail: () => resolve(0)
+        })
+        return
+      }
+      resolve(0)
+    } catch (e) {
+      resolve(0)
+    }
+  })
 
 const PDF_HINT_FIELDS = ['diagnosis', 'stage', 'geneMutation']
 const TRANSIENT_STORAGE_KEYS = ['currentRecordId', 'structuredRecordDraft', 'selectedMatchDetail', 'selectedApplyTrial']
@@ -95,6 +213,10 @@ Page({
     progressTarget: 0,
     parseProgressStyle: 'width: 0%;',
     parseStep: 0,
+    // Track C-3：ETA 显示数据
+    estimatedTotalSeconds: 0,
+    etaSecondsRemaining: 0,
+    etaText: '',
     fileId: '',
     recordId: '',
     fileIds: [],
@@ -109,6 +231,13 @@ Page({
     },
     summaryProgressStyle: 'width: 0%;',
     missingFields: [],
+    // Track C-2（PRD-2026Q3）：分组式 gap UI 的状态
+    //   gapSections    — schema.buildGapSections 输出，按 GROUP_META 顺序分组
+    //   collapsedGroups— { [groupKey]: boolean }，true 表示该组当前折叠
+    //   gapSummary     — { totalMissing, filledNow, percent }，头部进度条数据
+    gapSections: [],
+    collapsedGroups: {},
+    gapSummary: { totalMissing: 0, filledNow: 0, percent: 0 },
     submittingGap: false,
     parseFallbackNotified: false,
     hasPdfUpload: false,
@@ -225,7 +354,7 @@ Page({
     return 'other'
   },
 
-  handleFiles(files) {
+  async handleFiles(files) {
     const currentFiles = this.data.tempFiles
     const normalized = files
       .map((file) => {
@@ -255,9 +384,60 @@ Page({
       })
     }
 
+    // PRD-2026Q3 §U5（修复 errCode 80051）：
+    //   1) 图片 > 1.5MB 先 wx.compressImage 重采样到长边 2400px / jpg 质量 70；
+    //   2) 压缩后或 PDF 仍 > 9MB 的，直接 reject 这一份（不阻塞其它），用 file_too_large 提示。
+    //   compressImage 失败时 resolve 原始 path —— 让步骤 2 的 size 校验来兜底，避免一次压缩
+    //   失败拖垮整个会话。
+    const needsCompression = supported.some(
+      (file) => file.fileType === 'image' && file.size > IMAGE_COMPRESS_THRESHOLD
+    )
+    if (needsCompression || supported.length > 1) {
+      // 多文件 / 大图都给个 loading，避免用户以为操作没生效（压缩在后台跑 1-3s）
+      wx.showLoading({ title: '准备文件…', mask: true })
+    }
+
+    const processed = []
+    let oversizeCount = 0
+    try {
+      for (const file of supported) {
+        let { path, size } = file
+        if (file.fileType === 'image' && size > IMAGE_COMPRESS_THRESHOLD) {
+          const compressedPath = await compressImageAsync(path)
+          if (compressedPath && compressedPath !== path) {
+            const compressedSize = await getFileSizeAsync(compressedPath)
+            // 仅在压缩 *真的* 减小了体积才采用；偶发情况下 compressImage 输出更大
+            // （比如已是高压缩 jpg 又转一次），这种就保留原 path。
+            if (compressedSize > 0 && compressedSize < size) {
+              path = compressedPath
+              size = compressedSize
+            }
+          }
+        }
+        if (size > MAX_UPLOAD_BYTES) {
+          oversizeCount += 1
+          continue
+        }
+        processed.push({ ...file, path, size })
+      }
+    } finally {
+      if (needsCompression || supported.length > 1) {
+        wx.hideLoading()
+      }
+    }
+
+    if (oversizeCount > 0) {
+      wx.showToast({
+        // shared/copy/upload.js: '这份文件有点大 —— 压缩一下或分几次传都可以，您的数据不会丢。'
+        title: copy.error.file_too_large,
+        icon: 'none',
+        duration: 2400
+      })
+    }
+
     // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
     this.setData({
-      tempFiles: [...currentFiles, ...supported].slice(0, 5)
+      tempFiles: [...currentFiles, ...processed].slice(0, 5)
     })
   },
 
@@ -301,8 +481,12 @@ Page({
   },
 
   clearPollTimer() {
+    // 修复方案 Track 3.7：把 pollingActive 也清掉，让 scheduleNextPoll 自然 short-circuit。
+    // 兼容 setInterval（旧固定 1500ms）+ setTimeout（新自适应链）两种 timer 句柄。
+    this.pollingActive = false
     if (this.pollTimer) {
       clearInterval(this.pollTimer)
+      clearTimeout(this.pollTimer)
       this.pollTimer = null
     }
   },
@@ -322,31 +506,110 @@ Page({
     })
   },
 
-  animateProgressTo(target) {
-    const finalTarget = Math.max(0, Math.min(100, Math.round(target)))
+  /**
+   * Track C-3（PRD-2026Q3）：启动「基于预期时长的进度模拟」。
+   *   入参 totalSeconds：本次预期总耗时（estimateEtaSeconds 算出来的）
+   *
+   * 曲线设计（关键）：
+   *   eased = 1 - exp(-PROGRESS_EASE_K * elapsed/ETA)   // 0 → ~0.95
+   *   target = 1 + eased * (CEIL - 1)                   // 1% → ~92%
+   *
+   * 等价于：t=0 时 1%，t=0.3·ETA 时 ~46%，t=ETA 时 ~85%，
+   * t=1.5·ETA 时 ~89%，t=3·ETA 时 ~92%（永远到不了）。
+   * 这样：
+   *   - 实际处理快 → 后端 status=completed 来时直接冲 100%
+   *   - 实际处理慢 → UI 在末段慢爬，用户不会觉得"卡死"
+   *   - 后端 status 跳跃（如直接到 analyzing）→ statusMinFloor 把 UI 立即抬上去
+   */
+  startSimulatedProgress(totalSeconds) {
     this.clearProgressTimer()
-
-    this.progressTimer = setInterval(() => {
-      const current = Number(this.data.parseProgress || 0)
-      if (current >= finalTarget) {
-        this.clearProgressTimer()
-        return
-      }
-
-      const delta = finalTarget - current
-      const step = delta > 16 ? 3 : delta > 8 ? 2 : 1
-      this.updateProgressBar(Math.min(finalTarget, current + step))
-    }, 120)
+    this.simulationStartedAt = Date.now()
+    this.simulationEtaMs = Math.max(8000, Number(totalSeconds || 15) * 1000)
+    this.statusMinFloor = 1
+    this.completionFlooded = false
+    this.setData({
+      estimatedTotalSeconds: Math.round(this.simulationEtaMs / 1000),
+      etaSecondsRemaining: Math.round(this.simulationEtaMs / 1000),
+      etaText: formatEtaText(this.simulationEtaMs / 1000, false)
+    })
+    // 立刻给一个 1% 的初始动，避免用户盯着 0% 一拍空
+    this.updateProgressBar(1)
+    this.progressTimer = setInterval(() => this.simulationTick(), PROGRESS_TICK_MS)
   },
 
-  setProgressTarget(status, minTarget = 0) {
+  /**
+   * Track C-3：单次进度 tick。逻辑分三档：
+   *   1. completionFlooded —— completed status 已到，正在冲 100%
+   *   2. 模拟阶段 —— 走 logistic 曲线 + statusMinFloor + 不倒退
+   *   3. ETA 倒数显示
+   */
+  simulationTick() {
+    const now = Date.now()
+    const elapsedMs = Math.max(0, now - (this.simulationStartedAt || now))
+    const etaMs = this.simulationEtaMs || 15000
+    const cur = Number(this.data.parseProgress || 0)
+
+    if (this.completionFlooded) {
+      // completed：每 tick 跳 8%，最多 4 个 tick 冲到 100
+      const next = Math.min(100, cur + 8)
+      this.updateProgressBar(next)
+      if (next >= 100) {
+        this.clearProgressTimer()
+        this.setData({ etaText: '', etaSecondsRemaining: 0 })
+      }
+      return
+    }
+
+    const ratio = elapsedMs / etaMs
+    const eased = 1 - Math.exp(-PROGRESS_EASE_K * ratio)
+    let target = 1 + eased * (PROGRESS_CEIL_DURING_RUN - 1)
+    // 后端 status 推上来的 floor —— 让 UI 不能低于真实 stage
+    target = Math.max(target, Number(this.statusMinFloor || 1))
+    // 永不倒退（用户切回页 / 解析超时返回原 status 时）
+    target = Math.max(target, cur)
+    // 不能超过模拟阶段的天花板 92%
+    target = Math.min(target, PROGRESS_CEIL_DURING_RUN)
+
+    this.updateProgressBar(target)
+
+    // ETA 显示
+    const remainingSec = (etaMs - elapsedMs) / 1000
+    const isOverdue = remainingSec <= 0
+    this.setData({
+      etaSecondsRemaining: Math.max(0, Math.ceil(remainingSec)),
+      etaText: formatEtaText(remainingSec, isOverdue)
+    })
+  },
+
+  /**
+   * Track C-3：把 status 转成 statusMinFloor + 文案 / step，但 *不再* 直接驱动进度。
+   *   进度由 simulationTick 推动；这里只是抬底（floor）和切文案。
+   *
+   * minFloor 入参：兼容历史调用方传"开机最小进度"的语义；不传时取 status.minProgress。
+   */
+  setProgressTarget(status, minFloor = 0) {
     const config = STATUS_TEXT_MAP[status] || STATUS_TEXT_MAP.parsing
+    const floor = Math.max(minFloor || 0, config.minProgress || 0)
+
     this.setData({
       processingStatus: config.text,
       parseStep: config.step,
-      progressTarget: Math.max(minTarget, config.uiTarget)
+      progressTarget: floor
     })
-    this.animateProgressTo(Math.max(minTarget, config.uiTarget))
+
+    // completed 触发冲 100% 模式
+    if (status === 'completed') {
+      this.completionFlooded = true
+      this.statusMinFloor = 100
+      // 如果模拟器还没启动（极端：跳过了 startSimulatedProgress），手动启
+      if (!this.progressTimer) {
+        this.progressTimer = setInterval(() => this.simulationTick(), PROGRESS_TICK_MS)
+      }
+      return
+    }
+
+    // 普通状态：抬高 floor，让下一次 tick 把进度推上去
+    this.statusMinFloor = Math.max(Number(this.statusMinFloor || 1), floor)
   },
 
   resetUploadSessionState() {
@@ -366,14 +629,28 @@ Page({
       structuredSummary: schema.buildStructuredSummary({}),
       summaryProgressStyle: 'width: 0%;',
       missingFields: [],
+      // Track C-2：清掉上次 session 的 gap 状态，避免新一份病历进来时还看到旧分组
+      gapSections: [],
+      collapsedGroups: {},
+      gapSummary: { totalMissing: 0, filledNow: 0, percent: 0 },
       parseProgress: 0,
       progressTarget: 0,
       parseProgressStyle: 'width: 0%;',
       parseStep: 0,
+      // Track C-3：清掉 ETA 显示
+      estimatedTotalSeconds: 0,
+      etaSecondsRemaining: 0,
+      etaText: '',
       processingStatus: copy.status.pending,
       parseFallbackNotified: false,
       pdfQualityHintShown: false
     })
+    // Track C-3：模拟器内部状态也一起清掉，避免下次开始时被旧值干扰
+    this.simulationStartedAt = 0
+    this.simulationEtaMs = 0
+    this.statusMinFloor = 0
+    this.completionFlooded = false
+    this._initialGapTotal = 0
     this.pendingCompletedResult = null
     this.completionHandled = false
   },
@@ -395,7 +672,9 @@ Page({
       processingStatus: copy.status.pending,
       parseStep: 0
     })
-    this.updateProgressBar(0)
+    // Track C-3：根据用户选的文件估个 ETA，启动平滑进度模拟器（从 1% 慢慢爬）
+    const estimatedSeconds = estimateEtaSeconds(this.data.tempFiles)
+    this.startSimulatedProgress(estimatedSeconds)
     this.setProgressTarget('uploading', 2)
 
     // Q3-红线 §B.2：用户点击「开始上传」即视为漏斗 upload_start
@@ -414,28 +693,64 @@ Page({
       const fileIds = []
       const uploadErrors = []
 
+      // Track C-1b（PRD-2026Q3）：除了 utils/api.js uploadFile 已经做的「一次 transient
+      // 重试」（针对 wx.uploadFile fail / 5xx），这里再加一层「页面级重试 1 次」作为兜底：
+      //   - 防止两份图同时压缩 / 上传时，第一份还没完全释放网络栈，第二份立刻撞 socket
+      //     reset，被 utils/api.js 当成单次 fail 走完一次重试后仍失败的极端情况
+      //   - 保持串行：单份失败时同步重试一次，不会让整批上传卡更久（最多 +1.5s × N）
+      const PAGE_LEVEL_RETRY_DELAY_MS = 800
       for (let i = 0; i < this.data.tempFiles.length; i += 1) {
         const file = this.data.tempFiles[i]
         // 上传过程中给用户一点进度提示（10% → 30% 平均分摊）
         const stepProgress = 10 + Math.floor((i / this.data.tempFiles.length) * 20)
         this.setProgressTarget('uploading', stepProgress)
 
-        try {
-          const res = await api.uploadMedicalRecord({
-            filePath: file.path,
-            type: 'auto',
-            remark: this.data.remark
-          })
-          const payload = pickPayload(res)
-          const fid = payload.fileId || payload.recordId || payload.id || ''
-          if (fid) {
-            fileIds.push(fid)
-          } else {
+        // 防御层：handleFiles 已经在选择阶段拦下 > 9MB 的文件，但一旦恢复旧 session 或
+        // 用户绕过常规入口，仍可能携带超大 tempFile —— 不放行，标错并继续下一份，
+        // 避免整批 upload 因为 errCode 80051 被中断。
+        if (Number(file.size || 0) > MAX_UPLOAD_BYTES) {
+          uploadErrors.push({ name: file.name, message: copy.error.file_too_large })
+          continue
+        }
+
+        let attempt = 0
+        let lastErr = null
+        let succeeded = false
+        while (attempt < 2 && !succeeded) {
+          try {
+            const res = await api.uploadMedicalRecord({
+              filePath: file.path,
+              type: 'auto',
+              remark: this.data.remark
+            })
+            const payload = pickPayload(res)
+            const fid = payload.fileId || payload.recordId || payload.id || ''
+            if (fid) {
+              fileIds.push(fid)
+              succeeded = true
+              break
+            }
+            // 服务端 200 但没回 fileId：不重试（业务异常，重试也是同样结果）
             uploadErrors.push({ name: file.name, message: '服务端未返回 fileId' })
+            break
+          } catch (err) {
+            lastErr = err
+            const sc = Number(err && err.statusCode)
+            // 仅对网络/5xx 在页面层再补一次重试；4xx（含 429）不在这里重试
+            const isTransient = sc === 0 || sc >= 500
+            if (attempt === 0 && isTransient) {
+              console.warn(`[upload] file #${i + 1} attempt 1 failed (status ${sc}), page-level retry after ${PAGE_LEVEL_RETRY_DELAY_MS}ms`)
+              await new Promise((r) => setTimeout(r, PAGE_LEVEL_RETRY_DELAY_MS))
+              attempt += 1
+              continue
+            }
+            console.error(`第 ${i + 1} 份文件上传失败:`, err)
+            uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
+            break
           }
-        } catch (err) {
-          console.error(`第 ${i + 1} 份文件上传失败:`, err)
-          uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
+        }
+        if (!succeeded && !lastErr) {
+          // theoretically unreachable，但兜底确保循环安全
         }
       }
 
@@ -521,10 +836,31 @@ Page({
     this.clearPollTimer()
     this.clearProgressTimer()
 
+    // 修复方案 Track 3.7：原 1500ms × 100 req/15min（默认限流，server/middleware/rateLimit.js:14-49）
+    // 会让连续轮询 ~2.5 分钟撞 429（用户实测：rec_1777726380278_2a9xos32）。
+    // 改为 setTimeout 自适应链：
+    //   - 默认 3000ms（≈20 req/min，限额够撑 5 分钟+ 稳定轮询）
+    //   - 命中 429 后退避到 10000ms，让限流窗口（15min）自然冷却
+    //   - 终态分支调 clearPollTimer → pollingActive=false → 自动停链
+    this.pollIntervalMs = 3000
+    this.pollMaxIntervalMs = 10000
+    this.pollingActive = true
+
     this.checkParseStatus()
-    this.pollTimer = setInterval(() => {
+    this.scheduleNextPoll()
+  },
+
+  scheduleNextPoll() {
+    // pollingActive=false 等价于"已经走到终态/卸载"，不再排下一次。
+    if (!this.pollingActive) {
+      return
+    }
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer)
+    }
+    this.pollTimer = setTimeout(() => {
       this.checkParseStatus()
-    }, 1500)
+    }, this.pollIntervalMs)
   },
 
   async checkParseStatus() {
@@ -665,6 +1001,18 @@ Page({
       }
     } catch (error) {
       console.error('轮询解析状态失败:', error)
+      // 修复方案 Track 3.7：撞 429 时把 interval 拉到 10s 上限，
+      // 让服务端 15min/100 req 默认限额自然消化掉冷却窗口。
+      // buildHttpError (utils/api.js:231-237) 把 statusCode 挂在 error 上。
+      if (error && Number(error.statusCode) === 429) {
+        this.pollIntervalMs = this.pollMaxIntervalMs
+        console.warn('解析状态轮询撞限流，降速到', this.pollIntervalMs, 'ms')
+      }
+    } finally {
+      // 兜底：不管这次结果（早 return / 失败 / 异常）都排下一次。
+      // 终态/卸载分支已经在 clearPollTimer 里把 pollingActive 清成 false，
+      // scheduleNextPoll 自己会 short-circuit，不会泄漏 timer。
+      this.scheduleNextPoll()
     }
   },
 
@@ -708,25 +1056,83 @@ Page({
     const parsedSections = schema.buildRecordSections(normalized)
     const structuredSummary = schema.buildStructuredSummary(normalized)
     const missingFields = schema.getMissingFields(normalized)
+    // Track C-2：分组式 gap UI 用的 sections（可能为空数组）
+    const gapSections = schema.buildGapSections(normalized)
 
     return {
       normalized,
       parsedSections,
       structuredSummary,
-      missingFields
+      missingFields,
+      gapSections
     }
+  },
+
+  /**
+   * Track C-2（PRD-2026Q3）：把 gapSections 映射成默认折叠状态。
+   *   - 第一组（gapSections[0]，通常是 basic 基本入组）默认展开 —— 用户先填最关键的
+   *   - 其余组默认折叠 —— 让 gap-section 整体高度可控，主按钮 sticky 不被推出屏
+   *   - 如果用户已经手动 toggle 过某组，保留用户的选择（按 key 合并）
+   */
+  buildCollapsedGroupsState(gapSections, prevCollapsed) {
+    const next = {}
+    gapSections.forEach((section, idx) => {
+      // 用户曾经手动改过这一组：保留原值
+      if (prevCollapsed && Object.prototype.hasOwnProperty.call(prevCollapsed, section.key)) {
+        next[section.key] = !!prevCollapsed[section.key]
+        return
+      }
+      // 默认：第一组展开（false=不折叠），其它折叠（true=折叠）
+      next[section.key] = idx > 0
+    })
+    return next
   },
 
   applyParsedPresentation(parsedData) {
     const presentation = this.buildParsedPresentation(parsedData)
+    // Track C-2：缓存初始 missing 数 + 计算「已补几项」进度
+    //   _initialGapTotal 在 handleCompletedResult 第一次进入时设定（看下文）。
+    //   这里只用差值算 filledNow，避免每次 setData 都重算 —— 大数据集（41 字段）
+    //   下不至于慢，但语义清晰：filledNow 始终基于解析完成那一刻的初始 missing。
+    const initialTotal = Number(this._initialGapTotal || presentation.missingFields.length)
+    const filledNow = Math.max(0, initialTotal - presentation.missingFields.length)
+    const percent = initialTotal > 0
+      ? Math.min(100, Math.round((filledNow / initialTotal) * 100))
+      : 100
+    const collapsedGroups = this.buildCollapsedGroupsState(
+      presentation.gapSections,
+      this.data.collapsedGroups
+    )
+
     this.setData({
       parsedData: presentation.normalized,
       parsedSections: presentation.parsedSections,
       structuredSummary: presentation.structuredSummary,
       summaryProgressStyle: `width: ${presentation.structuredSummary.completeness}%;`,
-      missingFields: presentation.missingFields
+      missingFields: presentation.missingFields,
+      gapSections: presentation.gapSections,
+      collapsedGroups,
+      gapSummary: {
+        totalMissing: initialTotal,
+        filledNow,
+        percent
+      }
     })
     return presentation
+  },
+
+  /**
+   * Track C-2（PRD-2026Q3）：折叠/展开 gap-section 中的某一组。
+   * wxml 通过 `bindtap="toggleGapGroup" data-key="{groupKey}"` 触发。
+   */
+  toggleGapGroup(e) {
+    const key = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.key
+    if (!key) {
+      return
+    }
+    const next = { ...(this.data.collapsedGroups || {}) }
+    next[key] = !next[key]
+    this.setData({ collapsedGroups: next })
   },
 
   handleCompletedResult(result) {
@@ -748,7 +1154,26 @@ Page({
       treatment: result.treatment || ''
     }
 
-    const { normalized, missingFields } = this.applyParsedPresentation(parsedData)
+    // Track C-2：先清掉上次 session 的初始 gap 总数（resetUploadSessionState 已经清，
+    // 这里再保险一道，确保「同一份数据二次解析」不会用旧 baseline）。
+    // 实际 baseline 在下面 applyParsedPresentation 后用本次 missingFields 长度填入。
+    this._initialGapTotal = 0
+    // 用户在新一份病历上的折叠选择从默认重来，避免上一份的「已展开」记忆带过来。
+    this.setData({ collapsedGroups: {} })
+    const presentation = this.applyParsedPresentation(parsedData)
+    const { normalized, missingFields } = presentation
+    // 现在 missingFields 是「解析完成那一刻」的初始 missing 数，固化到 baseline。
+    this._initialGapTotal = missingFields.length
+    // 立刻再 setData 一次让 gapSummary.totalMissing 用真实 baseline，避免首屏显示 0/0
+    if (missingFields.length > 0) {
+      this.setData({
+        gapSummary: {
+          totalMissing: missingFields.length,
+          filledNow: 0,
+          percent: 0
+        }
+      })
+    }
     // 同时把当前 recordId 也落到 storage —— records/detail 页打开时优先读 storage
     // 里的结构化数据，避免后端写入有延迟时详情页空白。
     const resolvedRecordId = this.data.recordId || this.data.fileId || normalized.id || ''
@@ -885,17 +1310,9 @@ Page({
     }
   },
 
-  goToRecords() {
-    wx.switchTab({ url: '/pages/records/records' })
-  },
-
   // PRD-2026Q2 §3.7：手动录入入口（与 H5 /matches?manualEntry=1 对等）
   goToManualEntry() {
     wx.navigateTo({ url: '/pages/manualEntry/manualEntry' })
-  },
-
-  goToMatchesPage() {
-    wx.switchTab({ url: '/pages/matches/matches' })
   },
 
   restoreProcessingSession() {
