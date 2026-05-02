@@ -1,11 +1,39 @@
 # Treatbot 后端部署指南
 
-## 部署方式概览
+## TL;DR — 生产部署只有一条路径
 
-我们提供了多种部署方式，根据你的需求和服务器环境选择：
+**`git push main` → GitHub Actions → 自动构建镜像 → SSH 到生产 → `docker run` 注入 Secrets。**
 
-### 🚀 推荐方式：Docker + Docker Compose（生产环境）
-适合：云服务器、生产环境、需要高可用
+下面所有 `cp .env.example .env`、`./start.sh production`、`pm2 start` 步骤都仅适用于**本地开发或一次性手工搭建**。**生产环境的密钥来源是 GitHub Actions Secrets，不是磁盘上的 `.env`**。
+
+详见仓库根 `README.md` 的「配置与密钥来源」章节。下面这一节快速复述要点：
+
+### 生产密钥来源：GitHub Actions Secrets
+
+| Secret | 用途 |
+|---|---|
+| `SERVER_HOST` / `SERVER_USER` / `SERVER_SSH_KEY` | 部署目标 |
+| `ARK_API_KEY` | 火山方舟（Doubao）密钥 — OCR 主路径 |
+| `KIMI_API_KEY` | Moonshot Kimi 密钥 — OCR fallback |
+| `COS_SECRET_ID` / `COS_SECRET_KEY` | 腾讯云 COS（病历存储） |
+| `WEAPP_APPID` / `WEAPP_SECRET` | 微信小程序登录凭证 |
+| `JWT_SECRET` | JWT 签名密钥 |
+| `DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` | MySQL 凭证 |
+
+非敏感配置（模型 ID、端点、超时）直接在 `.github/workflows/deploy.yml` 顶部 `env:` 字面量里维护，单一来源、一眼可读。
+
+**部署流程**：每次 `git push` 到 `main` → workflow 跑 lint/test → 服务器侧 docker build → 替换 `treatbot-api` 容器（自动备份 + 健康检查 + 失败回滚）。**不需要、也不应该 SSH 改 `.env`**。
+
+> 历史踩坑：早期 `/opt/treatbot/server/.env` 里 `OCR_PROVIDER=kimi` 长期残留，即便 CI 已经注入了 Doubao 凭证，每次 `--env-file` 把这条旧 KEY 带进容器，导致生产一直走 Kimi，慢且贵。修复方案：deploy 脚本改用 `-e OCR_PROVIDER=auto` 覆盖（参考 deploy.yml `OCR_ENV_FLAGS` 块）。
+
+---
+
+## 部署方式概览（仅供本地或离线）
+
+> 以下章节是本地开发或一次性手工搭建的参考，**生产请走 GitHub Actions**。
+
+### 🚀 推荐方式：Docker + Docker Compose（本地或自建生产环境）
+适合：本地全栈联调、需要离线运行的私部场景
 
 ### 📦 方式二：PM2 + 原生 Node.js（传统部署）
 适合：已有 Node.js 环境、需要灵活配置

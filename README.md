@@ -125,16 +125,60 @@ treatbot_we/
 
 ```bash
 cd server
-cp .env.example .env          # 填写 KIMI_API_KEY / DB_* / COS_* 等
 
 # 本地开发
 npm install
-npm run dev
+npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 
-# Docker 生产
-docker build -t treatbot-api .
-docker run -d --env-file .env -p 3000:3000 treatbot-api
+# CI 部署：直接 git push main，由 GitHub Actions 用 Secrets 注入容器
 ```
+
+> **注意：** `server/.env` **不再用于生产**。生产密钥（`ARK_API_KEY` / `KIMI_API_KEY` / `COS_*` / `JWT_SECRET` / `WEAPP_*` 等）已统一迁移到 **GitHub Actions Secrets**，由 `.github/workflows/deploy.yml` 在 `docker run -e` 时注入容器。详见下方「配置与密钥来源」。
+
+### 配置与密钥来源（**重要**）
+
+本仓库**唯一**的生产配置入口是 **GitHub Actions Secrets**。设计动机：
+- 单一来源，避免 `.env` 与 CI 互相漂移（历史 bug：prod `.env` 里 `OCR_PROVIDER=kimi` 残留，导致即便 CI 注入了 Doubao 凭证也走不到 Doubao 路径）。
+- secrets 不落盘到服务器，只在 `docker run` 进程时注入；rotate key 只需要在 GitHub UI 改一个值。
+- `.env.example` 仅作为本地开发模板，列举字段名 + 示例值，**生产不读取该文件**。
+
+| 用途 | 来源 | 谁写 / 何时写 |
+|---|---|---|
+| 本地 `npm run dev` | `server/.env`（手动 cp `.env.example` → `.env`） | 开发者本机 |
+| 本地测试 / `npm test` | 测试 fixture + 临时 `process.env`（jest setup） | CI runner |
+| 生产容器 (`treatbot-api`) | GitHub Actions Secrets → `docker run -e ...` | 每次 `git push main` 触发 deploy workflow |
+
+**所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
+
+| Secret | 用途 |
+|---|---|
+| `SERVER_HOST` | 生产 SSH 主机（IP 或域名） |
+| `SERVER_USER` | 生产 SSH 用户（`ubuntu`） |
+| `SERVER_SSH_KEY` | 部署私钥 |
+| `ARK_API_KEY` | 火山方舟（Doubao）密钥 — **OCR 主路径** |
+| `KIMI_API_KEY` | Moonshot Kimi 密钥 — OCR fallback |
+| `COS_SECRET_ID` / `COS_SECRET_KEY` | 腾讯云 COS（病历存储） |
+| `WEAPP_APPID` / `WEAPP_SECRET` | 微信小程序登录凭证 |
+| `JWT_SECRET` | JWT 签名密钥（≥32 字符强随机） |
+| `DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` | MySQL 凭证 |
+
+**非敏感配置**（模型 ID / 端点 / 超时阈值）直接在 `deploy.yml` 字面量里维护，避免 secret 数量膨胀：
+
+```yaml
+# .github/workflows/deploy.yml（节选）
+env:
+  OCR_PROVIDER: 'auto'                                       # 主用 Doubao，按凭证可达性 fallback
+  ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
+  ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
+  ARK_TIMEOUT_MS: '180000'
+  KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
+  OCR_QUEUE_CONCURRENCY: '2'
+```
+
+**常见误区**：
+- ❌ 直接 SSH 改 `/opt/treatbot/server/.env` 来切换 provider 或滚动密钥 —— 下次 deploy 会被 `-e` 覆盖回去（且 `--env-file` 用的是上一容器的 env dump，不是磁盘 `.env`）。
+- ✅ 在 GitHub Settings 改 secret，然后随便 push 一次（或手动 re-run 最新 workflow）即可 hot-rotate。
+- 紧急 hotfix 想跳过 CI，可由维护者临时 SSH 上去 `docker run -e VAR=newvalue ...` 重启容器；但下次正常 deploy 会按 GHA secrets 还原 —— 真正的 fix 必须落到 secret。
 
 ### 数据库迁移 + 试验导入
 
