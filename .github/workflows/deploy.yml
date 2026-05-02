@@ -120,6 +120,7 @@ jobs:
     needs: [build-api, build-web]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    timeout-minutes: 45
     permissions:
       contents: write   # 需要回写 docs/deploy-state-server-dump.md 到 main
     steps:
@@ -151,14 +152,80 @@ jobs:
         name: treatbot-api-tarball
         path: .
 
-    - name: Upload API + web tarballs + Caddyfile + nginx patch to server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "treatbot-api.tar.gz,web-dist.tar.gz,deploy/Caddyfile,deploy/nginx-patch.conf"
-        target: "/tmp/"
+    # 直接使用 OpenSSH/SCP，而不是 appleboy/scp-action：
+    # - 大镜像包跨境上传时需要清晰的超时、分片进度和重试；
+    # - appleboy/scp-action 会在单个黑盒步骤里 tar+上传，卡住时没有可诊断日志。
+    - name: Upload release bundle to server (chunked scp)
+      timeout-minutes: 25
+      env:
+        SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+        SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      run: |
+        set -euo pipefail
+
+        mkdir -p ~/.ssh release-upload/deploy
+        echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        trap 'rm -f ~/.ssh/deploy_key' EXIT
+        ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+        SSH_OPTS=(
+          -i ~/.ssh/deploy_key
+          -o StrictHostKeyChecking=accept-new
+          -o ConnectTimeout=20
+          -o ServerAliveInterval=15
+          -o ServerAliveCountMax=4
+        )
+
+        cp web-dist.tar.gz release-upload/web-dist.tar.gz
+        cp deploy/Caddyfile release-upload/deploy/Caddyfile
+        cp deploy/nginx-patch.conf release-upload/deploy/nginx-patch.conf
+
+        API_SIZE=$(stat -c '%s' treatbot-api.tar.gz)
+        echo "API tarball: $API_SIZE bytes ($(du -h treatbot-api.tar.gz | cut -f1))"
+        echo "Web tarball: $(du -h web-dist.tar.gz | cut -f1)"
+
+        # 50 MiB chunks: enough progress visibility and cheap retry without bloating logs.
+        split -b 50m treatbot-api.tar.gz release-upload/treatbot-api.tar.gz.part-
+        echo "API chunks:"
+        ls -lh release-upload/treatbot-api.tar.gz.part-*
+
+        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
+          'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/treatbot-upload/deploy /tmp/deploy'
+
+        echo "Uploading small release files..."
+        scp "${SSH_OPTS[@]}" release-upload/web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/web-dist.tar.gz"
+        scp "${SSH_OPTS[@]}" release-upload/deploy/Caddyfile "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/Caddyfile"
+        scp "${SSH_OPTS[@]}" release-upload/deploy/nginx-patch.conf "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/nginx-patch.conf"
+
+        echo "Uploading API chunks..."
+        for chunk in release-upload/treatbot-api.tar.gz.part-*; do
+          name=$(basename "$chunk")
+          for attempt in 1 2 3; do
+            echo "  $name attempt $attempt"
+            if timeout 8m scp "${SSH_OPTS[@]}" "$chunk" "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/$name"; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "Failed to upload $name after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
+        done
+
+        echo "Reassembling release bundle on server..."
+        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" <<'REMOTE'
+        set -euo pipefail
+        cd /tmp/treatbot-upload
+        cat treatbot-api.tar.gz.part-* > /tmp/treatbot-api.tar.gz
+        mv web-dist.tar.gz /tmp/web-dist.tar.gz
+        mv deploy/Caddyfile /tmp/deploy/Caddyfile
+        mv deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
+        rm -rf /tmp/treatbot-upload
+        ls -lh /tmp/treatbot-api.tar.gz /tmp/web-dist.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
+        REMOTE
 
     # ---- Step 2: SSH 进服务器执行替换 ----
     - name: Deploy backend container + promote web + patch nginx
