@@ -3,219 +3,275 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 25251563623
-- **Commit**: `33c5a6803102792a96db2feb3c4523c1761fbeed`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25251563623
-- **Generated at**: 2026-05-02T12:17:12Z
+- **Run**: 25251742589
+- **Commit**: `d2730541022fe9886c1393fb00179f29961eea7b`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25251742589
+- **Generated at**: 2026-05-02T13:02:21Z
 
 ---
 
 ```
-===== Deploy 20260502-182942 — SHA=622fffabc27c6370b331b872b796dd25aa1dea6a =====
+===== Deploy 20260502-202705 — SHA=d2730541022fe9886c1393fb00179f29961eea7b =====
 ::group::A) Backend container replace
   Building image locally from source tarball: /tmp/server-src.tar.gz
 #0 building with "default" instance using docker driver
 
 #1 [internal] load build definition from Dockerfile
-#1 transferring dockerfile:
-#1 transferring dockerfile: 1.54kB done
-#1 DONE 0.2s
+#1 transferring dockerfile: 2.47kB done
+#1 DONE 0.0s
 
 #2 resolve image config for docker-image://docker.io/docker/dockerfile:1.6
-#2 DONE 1.3s
+#2 DONE 0.8s
 
 #3 docker-image://docker.io/docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021
-#3 resolve docker.io/docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021 0.0s done
-#3 sha256:657fcc512c7369f4cb3d94ea329150f8daf626bc838b1a1e81f1834c73ecc77e 482B / 482B done
-#3 sha256:a17ee7fff8f5e97b974f5b48f51647d2cf28d543f2aa6c11aaa0ea431b44bb89 1.27kB / 1.27kB done
-#3 sha256:9d9c93f4b00be908ab694a4df732570bced3b8a96b7515d70ff93402179ad232 0B / 11.80MB 0.1s
-#3 sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021 8.40kB / 8.40kB done
-#3 sha256:9d9c93f4b00be908ab694a4df732570bced3b8a96b7515d70ff93402179ad232 5.24MB / 11.80MB 0.4s
-#3 sha256:9d9c93f4b00be908ab694a4df732570bced3b8a96b7515d70ff93402179ad232 11.80MB / 11.80MB 0.5s done
-#3 extracting sha256:9d9c93f4b00be908ab694a4df732570bced3b8a96b7515d70ff93402179ad232 0.1s
-#3 extracting sha256:9d9c93f4b00be908ab694a4df732570bced3b8a96b7515d70ff93402179ad232 0.1s done
-#3 DONE 0.7s
+#3 CACHED
 
-#4 [internal] load metadata for docker.io/library/node:18-alpine
-#4 DONE 0.0s
-
-#4 [internal] load metadata for docker.io/library/node:18-alpine
-#4 DONE 0.0s
+#4 [internal] load metadata for docker.io/library/node:18-bookworm-slim
+#4 DONE 1.0s
 
 #5 [internal] load .dockerignore
 #5 transferring context: 229B done
 #5 DONE 0.0s
 
-#6 [deps 1/5] FROM docker.io/library/node:18-alpine
-#6 DONE 0.0s
+#6 [deps 1/5] FROM docker.io/library/node:18-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e
+#6 resolve docker.io/library/node:18-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e 0.0s done
+#6 sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 0B / 28.23MB 0.1s
+#6 sha256:b98d3ae1ab80d768fc7be41c07c4757d205cc33d2d26261b8273defb45455315 0B / 3.31kB 0.1s
+#6 sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 0B / 38.25MB 0.1s
+#6 sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e 6.49kB / 6.49kB done
+#6 sha256:fc3faf127a182135fd956e68d570b1932a758f8008866d8dd6e131cf89de9605 1.93kB / 1.93kB done
+#6 sha256:101e0128c8ea90af6e5eba2abbae8486503c6383c35cb30e2c60842a5a288479 6.54kB / 6.54kB done
+#6 ...
 
-#7 [deps 2/5] WORKDIR /app
-#7 CACHED
+#7 [internal] load build context
+#7 transferring context: 6.83MB 0.1s done
+#7 DONE 0.1s
 
-#8 [internal] load build context
-#8 transferring context: 6.83MB 0.3s done
-#8 DONE 0.3s
+#6 [deps 1/5] FROM docker.io/library/node:18-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e
+#6 sha256:b98d3ae1ab80d768fc7be41c07c4757d205cc33d2d26261b8273defb45455315 3.31kB / 3.31kB 0.2s done
+#6 sha256:c768ab8cba73bb84835e67ed974c93e3e0e3ce1f67a73802422d66021fc9a07a 0B / 1.71MB 0.3s
+#6 sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 4.19MB / 28.23MB 0.4s
+#6 sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 17.83MB / 28.23MB 0.5s
+#6 sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 6.29MB / 38.25MB 0.5s
+#6 sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 28.23MB / 28.23MB 0.6s
+#6 sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 16.78MB / 38.25MB 0.6s
+#6 sha256:c768ab8cba73bb84835e67ed974c93e3e0e3ce1f67a73802422d66021fc9a07a 1.05MB / 1.71MB 0.6s
+#6 extracting sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62
+#6 sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 28.23MB / 28.23MB 0.6s done
+#6 sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 38.25MB / 38.25MB 0.8s
+#6 sha256:c768ab8cba73bb84835e67ed974c93e3e0e3ce1f67a73802422d66021fc9a07a 1.71MB / 1.71MB 0.7s done
+#6 sha256:8c994cf49dd19aec88c96926e1a13b36a8f3e159942a5a2d0a9e2dc3e9e6c3dc 448B / 448B 0.8s
+#6 sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 38.25MB / 38.25MB 0.8s done
+#6 sha256:8c994cf49dd19aec88c96926e1a13b36a8f3e159942a5a2d0a9e2dc3e9e6c3dc 448B / 448B 0.8s done
+#6 extracting sha256:61320b01ae5e0798393ef25f2dc72faf43703e60ba089b07d7170acbabbf8f62 1.3s done
+#6 extracting sha256:b98d3ae1ab80d768fc7be41c07c4757d205cc33d2d26261b8273defb45455315 done
+#6 extracting sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d
+#6 extracting sha256:b1831021e35a69864dfc4c89eab9ab1232cf3508c787b082c55ee386c5c8527d 1.4s done
+#6 extracting sha256:c768ab8cba73bb84835e67ed974c93e3e0e3ce1f67a73802422d66021fc9a07a 0.1s done
+#6 extracting sha256:8c994cf49dd19aec88c96926e1a13b36a8f3e159942a5a2d0a9e2dc3e9e6c3dc done
+#6 DONE 3.9s
 
-#9 [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*
-#9 0.579 fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz
-#9 9.056 fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/APKINDEX.tar.gz
+#8 [deps 2/5] WORKDIR /app
+#8 DONE 0.2s
+
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 0.614 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#9 2.916 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#9 6.206 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [48.0 kB]
 #9 ...
 
-#10 [deps 3/5] RUN apk add --no-cache python3 py3-pip make g++
-#10 0.580 fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz
-#10 22.83 fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/APKINDEX.tar.gz
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 0.582 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#10 3.303 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#10 5.745 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [48.0 kB]
 #10 ...
 
-#9 [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*
-#9 59.26 (1/48) Installing libxau (1.0.11-r4)
-#9 59.48 (2/48) Installing libmd (1.1.0-r0)
-#9 60.05 (3/48) Installing libbsd (0.12.2-r0)
-#9 60.83 (4/48) Installing libxdmcp (1.1.5-r1)
-#9 61.19 (5/48) Installing libxcb (1.16.1-r0)
-#9 65.18 (6/48) Installing libx11 (1.8.10-r0)
-#9 88.95 (7/48) Installing libxext (1.3.6-r2)
-#9 90.78 (8/48) Installing libxrender (0.9.11-r5)
-#9 91.77 (9/48) Installing libexpat (2.7.5-r0)
-#9 93.76 (10/48) Installing brotli-libs (1.1.0-r2)
-#9 108.1 (11/48) Installing libbz2 (1.0.8-r6)
-#9 109.2 (12/48) Installing libpng (1.6.57-r0)
-#9 112.9 (13/48) Installing freetype (2.13.3-r0)
-#9 124.0 (14/48) Installing fontconfig (2.15.0-r1)
-#9 128.8 (15/48) Installing pixman (0.43.4-r1)
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 10.52 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8792 kB]
 #9 ...
 
-#10 [deps 3/5] RUN apk add --no-cache python3 py3-pip make g++
-#10 132.2 (1/38) Upgrading musl (1.2.5-r9 -> 1.2.5-r11)
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 12.36 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8792 kB]
 #10 ...
 
-#9 [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*
-#9 135.1 (16/48) Installing cairo (1.18.4-r0)
-#9 150.4 (17/48) Installing lcms2 (2.19-r0)
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 531.1 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#9 531.6 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [299 kB]
+#9 548.8 Fetched 9352 kB in 9min 8s (17.1 kB/s)
+#9 548.8 Reading package lists...
+#9 549.4 Reading package lists...
+#9 550.0 Building dependency tree...
+#9 550.1 Reading state information...
+#9 550.3 The following additional packages will be installed:
+#9 550.3   ca-certificates fontconfig-config fonts-dejavu-core libbrotli1 libbsd0
+#9 550.3   libcairo2 libdeflate0 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#9 550.3   libjbig0 libjpeg62-turbo libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0
+#9 550.3   liblcms2-2 liblerc4 libncursesw6 libnsl2 libnspr4 libnss3 libopenjp2-7
+#9 550.3   libpixman-1-0 libpng16-16 libpoppler126 libpython3-stdlib
+#9 550.3   libpython3.11-minimal libpython3.11-stdlib libreadline8 libsqlite3-0 libssl3
+#9 550.3   libtiff6 libtirpc-common libtirpc3 libwebp7 libx11-6 libx11-data libxau6
+#9 550.3   libxcb-render0 libxcb-shm0 libxcb1 libxdmcp6 libxext6 libxrender1
+#9 550.3   media-types openssl python3-distutils python3-lib2to3 python3-minimal
+#9 550.3   python3-pkg-resources python3-setuptools python3-wheel python3.11
+#9 550.3   python3.11-minimal readline-common
+#9 550.3 Suggested packages:
+#9 550.3   krb5-doc krb5-user liblcms2-utils python3-doc python3-tk python3-venv
+#9 550.3   python-setuptools-doc python3.11-venv python3.11-doc binutils binfmt-support
+#9 550.3   readline-doc
+#9 550.3 Recommended packages:
+#9 550.3   krb5-locales libgpm2 poppler-data build-essential python3-dev
+#9 550.6 The following NEW packages will be installed:
+#9 550.6   ca-certificates fontconfig-config fonts-dejavu-core libbrotli1 libbsd0
+#9 550.6   libcairo2 libdeflate0 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#9 550.6   libjbig0 libjpeg62-turbo libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0
+#9 550.6   liblcms2-2 liblerc4 libncursesw6 libnsl2 libnspr4 libnss3 libopenjp2-7
+#9 550.6   libpixman-1-0 libpng16-16 libpoppler126 libpython3-stdlib
+#9 550.6   libpython3.11-minimal libpython3.11-stdlib libreadline8 libsqlite3-0 libssl3
+#9 550.6   libtiff6 libtirpc-common libtirpc3 libwebp7 libx11-6 libx11-data libxau6
+#9 550.6   libxcb-render0 libxcb-shm0 libxcb1 libxdmcp6 libxext6 libxrender1
+#9 550.6   media-types openssl poppler-utils python3 python3-distutils python3-lib2to3
+#9 550.6   python3-minimal python3-pip python3-pkg-resources python3-setuptools
+#9 550.6   python3-wheel python3.11 python3.11-minimal readline-common
+#9 553.0 0 upgraded, 60 newly installed, 0 to remove and 23 not upgraded.
+#9 553.0 Need to get 23.7 MB of archives.
+#9 553.0 After this operation, 74.7 MB of additional disk space will be used.
+#9 553.0 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.19-1~deb12u2 [2032 kB]
 #9 ...
 
-#10 [deps 3/5] RUN apk add --no-cache python3 py3-pip make g++
-#10 154.2 (2/38) Installing libstdc++-dev (14.2.0-r4)
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 706.5 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#10 708.2 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [299 kB]
+#10 763.8 Fetched 9352 kB in 12min 43s (12.2 kB/s)
+#10 763.8 Reading package lists...
+#10 764.4 Reading package lists...
+#10 764.9 Building dependency tree...
+#10 765.1 Reading state information...
+#10 765.3 The following additional packages will be installed:
+#10 765.3   binutils binutils-common binutils-x86-64-linux-gnu bzip2 cpp cpp-12 dpkg-dev
+#10 765.3   g++ g++-12 gcc gcc-12 libasan8 libatomic1 libbinutils libc-bin libc-dev-bin
+#10 765.3   libc6 libc6-dev libcc1-0 libcrypt-dev libctf-nobfd0 libctf0 libdpkg-perl
+#10 765.3   libexpat1 libgcc-12-dev libgdbm-compat4 libgdbm6 libgomp1 libgprofng0
+#10 765.3   libgssapi-krb5-2 libisl23 libitm1 libjansson4 libk5crypto3 libkeyutils1
+#10 765.3   libkrb5-3 libkrb5support0 liblsan0 libmpc3 libmpfr6 libncursesw6 libnsl-dev
+#10 765.3   libnsl2 libperl5.36 libpython3-stdlib libpython3.11-minimal
+#10 765.3   libpython3.11-stdlib libquadmath0 libreadline8 libsqlite3-0 libssl3
+#10 765.3   libstdc++-12-dev libtirpc-common libtirpc-dev libtirpc3 libtsan2 libubsan1
+#10 765.3   linux-libc-dev make media-types patch perl perl-base perl-modules-5.36
+#10 765.3   python3-minimal python3.11 python3.11-minimal readline-common rpcsvc-proto
+#10 765.3   xz-utils
+#10 765.3 Suggested packages:
+#10 765.3   binutils-doc bzip2-doc cpp-doc gcc-12-locales cpp-12-doc debian-keyring
+#10 765.3   g++-multilib g++-12-multilib gcc-12-doc gcc-multilib manpages-dev autoconf
+#10 765.3   automake libtool flex bison gdb gcc-doc gcc-12-multilib glibc-doc libc-l10n
+#10 765.3   locales libnss-nis libnss-nisplus gnupg | sq | sqop | pgpainless-cli
+#10 765.3   sensible-utils git bzr gdbm-l10n krb5-doc krb5-user libstdc++-12-doc
+#10 765.3   make-doc ed diffutils-doc perl-doc libterm-readline-gnu-perl
+#10 765.3   | libterm-readline-perl-perl libtap-harness-archive-perl python3-doc
+#10 765.3   python3-tk python3-venv python3.11-venv python3.11-doc binfmt-support
+#10 765.3   readline-doc
+#10 765.3 Recommended packages:
+#10 765.3   fakeroot gnupg | sq | sqop | pgpainless-cli libalgorithm-merge-perl manpages
+#10 765.3   manpages-dev libc-devtools libfile-fcntllock-perl liblocale-gettext-perl
+#10 765.3   krb5-locales libgpm2 netbase ca-certificates
+#10 765.6 The following NEW packages will be installed:
+#10 765.6   binutils binutils-common binutils-x86-64-linux-gnu build-essential bzip2 cpp
+#10 765.6   cpp-12 dpkg-dev g++ g++-12 gcc gcc-12 libasan8 libatomic1 libbinutils
+#10 765.6   libc-dev-bin libc6-dev libcc1-0 libcrypt-dev libctf-nobfd0 libctf0
+#10 765.6   libdpkg-perl libexpat1 libgcc-12-dev libgdbm-compat4 libgdbm6 libgomp1
+#10 765.6   libgprofng0 libgssapi-krb5-2 libisl23 libitm1 libjansson4 libk5crypto3
+#10 765.6   libkeyutils1 libkrb5-3 libkrb5support0 liblsan0 libmpc3 libmpfr6
+#10 765.6   libncursesw6 libnsl-dev libnsl2 libperl5.36 libpython3-stdlib
+#10 765.6   libpython3.11-minimal libpython3.11-stdlib libquadmath0 libreadline8
+#10 765.6   libsqlite3-0 libssl3 libstdc++-12-dev libtirpc-common libtirpc-dev libtirpc3
+#10 765.6   libtsan2 libubsan1 linux-libc-dev make media-types patch perl
+#10 765.6   perl-modules-5.36 python3 python3-minimal python3.11 python3.11-minimal
+#10 765.6   readline-common rpcsvc-proto xz-utils
+#10 765.6 The following packages will be upgraded:
+#10 765.6   libc-bin libc6 perl-base
+#10 795.9 3 upgraded, 69 newly installed, 0 to remove and 20 not upgraded.
+#10 795.9 Need to get 88.1 MB of archives.
+#10 795.9 After this operation, 348 MB of additional disk space will be used.
+#10 795.9 Ign:1 http://deb.debian.org/debian bookworm/main amd64 perl-base amd64 5.36.0-7+deb12u3
+#10 796.2 Get:2 http://deb.debian.org/debian bookworm/main amd64 libc6 amd64 2.36-9+deb12u13 [2758 kB]
 #10 ...
 
-#9 [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*
-#9 154.4 (18/48) Installing libjpeg-turbo (3.0.4-r0)
-#9 162.2 (19/48) Installing nspr (4.36-r0)
-#9 167.0 (20/48) Installing sqlite-libs (3.48.0-r4)
-#9 196.1 (21/48) Installing nss (3.109-r0)
-#9 245.2 (22/48) Installing openjpeg (2.5.2-r0)
-#9 249.6 (23/48) Installing libsharpyuv (1.4.0-r0)
-#9 250.4 (24/48) Installing libwebp (1.4.0-r0)
-#9 257.9 (25/48) Installing zstd-libs (1.5.6-r2)
-#9 282.6 (26/48) Installing tiff (4.7.1-r0)
-#9 299.0 (27/48) Installing poppler (24.02.0-r2)
-#9 367.3 (28/48) Installing poppler-utils (24.02.0-r2)
-#9 380.5 (29/48) Installing libffi (3.4.7-r0)
-#9 381.4 (30/48) Installing gdbm (1.24-r0)
-#9 382.5 (31/48) Installing xz-libs (5.8.3-r0)
-#9 387.9 (32/48) Installing mpdecimal (4.0.0-r0)
-#9 396.1 (33/48) Installing ncurses-terminfo-base (6.5_p20241006-r3)
-#9 398.5 (34/48) Installing libncursesw (6.5_p20241006-r3)
-#9 412.4 (35/48) Installing libpanelw (6.5_p20241006-r3)
-#9 412.8 (36/48) Installing readline (8.2.13-r0)
-#9 420.6 (37/48) Installing python3 (3.12.13-r0)
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 923.0 Get:2 http://deb.debian.org/debian bookworm/main amd64 libpython3.11-minimal amd64 3.11.2-6+deb12u6 [817 kB]
+#9 963.9 Get:3 http://deb.debian.org/debian bookworm/main amd64 libexpat1 amd64 2.5.0-1+deb12u2 [99.9 kB]
+#9 966.5 Get:4 http://deb.debian.org/debian bookworm/main amd64 python3.11-minimal amd64 3.11.2-6+deb12u6 [2064 kB]
 #9 ...
 
-#10 [deps 3/5] RUN apk add --no-cache python3 py3-pip make g++
-#10 433.4 (3/38) Installing jansson (2.14-r4)
-#10 435.8 (4/38) Installing zstd-libs (1.5.6-r2)
-#10 482.9 (5/38) Installing binutils (2.43.1-r3)
-#10 621.8 (6/38) Installing libgomp (14.2.0-r4)
-#10 629.3 (7/38) Installing libatomic (14.2.0-r4)
-#10 629.7 (8/38) Installing gmp (6.3.0-r2)
-#10 640.5 (9/38) Installing isl26 (0.26-r1)
-#10 681.4 (10/38) Installing mpfr4 (4.2.1-r0)
-#10 698.3 (11/38) Installing mpc1 (1.3.1-r1)
-#10 701.3 (12/38) Installing gcc (14.2.0-r4)
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 981.0 Get:3 http://deb.debian.org/debian bookworm/main amd64 libc-bin amd64 2.36-9+deb12u13 [609 kB]
+#10 1011.4 Get:4 http://deb.debian.org/debian bookworm/main amd64 perl-modules-5.36 all 5.36.0-7+deb12u3 [2815 kB]
 #10 ...
 
-#9 [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*
-#9 702.6 (38/48) Installing python3-pycache-pyc0 (3.12.13-r0)
-#9 814.4 (39/48) Installing pyc (3.12.13-r0)
-#9 814.4 (40/48) Installing py3-setuptools-pyc (70.3.0-r0)
-#9 855.2 (41/48) Installing py3-pip-pyc (24.3.1-r0)
-#9 929.3 (42/48) Installing py3-parsing (3.1.4-r0)
-#9 932.5 (43/48) Installing py3-parsing-pyc (3.1.4-r0)
-#9 941.5 (44/48) Installing py3-packaging-pyc (24.2-r0)
-#9 944.2 (45/48) Installing python3-pyc (3.12.13-r0)
-#9 944.2 (46/48) Installing py3-packaging (24.2-r0)
-#9 946.0 (47/48) Installing py3-setuptools (70.3.0-r0)
-#9 966.0 (48/48) Installing py3-pip (24.3.1-r0)
-#9 1025.7 Executing busybox-1.37.0-r12.trigger
-#9 1025.7 OK: 81 MiB in 65 packages
-#9 1032.4 Collecting markitdown[pdf]
-#9 1032.9   Downloading markitdown-0.1.5-py3-none-any.whl.metadata (4.1 kB)
-#9 1061.1 INFO: pip is looking at multiple versions of markitdown[pdf] to determine which version is compatible with other requirements. This could take a while.
-#9 1061.3   Downloading markitdown-0.1.4-py3-none-any.whl.metadata (4.0 kB)
-#9 1062.1   Downloading markitdown-0.1.3-py3-none-any.whl.metadata (4.0 kB)
-#9 1062.5   Downloading markitdown-0.1.2-py3-none-any.whl.metadata (4.0 kB)
-#9 1063.2   Downloading markitdown-0.1.1-py3-none-any.whl.metadata (3.9 kB)
-#9 1063.4   Downloading markitdown-0.1.0-py3-none-any.whl.metadata (3.9 kB)
-#9 1063.7   Downloading markitdown-0.0.2-py3-none-any.whl.metadata (6.7 kB)
-#9 1063.9 WARNING: markitdown 0.0.2 does not provide the extra 'pdf'
-#9 1066.1 Collecting azure-ai-documentintelligence (from markitdown[pdf])
-#9 1066.3   Downloading azure_ai_documentintelligence-1.0.2-py3-none-any.whl.metadata (53 kB)
-#9 1068.7 Collecting azure-identity (from markitdown[pdf])
-#9 1068.8   Downloading azure_identity-1.25.3-py3-none-any.whl.metadata (91 kB)
-#9 1072.3 Collecting markitdown[pdf]
-#9 1072.5   Downloading markitdown-0.0.1-py3-none-any.whl.metadata (8.1 kB)
-#9 1072.8 WARNING: markitdown 0.0.1 does not provide the extra 'pdf'
-#9 1072.8 INFO: pip is still looking at multiple versions of markitdown[pdf] to determine which version is compatible with other requirements. This could take a while.
-#9 1072.8 ERROR: Cannot install markitdown[pdf]==0.0.1, markitdown[pdf]==0.0.2, markitdown[pdf]==0.1.0, markitdown[pdf]==0.1.1, markitdown[pdf]==0.1.2, markitdown[pdf]==0.1.3, markitdown[pdf]==0.1.4 and markitdown[pdf]==0.1.5 because these package versions have conflicting dependencies.
-#9 1072.8 
-#9 1072.8 The conflict is caused by:
-#9 1072.8     markitdown[pdf] 0.1.5 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.1.4 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.1.3 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.1.2 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.1.1 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.1.0 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.0.2 depends on beautifulsoup4
-#9 1072.8     markitdown[pdf] 0.0.1 depends on beautifulsoup4
-#9 1072.8 
-#9 1072.8 To fix this you could try to:
-#9 1072.8 1. loosen the range of package versions you've specified
-#9 1072.8 2. remove package versions to allow pip to attempt to solve the dependency conflict
-#9 1072.8 
-#9 1075.1 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
-#9 ERROR: process "/bin/sh -c apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*" did not complete successfully: exit code: 1
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 1058.5 Get:5 http://deb.debian.org/debian bookworm/main amd64 python3-minimal amd64 3.11.2-1+b1 [26.3 kB]
+#9 1060.3 Get:6 http://deb.debian.org/debian bookworm/main amd64 media-types all 10.0.0 [26.1 kB]
+#9 1064.3 Get:7 http://deb.debian.org/debian bookworm/main amd64 libncursesw6 amd64 6.4-4 [134 kB]
+#9 1074.1 Get:8 http://deb.debian.org/debian bookworm/main amd64 libkrb5support0 amd64 1.20.1-2+deb12u4 [33.2 kB]
+#9 1076.7 Get:9 http://deb.debian.org/debian bookworm/main amd64 libk5crypto3 amd64 1.20.1-2+deb12u4 [79.8 kB]
+#9 1079.1 Get:10 http://deb.debian.org/debian bookworm/main amd64 libkeyutils1 amd64 1.6.3-2 [8808 B]
+#9 1079.5 Get:11 http://deb.debian.org/debian bookworm/main amd64 libkrb5-3 amd64 1.20.1-2+deb12u4 [334 kB]
+#9 1095.7 Get:12 http://deb.debian.org/debian bookworm/main amd64 libgssapi-krb5-2 amd64 1.20.1-2+deb12u4 [135 kB]
+#9 1112.8 Get:13 http://deb.debian.org/debian bookworm/main amd64 libtirpc-common all 1.3.3+ds-1 [14.0 kB]
+#9 1113.3 Get:14 http://deb.debian.org/debian bookworm/main amd64 libtirpc3 amd64 1.3.3+ds-1 [85.2 kB]
+#9 1116.8 Get:15 http://deb.debian.org/debian bookworm/main amd64 libnsl2 amd64 1.3.0-2 [39.5 kB]
+#9 1117.6 Get:16 http://deb.debian.org/debian bookworm/main amd64 readline-common all 8.2-1.3 [69.0 kB]
+#9 1120.1 Get:17 http://deb.debian.org/debian bookworm/main amd64 libreadline8 amd64 8.2-1.3 [166 kB]
+#9 1127.7 Get:18 http://deb.debian.org/debian bookworm/main amd64 libsqlite3-0 amd64 3.40.1-2+deb12u2 [839 kB]
+#9 1158.5 Get:19 http://deb.debian.org/debian bookworm/main amd64 libpython3.11-stdlib amd64 3.11.2-6+deb12u6 [1798 kB]
+#9 ...
 
-#10 [deps 3/5] RUN apk add --no-cache python3 py3-pip make g++
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 1188.6 Get:5 http://deb.debian.org/debian bookworm/main amd64 libgdbm6 amd64 1.23-3 [72.2 kB]
+#10 1192.5 Get:6 http://deb.debian.org/debian bookworm/main amd64 libgdbm-compat4 amd64 1.23-3 [48.2 kB]
+#10 1196.7 Get:7 http://deb.debian.org/debian bookworm/main amd64 libperl5.36 amd64 5.36.0-7+deb12u3 [4196 kB]
+#10 ...
+
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 1249.1 Get:20 http://deb.debian.org/debian bookworm/main amd64 python3.11 amd64 3.11.2-6+deb12u6 [573 kB]
+#9 1278.0 Get:21 http://deb.debian.org/debian bookworm/main amd64 libpython3-stdlib amd64 3.11.2-1+b1 [9312 B]
+#9 1278.3 Get:22 http://deb.debian.org/debian bookworm/main amd64 python3 amd64 3.11.2-1+b1 [26.3 kB]
+#9 1279.8 Get:23 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.19-1~deb12u2 [1435 kB]
+#9 1371.2 Get:24 http://deb.debian.org/debian bookworm/main amd64 ca-certificates all 20230311+deb12u1 [155 kB]
+#9 1382.4 Get:25 http://deb.debian.org/debian bookworm/main amd64 fonts-dejavu-core all 2.37-6 [1068 kB]
+#9 1422.1 Get:26 http://deb.debian.org/debian bookworm/main amd64 fontconfig-config amd64 2.14.1-4 [315 kB]
+#9 1436.7 Get:27 http://deb.debian.org/debian bookworm/main amd64 libbrotli1 amd64 1.0.9-2+b6 [275 kB]
+#9 1451.5 Get:28 http://deb.debian.org/debian bookworm/main amd64 libbsd0 amd64 0.11.7-2 [117 kB]
+#9 1457.5 Get:29 http://deb.debian.org/debian-security bookworm-security/main amd64 libpng16-16 amd64 1.6.39-2+deb12u4 [276 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
 #10 CANCELED
-------
- > [runtime 3/7] RUN apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*:
-1072.8     markitdown[pdf] 0.1.1 depends on beautifulsoup4
-1072.8     markitdown[pdf] 0.1.0 depends on beautifulsoup4
-1072.8     markitdown[pdf] 0.0.2 depends on beautifulsoup4
-1072.8     markitdown[pdf] 0.0.1 depends on beautifulsoup4
-1072.8 
-1072.8 To fix this you could try to:
-1072.8 1. loosen the range of package versions you've specified
-1072.8 2. remove package versions to allow pip to attempt to solve the dependency conflict
-1072.8 
-1075.1 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
-------
-ERROR: failed to solve: process "/bin/sh -c apk add --no-cache python3 py3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]'  && rm -rf /root/.cache /var/cache/apk/*" did not complete successfully: exit code: 1
+
+#9 [runtime 3/7] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 CANCELED
+ERROR: failed to solve: Canceled: context canceled
   ⚠ Local docker build failed or timed out; trying GHCR fallback
-  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:622fffabc27c6370b331b872b796dd25aa1dea6a
-622fffabc27c6370b331b872b796dd25aa1dea6a: Pulling from james-lebron2000/treatbot-api
-f18232174bc9: Already exists
-dd71dde834b5: Already exists
-1e5a4c89cee5: Already exists
-25ff2da83641: Already exists
-a97326d97b60: Already exists
-30221f21d3ba: Pulling fs layer
-d919acc02391: Pulling fs layer
-41b4530c5a54: Pulling fs layer
-887e4e43c59c: Pulling fs layer
-9d10e9c650af: Pulling fs layer
-887e4e43c59c: Waiting
-9d10e9c650af: Waiting
-context canceled
-  ⚠ GHCR pull failed or timed out; checking tarball fallback
-  ❌ GHCR image unavailable and API tarball /tmp/treatbot-api.tar.gz is missing
+  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:d2730541022fe9886c1393fb00179f29961eea7b
+d2730541022fe9886c1393fb00179f29961eea7b: Pulling from james-lebron2000/treatbot-api
+61320b01ae5e: Already exists
+b98d3ae1ab80: Already exists
+b1831021e35a: Already exists
+c768ab8cba73: Already exists
+8c994cf49dd1: Already exists
+6d2412f3a32b: Pulling fs layer
+119af53f9bd1: Pulling fs layer
+2ae2f065ee82: Pulling fs layer
+77de9ac737d8: Pulling fs layer
+40133cc85bce: Pulling fs layer
+e0acb7483c12: Pulling fs layer
+77de9ac737d8: Waiting
+40133cc85bce: Waiting
+e0acb7483c12: Waiting
+6d2412f3a32b: Verifying Checksum
+6d2412f3a32b: Download complete
+6d2412f3a32b: Pull complete
+77de9ac737d8: Retrying in 5 seconds
+77de9ac737d8: Retrying in 4 seconds
+77de9ac737d8: Retrying in 3 seconds
+77de9ac737d8: Retrying in 2 seconds
+77de9ac737d8: Retrying in 1 second
 ```
