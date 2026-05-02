@@ -233,7 +233,7 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
-        command_timeout: 35m
+        command_timeout: 75m  # GHCR pull (≤30m) + local build fallback (≤35m) + restart cushion
         script: |
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
@@ -252,15 +252,50 @@ jobs:
             echo "Missing SHA env"; exit 1
           fi
 
-          # A.1 准备新镜像。
-          # 第一选择：/tmp/server-src.tar.gz 源码小包 + 服务器本地 docker build。
-          # 这条链路只跨境传约 4MB 源码，避免 SCP/GHCR 搬运 200MB+ 镜像制品。
-          # 第二选择：GHCR layer pull，作为本地构建失败时的兜底。
-          # 第三选择：/tmp/treatbot-api.tar.gz tarball（人工兜底，不作为默认链路）。
+          # A.1 准备新镜像。优先级（2026-05-03 重排，源码本地构建放最后）：
+          # 第一选择：本地缓存命中（走过 build/pull 后 docker images 里直接有 treatbot-api:${SHA}）
+          #   ── 重新部署同一 SHA 时 0 流量、0 编译，秒切。
+          # 第二选择：GHCR layer pull（build-api job 已 push 到 ghcr.io，跨境只下载新增层；
+          #   prod 国内出口对 ghcr.io 实测 ~1-3 MB/s，700MB 全量约 5-12 分钟，timeout 30m 留足余量）
+          # 第三选择：/tmp/server-src.tar.gz 源码 + 服务器本地 docker build
+          #   ── apt-get + pip install markitdown 在国内出口实测 ~25 min ± 10 min，
+          #   ── 历史多次 25m timeout 命中失败（run 25251563623 / 25251742589 / 25255963801），
+          #   ── 故降级为最后兜底；timeout 也放宽到 35m。
+          # 第四选择：/tmp/treatbot-api.tar.gz tarball（人工 docker save → scp，不作为默认链路）。
           IMAGE_READY=0
+          SHA_TAG="treatbot-api:${SHA}"
+          if docker image inspect "$SHA_TAG" >/dev/null 2>&1; then
+            echo "  ✓ Image $SHA_TAG already in local docker — skip build & pull"
+            IMAGE_READY=1
+          fi
+
+          if [ "$IMAGE_READY" != "1" ]; then
+            if [ -n "${GHCR_IMAGE:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+              echo "  Pulling image from GHCR: $GHCR_IMAGE"
+              if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
+                if command -v timeout >/dev/null 2>&1; then
+                  timeout 30m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                else
+                  docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                fi
+                docker logout ghcr.io >/dev/null 2>&1 || true
+                if [ "$IMAGE_READY" = "1" ]; then
+                  docker tag "$GHCR_IMAGE" "$SHA_TAG"
+                  echo "  ✓ GHCR image pulled and tagged as $SHA_TAG"
+                else
+                  echo "  ⚠ GHCR pull failed or timed out; falling back to local build"
+                fi
+              else
+                echo "  ⚠ docker login ghcr.io failed; falling back to local build"
+              fi
+            else
+              echo "  ⚠ GHCR env missing; falling back to local build"
+            fi
+          fi
+
           SOURCE_TARBALL=/tmp/server-src.tar.gz
           BUILD_DIR=/tmp/treatbot-server-build.${TS}
-          if [ -f "$SOURCE_TARBALL" ]; then
+          if [ "$IMAGE_READY" != "1" ] && [ -f "$SOURCE_TARBALL" ]; then
             echo "  Building image locally from source tarball: $SOURCE_TARBALL"
             rm -rf "$BUILD_DIR"
             mkdir -p "$BUILD_DIR"
@@ -269,42 +304,18 @@ jobs:
             if [ ! -f "$BUILD_DIR/server/Dockerfile" ]; then
               echo "  ⚠ source tarball extracted but server/Dockerfile is missing; falling back"
             elif command -v timeout >/dev/null 2>&1; then
-              timeout 25m docker build -t "treatbot-api:${SHA}" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
+              timeout 35m docker build -t "$SHA_TAG" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
             else
-              docker build -t "treatbot-api:${SHA}" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
+              docker build -t "$SHA_TAG" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
             fi
             rm -rf "$BUILD_DIR"
             if [ "$IMAGE_READY" = "1" ]; then
-              echo "  ✓ Image treatbot-api:${SHA} built locally"
+              echo "  ✓ Image $SHA_TAG built locally"
             else
-              echo "  ⚠ Local docker build failed or timed out; trying GHCR fallback"
+              echo "  ⚠ Local docker build failed or timed out; checking tarball fallback"
             fi
-          else
-            echo "  ⚠ source tarball $SOURCE_TARBALL missing; trying GHCR fallback"
-          fi
-
-          if [ "$IMAGE_READY" != "1" ]; then
-            if [ -n "${GHCR_IMAGE:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
-              echo "  Pulling image from GHCR: $GHCR_IMAGE"
-              if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
-                if command -v timeout >/dev/null 2>&1; then
-                  timeout 12m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
-                else
-                  docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
-                fi
-                docker logout ghcr.io >/dev/null 2>&1 || true
-                if [ "$IMAGE_READY" = "1" ]; then
-                  docker tag "$GHCR_IMAGE" "treatbot-api:${SHA}"
-                  echo "  ✓ GHCR image pulled and tagged as treatbot-api:${SHA}"
-                else
-                  echo "  ⚠ GHCR pull failed or timed out; checking tarball fallback"
-                fi
-              else
-                echo "  ⚠ docker login ghcr.io failed; checking tarball fallback"
-              fi
-            else
-              echo "  ⚠ GHCR env missing; checking tarball fallback"
-            fi
+          elif [ "$IMAGE_READY" != "1" ]; then
+            echo "  ⚠ source tarball $SOURCE_TARBALL missing; checking tarball fallback"
           fi
 
           TARBALL=/tmp/treatbot-api.tar.gz
