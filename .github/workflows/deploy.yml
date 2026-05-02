@@ -144,8 +144,10 @@ jobs:
         ls -lh server-src.tar.gz
 
     # 只上传小文件。API 镜像不再通过 SCP/GHCR 跨境搬运大制品，改由服务器本地构建。
+    # timeout 从 5 提到 10：4MB server-src + 350K web-dist 跨境 scp 实测正好踩边 5min
+    # （run 25251563623 在 4m57s 完成 scp 后被步骤 timeout 切掉）。
     - name: Upload release control files to server
-      timeout-minutes: 5
+      timeout-minutes: 10
       env:
         SERVER_HOST: ${{ secrets.SERVER_HOST }}
         SERVER_USER: ${{ secrets.SERVER_USER }}
