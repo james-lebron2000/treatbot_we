@@ -28,6 +28,118 @@
 
 ---
 
+## 紧急 hot-fix 路径（仅在 CI 全部受阻时使用）
+
+> ⚠️ 仅在以下情况下使用：
+> - GHCR 镜像拉取阻塞（中国跨境网络、GHCR 限流）
+> - 服务器侧 docker build 超时（apt-get 走外网）
+> - 单文件级别的 bug 修复，等不到下一个完整 CI 部署窗口
+>
+> Hot-fix **不替代 CI 部署**，是临时绕道；改完仍需要 `git commit` + `git push` 让正常 CI 接管。
+
+### 步骤模板（5 个文件示例）
+
+```bash
+# 1. 把要替换的 .js 文件 SCP 到服务器
+scp server/services/ocr.js \
+    server/services/queue.js \
+    server/services/llmClient.js \
+    server/utils/ocrConfig.js \
+    server/utils/llmPricing.js \
+    ubuntu@<HOST>:/tmp/hotfix/
+
+# 2. SSH 上去，先做 rollback 快照
+ssh ubuntu@<HOST>
+TS=$(date +%Y%m%d-%H%M%S)
+docker commit treatbot-api treatbot-api:rollback-$TS
+
+# 3. 启动一个临时 staging 容器（用 sleep 让它空转，避免 app 启动时读旧代码）
+docker run -d --name treatbot-api-staging --restart no \
+  --network server_treatbot-network \
+  --env-file /tmp/hotfix/env-clean.txt \
+  -v /opt/treatbot/server/data:/app/data \
+  -v /opt/treatbot/server/logs:/app/logs \
+  -v /opt/treatbot/server/uploads:/app/uploads \
+  --entrypoint sleep treatbot-api:rollback-$TS 3600
+
+# 4. 把修过的文件 cp 进去
+docker cp /tmp/hotfix/ocr.js       treatbot-api-staging:/app/services/ocr.js
+docker cp /tmp/hotfix/queue.js     treatbot-api-staging:/app/services/queue.js
+docker cp /tmp/hotfix/llmClient.js treatbot-api-staging:/app/services/llmClient.js
+docker cp /tmp/hotfix/ocrConfig.js treatbot-api-staging:/app/utils/ocrConfig.js
+docker cp /tmp/hotfix/llmPricing.js treatbot-api-staging:/app/utils/llmPricing.js
+
+# 5. commit 时 必须显式 --change 还原 ENTRYPOINT/CMD（不然 sleep 会被烤进新镜像）
+docker commit \
+  --change='ENTRYPOINT ["docker-entrypoint.sh"]' \
+  --change='CMD ["node","app.js"]' \
+  --change='WORKDIR /app' \
+  --change='USER node' \
+  treatbot-api-staging treatbot-api:hotfix-$TS
+
+# 6. 拆掉 staging
+docker rm -f treatbot-api-staging
+
+# 7. 切流：停旧 → 重命名旧（保留作为 rollback）→ 启新
+docker stop treatbot-api
+docker rename treatbot-api treatbot-api-prev-hotfix
+docker run -d --name treatbot-api --restart unless-stopped \
+  --network server_treatbot-network \
+  -p 3000:3000 \
+  -v /opt/treatbot/server/data:/app/data \
+  -v /opt/treatbot/server/logs:/app/logs \
+  -v /opt/treatbot/server/uploads:/app/uploads \
+  --env-file /tmp/hotfix/env-clean.txt \
+  --health-cmd 'node -e "require(\"http\").get(\"http://localhost:3000/health\", (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"' \
+  --health-interval 30s --health-timeout 5s --health-retries 3 \
+  treatbot-api:hotfix-$TS
+
+# 8. 等 12 秒，看 health
+sleep 12
+docker ps --filter name=treatbot-api --format 'table {{.Names}}\t{{.Status}}'
+curl -fsS http://127.0.0.1:3000/health
+```
+
+### env-clean.txt 来自哪里
+
+第一次做 hot-fix 时，从当前运行容器导出后**去重**（同 KEY 多次出现时取最后一次），并强制覆盖 `OCR_PROVIDER=auto`：
+
+```bash
+docker inspect treatbot-api --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -v '^$' > /tmp/hotfix/env-raw.txt
+
+python3 -c "
+seen = {}
+with open('/tmp/hotfix/env-raw.txt') as f:
+    for line in f:
+        line = line.rstrip()
+        if not line or '=' not in line: continue
+        seen[line.split('=',1)[0]] = line
+seen['OCR_PROVIDER'] = 'OCR_PROVIDER=auto'
+for skip in ('PATH','HOSTNAME','HOME','NODE_VERSION','YARN_VERSION'):
+    seen.pop(skip, None)
+for v in seen.values(): print(v)
+" > /tmp/hotfix/env-clean.txt
+```
+
+### Rollback
+
+```bash
+docker stop treatbot-api && docker rm treatbot-api
+docker rename treatbot-api-prev-hotfix treatbot-api
+docker start treatbot-api
+```
+
+或更简单：从 `treatbot-api:rollback-<TS>` 镜像直接 `docker run`。
+
+### 已知坑
+
+- **必须显式 `--change ENTRYPOINT/CMD`**：否则 staging 用的 `sleep 3600` 会被烤进 hotfix 镜像，新容器一启动就在 sleep，curl 端口直接 `Connection reset`。
+- **同名 KEY 多次出现**：`docker run -e KEY=v1 -e KEY=v2` 取后者。`docker inspect` 输出的 Env 列表会按时间顺序保留所有历史值，需要 dedupe 取最后。
+- **Bull v4 + ioredis 警告**：不要在 redisConfig 里设 `enableOfflineQueue: false`，会让 Bull worker 在 ready 之前发的 BRPOPLPUSH 抛 unhandled rejection 导致 process.exit（详见 commit `04ad37f`）。
+
+---
+
 ## 部署方式概览（仅供本地或离线）
 
 > 以下章节是本地开发或一次性手工搭建的参考，**生产请走 GitHub Actions**。
