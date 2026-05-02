@@ -64,41 +64,22 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
 
-    # Phase E.7+：脱离 Docker Hub —— 国内 VM 多次 docker pull registry-1.docker.io
-    # context deadline exceeded（GH runs 25221303969 / 25221713652 / 25227394183 等）。
-    # 改走「build → save tarball → 走已有 SSH 通道 scp 到 VM → docker load」，
-    # 零外网 registry 依赖。Buildx layer cache 仍走 type=gha，增量构建不受影响。
-    - name: Build API image (load into local daemon)
+    - name: Login to GHCR
+      run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+    # CI 仍构建并推 GHCR，作为镜像可复现验证与兜底；生产主链路不依赖服务器拉取大 layer。
+    - name: Build and push API image to GHCR
       uses: docker/build-push-action@v4
       with:
         context: ./server
-        load: true
-        tags: treatbot-api:${{ github.sha }}
+        push: true
+        tags: ghcr.io/james-lebron2000/treatbot-api:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Save image as gzipped tarball
-      run: |
-        docker save "treatbot-api:${{ github.sha }}" | gzip > treatbot-api.tar.gz
-        ls -lh treatbot-api.tar.gz
-        # 兜底 artifact：默认部署走 GHCR layer pull，不再把 tarball 作为主链路 SCP 到生产机。
-
-    - name: Push API image to GHCR
-      run: |
-        set -euo pipefail
-        IMAGE="ghcr.io/james-lebron2000/treatbot-api:${{ github.sha }}"
-        docker tag "treatbot-api:${{ github.sha }}" "$IMAGE"
-        echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-        docker push "$IMAGE"
-        docker logout ghcr.io
-
-    - name: Upload API tarball artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: treatbot-api-tarball
-        path: treatbot-api.tar.gz
-        retention-days: 3                # 部署用完就丢；要长期归档以后再补 ACR
-        compression-level: 0             # 已是 gzip，再压只浪费 runner CPU
+    - name: Logout from GHCR
+      if: always()
+      run: docker logout ghcr.io || true
 
   build-web:
     needs: test
@@ -157,7 +138,12 @@ jobs:
         tar -czf web-dist.tar.gz -C web-dist .
         ls -lh web-dist.tar.gz
 
-    # 只上传小文件。API 镜像不再通过 SCP 传 238MB tarball，改由服务器从 GHCR 按 layer 拉取。
+    - name: Pack server source as tarball
+      run: |
+        git archive --format=tar HEAD server | gzip -1 > server-src.tar.gz
+        ls -lh server-src.tar.gz
+
+    # 只上传小文件。API 镜像不再通过 SCP/GHCR 跨境搬运大制品，改由服务器本地构建。
     - name: Upload release control files to server
       timeout-minutes: 5
       env:
@@ -182,16 +168,19 @@ jobs:
         )
 
         cp web-dist.tar.gz release-upload/web-dist.tar.gz
+        cp server-src.tar.gz release-upload/server-src.tar.gz
         cp deploy/Caddyfile release-upload/deploy/Caddyfile
         cp deploy/nginx-patch.conf release-upload/deploy/nginx-patch.conf
 
         echo "Web tarball: $(du -h web-dist.tar.gz | cut -f1)"
+        echo "Server source tarball: $(du -h server-src.tar.gz | cut -f1)"
 
         ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
           'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/treatbot-upload/deploy /tmp/deploy'
 
         echo "Uploading release control files..."
         scp "${SSH_OPTS[@]}" release-upload/web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/web-dist.tar.gz"
+        scp "${SSH_OPTS[@]}" release-upload/server-src.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/server-src.tar.gz"
         scp "${SSH_OPTS[@]}" release-upload/deploy/Caddyfile "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/Caddyfile"
         scp "${SSH_OPTS[@]}" release-upload/deploy/nginx-patch.conf "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/nginx-patch.conf"
 
@@ -200,10 +189,11 @@ jobs:
         set -euo pipefail
         cd /tmp/treatbot-upload
         mv web-dist.tar.gz /tmp/web-dist.tar.gz
+        mv server-src.tar.gz /tmp/server-src.tar.gz
         mv deploy/Caddyfile /tmp/deploy/Caddyfile
         mv deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
         rm -rf /tmp/treatbot-upload
-        ls -lh /tmp/web-dist.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
+        ls -lh /tmp/web-dist.tar.gz /tmp/server-src.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
         REMOTE
 
     # ---- Step 2: SSH 进服务器执行替换 ----
@@ -244,7 +234,7 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,MINIMAX_API_KEY,MINIMAX_VISION_MODEL,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
-        command_timeout: 15m
+        command_timeout: 35m
         script: |
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
@@ -264,30 +254,58 @@ jobs:
           fi
 
           # A.1 准备新镜像。
-          # 第一选择：GHCR layer pull。它避免每次从 GitHub runner 用 SCP 推 238MB tarball；
-          # 生产机只拉缺失 layer，且失败能在 docker pull 日志中明确暴露。
-          # 第二选择：/tmp/treatbot-api.tar.gz tarball（保留为人工兜底，不作为默认链路）。
+          # 第一选择：/tmp/server-src.tar.gz 源码小包 + 服务器本地 docker build。
+          # 这条链路只跨境传约 4MB 源码，避免 SCP/GHCR 搬运 200MB+ 镜像制品。
+          # 第二选择：GHCR layer pull，作为本地构建失败时的兜底。
+          # 第三选择：/tmp/treatbot-api.tar.gz tarball（人工兜底，不作为默认链路）。
           IMAGE_READY=0
-          if [ -n "${GHCR_IMAGE:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
-            echo "  Pulling image from GHCR: $GHCR_IMAGE"
-            if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
-              if command -v timeout >/dev/null 2>&1; then
-                timeout 12m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
-              else
-                docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
-              fi
-              docker logout ghcr.io >/dev/null 2>&1 || true
-              if [ "$IMAGE_READY" = "1" ]; then
-                docker tag "$GHCR_IMAGE" "treatbot-api:${SHA}"
-                echo "  ✓ GHCR image pulled and tagged as treatbot-api:${SHA}"
-              else
-                echo "  ⚠ GHCR pull failed or timed out; checking tarball fallback"
-              fi
+          SOURCE_TARBALL=/tmp/server-src.tar.gz
+          BUILD_DIR=/tmp/treatbot-server-build.${TS}
+          if [ -f "$SOURCE_TARBALL" ]; then
+            echo "  Building image locally from source tarball: $SOURCE_TARBALL"
+            rm -rf "$BUILD_DIR"
+            mkdir -p "$BUILD_DIR"
+            tar -xzf "$SOURCE_TARBALL" -C "$BUILD_DIR"
+            rm -f "$SOURCE_TARBALL"
+            if [ ! -f "$BUILD_DIR/server/Dockerfile" ]; then
+              echo "  ⚠ source tarball extracted but server/Dockerfile is missing; falling back"
+            elif command -v timeout >/dev/null 2>&1; then
+              timeout 25m docker build -t "treatbot-api:${SHA}" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
             else
-              echo "  ⚠ docker login ghcr.io failed; checking tarball fallback"
+              docker build -t "treatbot-api:${SHA}" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
+            fi
+            rm -rf "$BUILD_DIR"
+            if [ "$IMAGE_READY" = "1" ]; then
+              echo "  ✓ Image treatbot-api:${SHA} built locally"
+            else
+              echo "  ⚠ Local docker build failed or timed out; trying GHCR fallback"
             fi
           else
-            echo "  ⚠ GHCR env missing; checking tarball fallback"
+            echo "  ⚠ source tarball $SOURCE_TARBALL missing; trying GHCR fallback"
+          fi
+
+          if [ "$IMAGE_READY" != "1" ]; then
+            if [ -n "${GHCR_IMAGE:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+              echo "  Pulling image from GHCR: $GHCR_IMAGE"
+              if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
+                if command -v timeout >/dev/null 2>&1; then
+                  timeout 12m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                else
+                  docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                fi
+                docker logout ghcr.io >/dev/null 2>&1 || true
+                if [ "$IMAGE_READY" = "1" ]; then
+                  docker tag "$GHCR_IMAGE" "treatbot-api:${SHA}"
+                  echo "  ✓ GHCR image pulled and tagged as treatbot-api:${SHA}"
+                else
+                  echo "  ⚠ GHCR pull failed or timed out; checking tarball fallback"
+                fi
+              else
+                echo "  ⚠ docker login ghcr.io failed; checking tarball fallback"
+              fi
+            else
+              echo "  ⚠ GHCR env missing; checking tarball fallback"
+            fi
           fi
 
           TARBALL=/tmp/treatbot-api.tar.gz
