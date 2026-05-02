@@ -5,46 +5,42 @@
     <PrivacyPromiseCard :show-details-link="true" />
 
     <div class="card">
-      <h3 style="margin:0 0 10px;font-size:0.95rem;color:#374151;">账户信息</h3>
+      <h3 class="card-heading">账户信息</h3>
       <p><strong>手机号：</strong>{{ profile.phone || '未绑定' }}</p>
       <p><strong>昵称：</strong>{{ profile.nickName || '家属用户' }}</p>
     </div>
 
     <div class="card">
-      <h3 style="margin:0 0 10px;font-size:0.95rem;color:#374151;">我的记录</h3>
+      <h3 class="card-heading">我的记录</h3>
       <p><strong>病历数：</strong>{{ stats.records }}</p>
       <p><strong>已找到的可能性：</strong>{{ stats.matches }}</p>
     </div>
 
-    <div class="card" style="background:#fefce8;border-color:#fde68a;">
-      <h3 style="margin:0 0 10px;color:#854d0e;">您的数据，您说了算</h3>
-      <p style="margin:0 0 12px;font-size:0.85rem;color:#78716c;line-height:1.6;">
+    <div class="card data-card">
+      <h3 class="card-heading data-card-heading">您的数据，您说了算</h3>
+      <p class="data-card-sub">
         我们只在您的账户里为您整理信息。您随时可以把数据带走，或彻底删除。
       </p>
       <div class="data-actions">
         <button class="btn ghost data-action" @click="exportData" :disabled="exporting">
-          <span class="data-action-icon">📥</span>
           <span class="data-action-label">
             {{ exporting ? '正在为您打包…' : '导出我的全部数据' }}
             <span class="data-action-hint">PDF + JSON，带走就能走</span>
           </span>
         </button>
         <button class="btn ghost data-action" @click="goManageRecords">
-          <span class="data-action-icon">🗑</span>
           <span class="data-action-label">
             删除某一份病历
             <span class="data-action-hint">逐条删除，DB 与云存储同步清除</span>
           </span>
         </button>
         <button class="btn ghost data-action danger" @click="confirmDeleteAccount">
-          <span class="data-action-icon">🚪</span>
           <span class="data-action-label">
             注销账户
             <span class="data-action-hint">所有数据彻底删除，不可恢复</span>
           </span>
         </button>
         <a class="btn ghost data-action" href="/treatbot/privacy" target="_blank" rel="noopener">
-          <span class="data-action-icon">📖</span>
           <span class="data-action-label">
             了解我们如何处理您的数据
             <span class="data-action-hint">详细隐私政策</span>
@@ -53,10 +49,10 @@
       </div>
     </div>
 
-    <router-link v-if="isAdmin" to="/cro" class="btn primary" style="display:block;text-align:center;">
+    <router-link v-if="isAdmin" to="/cro" class="btn primary admin-link">
       CRO 入组看板
     </router-link>
-    <router-link v-if="isAdmin" to="/admin" class="btn ghost" style="display:block;text-align:center;">
+    <router-link v-if="isAdmin" to="/admin" class="btn ghost admin-link">
       管理后台
     </router-link>
 
@@ -74,12 +70,18 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../services/api'
 import PrivacyPromiseCard from '../components/PrivacyPromiseCard.vue'
+import { useConfirm, usePrompt, useAlert } from '../composables/useDialog'
+import { useToast } from '../composables/useToast'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const isAdmin = ref(false)
 const exporting = ref(false)
 const exportHint = ref('')
+const confirm = useConfirm()
+const prompt = usePrompt()
+const alertDialog = useAlert()
+const toast = useToast()
 
 const profile = reactive<Record<string, string>>({
   phone: '',
@@ -121,7 +123,6 @@ const load = async () => {
   }
 }
 
-// Q3-红线 §A.2.2：调 GET /api/me/export，浏览器下载 attachment（responseType:'blob'）
 const exportData = async () => {
   if (exporting.value) return
   exporting.value = true
@@ -152,27 +153,39 @@ const goManageRecords = () => {
   router.push('/upload')
 }
 
-// Q3-红线 §A.2.3：注销 = 两步 SMS 确认 → 调 POST /api/me/delete-account
 const confirmDeleteAccount = async () => {
-  const ok = window.confirm(
-    '注销账户后，您上传的病历、匹配记录、申请记录都会被彻底删除，且无法恢复。\n\n确定要注销吗？'
-  )
+  const ok = await confirm({
+    title: '确认注销账户？',
+    description: '注销后，您上传的病历、匹配记录、申请记录都会被彻底删除，且无法恢复。',
+    confirmText: '继续注销',
+    cancelText: '再想想',
+    danger: true,
+  })
   if (!ok) return
   try {
-    // 第一步：触发短信
     await api.deleteMyAccount()
-    const code = window.prompt('我们刚发了一条 6 位验证码到您的手机，请填进来确认注销：')
+    const code = await prompt({
+      title: '请输入短信验证码',
+      description: '我们刚发了一条 6 位验证码到您的手机，填进来即可完成注销。',
+      placeholder: '6 位数字',
+      confirmText: '确认注销',
+      cancelText: '取消',
+    })
     if (!code) return
     const res: any = await api.deleteMyAccount(code.trim())
     if (res?.deleted) {
-      window.alert('账户已彻底删除 —— 谢谢您信任过我们。')
+      await alertDialog({
+        title: '账户已彻底删除',
+        description: '谢谢您信任过我们。',
+        confirmText: '好的',
+      })
       authStore.logout()
       router.push('/login')
     } else {
-      window.alert('注销出现一点小问题，请稍后再试。')
+      toast.error('注销出现一点小问题，请稍后再试。')
     }
   } catch (err: any) {
-    window.alert(err?.response?.data?.message || '注销失败，请稍后再试。')
+    toast.error(err?.response?.data?.message || '注销失败，请稍后再试。')
   }
 }
 
@@ -185,30 +198,47 @@ onMounted(load)
 </script>
 
 <style scoped>
+.card-heading {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-subtitle);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.data-card {
+  background: var(--amber-soft);
+  border-color: #fde68a;
+}
+
+.data-card-heading {
+  color: #92400e;
+}
+
+.data-card-sub {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
+}
+
 .data-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-2);
 }
 
 .data-action {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
   text-align: left;
-  padding: 12px 14px;
-  font-size: 0.92rem;
-  color: #374151;
-  line-height: 1.5;
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--fs-callout);
+  color: var(--text);
+  line-height: var(--lh-normal);
 }
 
 .data-action.danger {
-  color: #b91c1c;
-}
-
-.data-action-icon {
-  font-size: 1.1rem;
-  flex-shrink: 0;
+  color: var(--red);
 }
 
 .data-action-label {
@@ -219,15 +249,20 @@ onMounted(load)
 }
 
 .data-action-hint {
-  font-size: 0.78rem;
-  color: #9ca3af;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
   font-weight: 400;
+}
+
+.admin-link {
+  display: block;
+  text-align: center;
 }
 
 .export-hint {
   text-align: center;
-  color: #15803d;
-  font-size: 0.85rem;
-  margin-top: 6px;
+  color: var(--mint);
+  font-size: var(--fs-caption);
+  margin-top: var(--s-2);
 }
 </style>

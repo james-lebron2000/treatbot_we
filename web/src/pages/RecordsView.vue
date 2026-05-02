@@ -87,10 +87,14 @@ import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { usePatientStore } from '../stores/patient'
+import { useConfirm } from '../composables/useDialog'
+import { useToast } from '../composables/useToast'
 
 const router = useRouter()
 const patientStore = usePatientStore()
 const { records, activeRecordId, loading } = storeToRefs(patientStore)
+const confirm = useConfirm()
+const toast = useToast()
 
 const error = ref('')
 const deletingId = ref<string | null>(null)
@@ -140,12 +144,20 @@ const onSetActive = (id: string) => {
 
 const onDelete = async (record: { id: string; diagnosis?: string }) => {
   const label = record.diagnosis || '这份病历'
-  if (!window.confirm(`确定删除「${label}」吗？删除后无法恢复。`)) return
+  const ok = await confirm({
+    title: `确定删除「${label}」？`,
+    description: '删除后无法恢复。',
+    confirmText: '删除',
+    cancelText: '取消',
+    danger: true,
+  })
+  if (!ok) return
   deletingId.value = record.id
   try {
     await patientStore.softDelete(record.id)
+    toast.success('已删除该病历')
   } catch (err: any) {
-    window.alert(err?.response?.data?.message || '删除时遇到小问题，稍后再试？')
+    toast.error(err?.response?.data?.message || '删除时遇到小问题，稍后再试？')
   } finally {
     deletingId.value = null
   }
