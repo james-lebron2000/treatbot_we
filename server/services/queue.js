@@ -27,13 +27,17 @@ const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURR
 // 生产观察到的故障模式：Redis 容器没起来 → Bull 的 `ocrQueue.add()` 卡住 → handleUpload
 // 等 30s+ 把客户端 wx.uploadFile 拖到超时 → 客户端报 statusCode:0 → 文案「网络有点卡」。
 // 加这三条配置后，撞 Redis 不可用时 add() 在 ~3s 内即抛错，addOCRTask 走进程内兜底。
+//
+// 注意（2026-05-03 hotfix）：早期版本曾设 `enableOfflineQueue: false`，但 Bull v4 worker
+// 在 Redis 连接 ready 之前就会发起 BRPOPLPUSH 命令，offlineQueue=false 会触发 unhandled
+// rejection → process.exit。改为依赖 maxRetriesPerRequest:1 + connectTimeout:3000
+// + addOCRTask 内的 5s Promise.race timeout 三道防线，效果一致但不会让进程崩溃。
 const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
   port: process.env.REDIS_PORT || 6379,
   password: process.env.REDIS_PASSWORD || undefined,
   maxRetriesPerRequest: 1,        // 单条 Redis 命令最多重试 1 次
-  connectTimeout: 3000,           // 初次连接 Redis 必须 3 秒内成功
-  enableOfflineQueue: false       // Redis 离线时不缓冲命令，让 add() 立即报错而非堆积
+  connectTimeout: 3000            // 初次连接 Redis 必须 3 秒内成功
 };
 
 // 创建队列
