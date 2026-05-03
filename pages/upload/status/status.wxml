@@ -20,9 +20,9 @@
     <view class="steps-list">
       <view class="step-item {{item.completed ? 'completed' : ''}} {{item.active ? 'active' : ''}}" wx:for="{{steps}}" wx:key="name">
         <view class="step-icon">
-          <text wx:if="{{item.completed}}">✓</text>
-          <text wx:elif="{{item.active}}">●</text>
-          <text wx:else>○</text>
+          <icon wx:if="{{item.completed}}" name="check-circle" color="mint" size="36" />
+          <icon wx:elif="{{item.active}}" name="alert-circle" color="brand" size="36" />
+          <icon wx:else name="alert-circle" color="text-muted" size="36" />
         </view>
         <text class="step-name">{{item.name}}</text>
       </view>
@@ -32,7 +32,7 @@
   <!-- 解析完成 -->
   <view class="result-section" wx:if="{{status === 'completed'}}">
     <view class="success-header">
-      <view class="success-icon">✓</view>
+      <view class="success-icon"><icon name="check" color="white" size="56" strokeWidth="3" /></view>
       <text class="success-title">好了</text>
       <text class="success-desc">以下是我们从病历里看到的信息，哪里不对直接改。</text>
     </view>
@@ -57,7 +57,7 @@
 
   <!-- 错误状态 -->
   <view class="error-section" wx:if="{{status === 'error'}}">
-    <view class="error-icon">✗</view>
+    <view class="error-icon"><icon name="x-circle" color="white" size="56" strokeWidth="3" /></view>
     <text class="error-title">解析失败</text>
     <text class="error-desc">{{errorMsg}}</text>
     <button class="btn btn-primary" bindtap="retry">重新上传</button>

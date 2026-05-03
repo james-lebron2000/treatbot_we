@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>数愈健康 · 路演演示 3/5 · AI 解析中</title>
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./_shared.css">
+  <style>
+    .parse-card {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: var(--s-8) var(--s-6);
+      box-shadow: var(--shadow-1);
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .progress-track {
+      height: 6px;
+      background: var(--line);
+      border-radius: var(--r-pill);
+      overflow: hidden;
+      margin: var(--s-4) 0;
+    }
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand) 0%, var(--lilac) 100%);
+      border-radius: var(--r-pill);
+      transition: width 320ms ease-out;
+    }
+    .progress-pct {
+      font-size: var(--fs-display);
+      font-weight: 700;
+      color: var(--brand);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.01em;
+    }
+    .step-list {
+      list-style: none;
+      padding: 0;
+      margin: var(--s-6) 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-3);
+    }
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--s-3);
+      padding: var(--s-3) var(--s-4);
+      border-radius: var(--r-md);
+      background: var(--bg-soft);
+      transition: background 200ms ease;
+    }
+    .step-item.done { background: var(--mint-soft); }
+    .step-item.active { background: var(--brand-soft); }
+    .step-icon {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--line);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-caption);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-item.active .step-icon { background: var(--brand); color: #fff; }
+    .step-item.done .step-icon { background: var(--mint); color: #fff; }
+
+    .step-body { flex: 1; }
+    .step-name { font-size: var(--fs-callout); font-weight: 600; color: var(--text); margin: 0 0 var(--s-1); }
+    .step-detail { font-size: var(--fs-caption); color: var(--text-dim); margin: 0; }
+    .step-detail.error { color: var(--red); }
+    .step-item.active .step-name { color: var(--brand-hover); }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(37, 99, 235, 0.25);
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 800ms linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: var(--s-2);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .completed-banner {
+      display: none;
+      background: var(--mint-soft);
+      border: 1px solid var(--mint);
+      border-radius: var(--r-md);
+      padding: var(--s-4);
+      margin-top: var(--s-6);
+      color: var(--mint-text);
+      font-size: var(--fs-callout);
+      text-align: center;
+    }
+    .completed-banner.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <div class="demo-topbar">
+      <span class="demo-brand">
+        <span class="demo-brand-mark"></span>
+        数愈健康
+      </span>
+      <span class="demo-badge">DEMO · 3 / 5</span>
+    </div>
+
+    <nav class="demo-steps" aria-label="演示进度">
+      <div class="demo-step done"><span class="demo-step-dot">✓</span><span class="demo-step-label">首屏</span></div>
+      <span class="demo-step-line done"></span>
+      <div class="demo-step done"><span class="demo-step-dot">✓</span><span class="demo-step-label">上传</span></div>
+      <span class="demo-step-line done"></span>
+      <div class="demo-step active"><span class="demo-step-dot">3</span><span class="demo-step-label">解析</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">4</span><span class="demo-step-label">报告</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">5</span><span class="demo-step-label">匹配</span></div>
+    </nav>
+
+    <section class="demo-hero demo-fade-in">
+      <span class="demo-eyebrow">第 3 步</span>
+      <h1 class="demo-title">AI 正在<span class="accent">解析病历</span></h1>
+      <p class="demo-sub">演示模式 · 真实环境通常 8–15 秒完成；下方会显示每一步的进展。</p>
+    </section>
+
+    <div class="parse-card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;">
+        <span style="font-size:var(--fs-callout);color:var(--text-dim);">解析进度</span>
+        <span class="progress-pct" id="pct">0%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="bar"></div></div>
+
+      <ol class="step-list" id="stepList">
+        <li class="step-item" data-step="ocr">
+          <span class="step-icon">1</span>
+          <div class="step-body">
+            <p class="step-name">文本识别（OCR）</p>
+            <p class="step-detail">解析图像/PDF 中的文字与结构化字段</p>
+          </div>
+        </li>
+        <li class="step-item" data-step="entity">
+          <span class="step-icon">2</span>
+          <div class="step-body">
+            <p class="step-name">医学实体抽取</p>
+            <p class="step-detail">识别诊断、分期、TNM、基因突变、用药</p>
+          </div>
+        </li>
+        <li class="step-item" data-step="normalize">
+          <span class="step-icon">3</span>
+          <div class="step-body">
+            <p class="step-name">语义归一化</p>
+            <p class="step-detail">对齐 ICD-10 / SNOMED / HGVS 标准词表</p>
+          </div>
+        </li>
+        <li class="step-item" data-step="match">
+          <span class="step-icon">4</span>
+          <div class="step-body">
+            <p class="step-name">试验入排匹配</p>
+            <p class="step-detail">比对试验入选/排除条件，给出置信度</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="completed-banner" id="banner">
+        ✓ 解析完成。已识别诊断、分期与基因，自动跳转到病历摘要…
+      </div>
+    </div>
+
+    <footer class="demo-footer">
+      <span class="meta">演示模式 · 自动播放 · 约 8 秒</span>
+      <div class="demo-footer-nav">
+        <a href="./02-upload.html" class="demo-btn secondary">上一步</a>
+        <a href="./04-report.html" class="demo-btn primary" id="skipBtn">跳过：直接看报告 →</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    if (new URLSearchParams(location.search).get('fullscreen') === '1') {
+      document.body.classList.add('fullscreen');
+    }
+
+    var bar = document.getElementById('bar');
+    var pct = document.getElementById('pct');
+    var banner = document.getElementById('banner');
+    var stepList = document.getElementById('stepList');
+    var steps = stepList.querySelectorAll('.step-item');
+
+    var schedule = [
+      { at: 0,    pct: 6,   active: 0 },
+      { at: 600,  pct: 28,  active: 0 },
+      { at: 1500, pct: 38,  done: 0, active: 1 },
+      { at: 2900, pct: 56,  active: 1 },
+      { at: 3700, pct: 64,  done: 1, active: 2 },
+      { at: 4900, pct: 78,  active: 2 },
+      { at: 5700, pct: 84,  done: 2, active: 3 },
+      { at: 6900, pct: 96,  active: 3 },
+      { at: 7600, pct: 100, done: 3 }
+    ];
+
+    function setStepState(idx, state) {
+      var node = steps[idx];
+      if (!node) return;
+      node.classList.remove('active', 'done');
+      if (state) node.classList.add(state);
+      var icon = node.querySelector('.step-icon');
+      if (state === 'done') icon.textContent = '✓';
+      else if (state === 'active') icon.innerHTML = '<span class="spinner"></span>';
+      else icon.textContent = String(idx + 1);
+    }
+
+    var redirected = false;
+    schedule.forEach(function (frame) {
+      setTimeout(function () {
+        bar.style.width = frame.pct + '%';
+        pct.textContent = frame.pct + '%';
+        if (typeof frame.done === 'number') setStepState(frame.done, 'done');
+        if (typeof frame.active === 'number') setStepState(frame.active, 'active');
+        if (frame.pct >= 100 && !redirected) {
+          redirected = true;
+          banner.classList.add('show');
+          setTimeout(function () { window.location.href = './04-report.html'; }, 1400);
+        }
+      }, frame.at);
+    });
+  </script>
+</body>
+</html>

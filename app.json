@@ -16,14 +16,14 @@
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#F7FAFE",
+    "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTitleText": "数愈健康",
     "navigationBarTextStyle": "black"
   },
   "tabBar": {
-    "color": "#7083A3",
-    "selectedColor": "#0F2B57",
-    "backgroundColor": "#F9FBFE",
+    "color": "#475569",
+    "selectedColor": "#2563eb",
+    "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
       {

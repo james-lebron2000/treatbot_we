@@ -143,9 +143,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '../../services/api'
+import { useToast } from '../../composables/useToast'
 
 type AdminUser = Record<string, any>
 type AdminRecord = Record<string, any>
+
+const toast = useToast()
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -224,7 +227,7 @@ const revealPhone = async () => {
     const res = await api.revealAdminUserField(selectedUser.value.userId, 'phone')
     revealedPhone.value = res?.value || ''
   } catch (error: any) {
-    alert(error?.response?.data?.message || '手机号揭示失败')
+    toast.error(error?.response?.data?.message || '手机号揭示失败')
   }
 }
 
@@ -254,31 +257,51 @@ onMounted(() => loadUsers())
 <style scoped>
 .admin-page {
   display: grid;
-  gap: 14px;
+  gap: var(--s-4);
 }
 
 .toolbar,
 .panel,
 .state-card {
-  border: 1px solid #dde3ed;
-  border-radius: 8px;
-  background: #fff;
-  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  padding: var(--s-4);
+  box-shadow: var(--shadow-1);
 }
 
 .toolbar {
   display: flex;
-  gap: 10px;
+  gap: var(--s-3);
   align-items: end;
   flex-wrap: wrap;
 }
 
 .toolbar label {
   display: grid;
-  gap: 5px;
+  gap: var(--s-1);
   min-width: 160px;
-  color: #4b5563;
-  font-size: 13px;
+  color: var(--text-dim);
+  font-size: var(--fs-callout);
+}
+
+.toolbar input,
+.toolbar select {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s-2) var(--s-3);
+  font-family: inherit;
+  font-size: var(--fs-callout);
+  color: var(--text);
+  background: var(--bg);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.toolbar input:focus,
+.toolbar select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--shadow-focus);
 }
 
 .checkbox-label {
@@ -294,27 +317,43 @@ onMounted(() => loadUsers())
 .primary-btn,
 .pagination button {
   border: none;
-  border-radius: 8px;
-  background: #2563eb;
+  border-radius: var(--r-md);
+  background: var(--brand);
   color: #fff;
   cursor: pointer;
-  padding: 10px 16px;
+  padding: 10px var(--s-4);
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  transition: background 150ms ease, transform 100ms ease;
+}
+
+.primary-btn:hover,
+.pagination button:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.primary-btn:active,
+.pagination button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .pagination button:disabled {
-  background: #c7d2e3;
+  background: var(--text-muted);
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .panel-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--s-3);
 }
 
 .panel-heading h3 {
   margin: 0;
+  font-size: var(--fs-subtitle);
+  color: var(--text);
 }
 
 .panel-heading span,
@@ -323,8 +362,8 @@ td small,
 .detail-grid span,
 .record-item span,
 .match-item span {
-  color: #6b7280;
-  font-size: 12px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
 }
 
 .table-wrap {
@@ -339,45 +378,60 @@ table {
 
 th,
 td {
-  border-bottom: 1px solid #eef2f7;
-  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  padding: var(--s-3) var(--s-2);
   text-align: left;
   vertical-align: top;
+  font-size: var(--fs-callout);
+  color: var(--text);
 }
 
 th {
-  color: #6b7280;
-  font-size: 12px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
   font-weight: 600;
+  background: var(--bg-soft);
 }
 
 td:first-child {
   display: grid;
-  gap: 4px;
+  gap: var(--s-1);
 }
 
 .text-btn {
   border: none;
   background: transparent;
-  color: #2563eb;
+  color: var(--brand);
   cursor: pointer;
   padding: 0;
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  transition: color 150ms ease;
+}
+
+.text-btn:hover {
+  color: var(--brand-hover);
 }
 
 .pagination {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--s-3);
+  color: var(--text-dim);
+  font-size: var(--fs-callout);
 }
 
 .empty {
-  color: #6b7280;
-  padding: 16px 4px;
+  color: var(--text-muted);
+  padding: var(--s-4) var(--s-1);
+  font-size: var(--fs-callout);
 }
 
 .danger {
-  color: #b91c1c;
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: var(--red);
 }
 
 .drawer {
@@ -389,7 +443,8 @@ td:first-child {
 .drawer-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
 }
 
 .drawer-panel {
@@ -399,15 +454,15 @@ td:first-child {
   bottom: 0;
   width: min(720px, 96vw);
   overflow-y: auto;
-  background: #fff;
-  padding: 18px;
-  box-shadow: -20px 0 50px rgba(15, 23, 42, 0.18);
+  background: var(--bg);
+  padding: var(--s-6);
+  box-shadow: var(--shadow-2);
 }
 
 .drawer-panel header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-3);
   align-items: flex-start;
 }
 
@@ -416,42 +471,71 @@ td:first-child {
   margin: 0;
 }
 
+.drawer-panel h3 {
+  color: var(--text);
+  font-size: var(--fs-title);
+  line-height: var(--lh-tight);
+}
+
 .icon-btn {
-  width: 34px;
-  height: 34px;
-  border: 1px solid #d7deea;
-  border-radius: 8px;
-  background: #fff;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--text-dim);
   cursor: pointer;
   font-size: 22px;
+  line-height: 1;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.icon-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 16px 0;
+  gap: var(--s-3);
+  margin: var(--s-4) 0;
 }
 
 .detail-grid div,
 .record-item,
 .match-item {
-  border: 1px solid #edf1f7;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   display: grid;
-  gap: 6px;
-  padding: 10px;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  background: var(--bg-soft);
+}
+
+.detail-grid strong,
+.record-item strong,
+.match-item strong {
+  color: var(--text);
+  font-size: var(--fs-callout);
 }
 
 .drawer-section {
   display: grid;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
 }
 
-.drawer-section h4,
+.drawer-section h4 {
+  margin: 0;
+  font-size: var(--fs-subtitle);
+  color: var(--text);
+}
+
 .record-item p {
   margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
 }
 
 @media (max-width: 640px) {

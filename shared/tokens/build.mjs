@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+// Generates tokens.css / tokens.wxss for web / mini-program / H5 from tokens.json.
+// Source of truth: shared/tokens/tokens.json. Edit there, then run this script.
+//
+// Usage:
+//   node shared/tokens/build.mjs           # write three target files
+//   node shared/tokens/build.mjs --check   # exit 1 if any target file is stale (CI)
+
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { dirname, resolve, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const repoRoot = resolve(__dirname, '../..')
+
+const tokens = JSON.parse(await readFile(resolve(__dirname, 'tokens.json'), 'utf8'))
+
+const HEADER = `/* AUTO-GENERATED from shared/tokens/tokens.json — do not edit by hand.
+   Run \`node shared/tokens/build.mjs\` (or \`pnpm -C web tokens:build\`) to regenerate. */`
+
+function buildCss(t) {
+  const lines = []
+  const groups = [
+    ['', t.color],
+    ['font-', t.font],
+    ['fs-', t.fs],
+    ['lh-', t.lh],
+    ['r-', t.r],
+    ['shadow-', t.shadow],
+    ['s-', t.s],
+  ]
+  for (const [prefix, group] of groups) {
+    for (const [k, v] of Object.entries(group)) {
+      lines.push(`  --${prefix}${k}: ${v};`)
+    }
+  }
+  return `${HEADER}\n:root {\n${lines.join('\n')}\n}\n`
+}
+
+const TARGETS = [
+  'web/src/styles/tokens.css',
+  'styles/tokens.wxss',
+  'server/public/landing/tokens.css',
+  'server/public/demo/tokens.css',
+  'server/public/admin/tokens.css',
+]
+
+const css = buildCss(tokens)
+const isCheck = process.argv.includes('--check')
+
+let stale = 0
+for (const rel of TARGETS) {
+  const target = resolve(repoRoot, rel)
+  if (isCheck) {
+    let existing = ''
+    try { existing = await readFile(target, 'utf8') } catch {}
+    if (existing !== css) {
+      console.error(`✗ stale: ${rel}`)
+      stale++
+    } else {
+      console.log(`✓ fresh: ${rel}`)
+    }
+  } else {
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, css, 'utf8')
+    console.log(`✓ wrote ${rel}`)
+  }
+}
+
+if (isCheck && stale > 0) {
+  console.error(`\n${stale} file(s) out of sync. Run \`node shared/tokens/build.mjs\` and commit the result.`)
+  process.exit(1)
+}
+
+if (!isCheck) {
+  console.log(`\n${TARGETS.length} files synced from tokens.json.`)
+}

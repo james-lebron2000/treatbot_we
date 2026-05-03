@@ -23,7 +23,9 @@
 
       <view class="upload-area" bindtap="chooseImage">
         <view wx:if="{{tempFiles.length === 0}}" class="upload-placeholder">
-          <text class="upload-icon">📷</text>
+          <view class="upload-icon">
+            <icon name="camera" color="brand" size="96" />
+          </view>
           <text class="upload-text">点这里选文件</text>
           <text class="upload-hint">图片或 PDF 都行，可以从聊天记录选</text>
         </view>
@@ -43,14 +45,14 @@
               bindtap="previewFile"
               data-index="{{index}}"
             >
-              <text class="file-icon">📄</text>
+              <icon name="file-text" color="brand" size="48" />
               <text class="file-name">{{item.name}}</text>
               <text class="file-type">{{item.fileType === 'pdf' ? 'PDF' : '文件'}}</text>
             </view>
             <view class="delete-btn" catchtap="deleteImage" data-index="{{index}}">×</view>
           </view>
           <view class="add-more" bindtap="chooseImage" wx:if="{{tempFiles.length < 9}}">
-            <text class="add-icon">+</text>
+            <icon name="plus" color="text-muted" size="40" />
             <text class="add-text">添加</text>
           </view>
         </view>
@@ -107,7 +109,6 @@
         <view class="progress-meta">
           <!-- Track C-3（PRD-2026Q3）：基于预期时长的 ETA 倒数，给用户「快好了」的体感 -->
           <text class="progress-eta" wx:if="{{etaText}}">{{etaText}}</text>
-          <text>您可以切到其他页面，我们会继续帮您看</text>
         </view>
       </view>
 
@@ -145,7 +146,9 @@
 
   <view wx:if="{{currentStep === 3}}" class="result-section">
     <view class="result-header">
-      <view class="success-icon">✓</view>
+      <view class="success-icon">
+        <icon name="check" color="white" size="56" strokeWidth="3" />
+      </view>
       <view class="success-title">好了</view>
       <view class="success-desc">以下是我们从病历里看到的 —— 请您过一遍，哪里不对直接改。您改过的就是对的。</view>
     </view>
@@ -262,7 +265,10 @@
   </view>
 
   <view class="tips-section">
-    <view class="tips-title">💡 小贴士</view>
+    <view class="tips-title">
+      <icon name="lightbulb" color="brand" size="32" />
+      <text class="tips-title-text">小贴士</text>
+    </view>
     <view class="tips-list">
       <text class="tip-item">• 照片清晰一点，我们看得更准</text>
       <text class="tip-item">• 出院小结、诊断证明最有帮助</text>

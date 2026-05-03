@@ -32,6 +32,8 @@
     </nav>
     <!-- PRD-2026Q3 §U5：全局求助 FAB —— 登录页 / CRO 后台不展示 -->
     <HelpFab v-if="showHelpFab" />
+    <AppDialogHost />
+    <AppToast />
   </main>
 </template>
 
@@ -40,6 +42,8 @@ import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 // Q3-红线 §B.2：漏斗埋点 SDK
 import { track } from './utils/track'
+import AppDialogHost from './components/AppDialogHost.vue'
+import AppToast from './components/AppToast.vue'
 // PRD-2026Q3 §U5：全局求助按钮，文案来自 shared/copy/help.json。
 const HelpFab = defineAsyncComponent(() => import('./components/HelpFab.vue'))
 
