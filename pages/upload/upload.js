@@ -78,12 +78,14 @@ const PROGRESS_TICK_MS = 250
 //   2.0 是"从 1% 慢慢爬"+"ETA 时刻给后端 20% 冲刺空间"的折中。
 const PROGRESS_EASE_K = 2.0
 
-// 单文件耗时基线（秒）—— 实测分布：
-//   图片 OCR：8-14s，取 11s
-//   PDF（markitdown 文本路径）：12-18s
-//   PDF（vision 路径，扫描件）：18-30s，统一按 22s 估
-const ETA_PER_IMAGE_SECONDS = 11
-const ETA_PER_PDF_SECONDS = 22
+// 单文件耗时基线（秒）—— Track D（2026-05-03 生产实测重校）：
+//   Doubao 视觉模型 580KB 中文病理 PNG → 88s（典型）
+//   多页扫描 PDF（pdftoppm 拆 3 页 + 3× vision）→ 130-150s
+//   留 5-10s 头给入队 / worker pickup / DB write
+//   原值（image=11s / pdf=22s）严重低估，用户看到进度条 92% 卡 80 秒后弹"看不懂"，
+//   三重虚假感（进度条假、系统假、结果假）。Track D 同时把客户端硬超时彻底删掉。
+const ETA_PER_IMAGE_SECONDS = 90
+const ETA_PER_PDF_SECONDS = 150
 // 多文件并行加成：服务端 queue concurrency=2，多出来的份按 0.4× 累加
 //   1 份 image：11s
 //   3 份 image：11 + 0.4×11 + 0.4×11 ≈ 19.8s
@@ -863,31 +865,55 @@ Page({
     }, this.pollIntervalMs)
   },
 
+  // Track D：根据已等待时间，给用户切换"还在工作"的同理心文案 + 拉慢轮询节奏。
+  //   - 30/min 默认限流（rateLimit.js）下，长等待时把轮询拉到 5-10s 防 429。
+  //   - 文案仅当还没进入完成态时覆盖 processingStatus；
+  //     已完成（completionHandled=true 或 currentStep=3）则不抢占进度条收尾文案。
+  LONG_WAIT_THRESHOLDS: [
+    { afterSec: 0,   text: null,                                                 intervalMs: 3000 },
+    { afterSec: 90,  text: '服务有点忙，正在仔细识别…（已 {s}s）',                  intervalMs: 5000 },
+    { afterSec: 180, text: '复杂病历需要更多时间，我们正在为您整理…（已 {s}s）',     intervalMs: 8000 },
+    { afterSec: 300, text: '这份内容比较长，请耐心稍候…（已 {s}s）',                intervalMs: 10000 }
+  ],
+
+  adjustPollIntervalForElapsed(elapsedSec) {
+    const tiers = this.LONG_WAIT_THRESHOLDS
+    let active = tiers[0]
+    for (let i = tiers.length - 1; i >= 0; i -= 1) {
+      if (elapsedSec >= tiers[i].afterSec) {
+        active = tiers[i]
+        break
+      }
+    }
+    // 节奏：单调拉慢，永不变快（429 退避后保持 10000 不被压低）
+    const next = Math.max(this.pollIntervalMs || 3000, active.intervalMs)
+    if (next !== this.pollIntervalMs) {
+      this.pollIntervalMs = next
+    }
+    // 文案：仅当尚未完成时覆盖；completionHandled / currentStep===3 / parseProgress===100 都视为完成态
+    const isFinished = this.completionHandled
+      || this.data.currentStep === 3
+      || Number(this.data.parseProgress || 0) >= 100
+    if (active.text && !isFinished) {
+      const txt = active.text.replace('{s}', `${elapsedSec}`)
+      if (this.data.processingStatus !== txt) {
+        this.setData({ processingStatus: txt })
+      }
+    }
+  },
+
   async checkParseStatus() {
     try {
-      // 修复方案 Track 3.1：90 秒硬超时（批量场景下按总数缩放，最多 180s）。
+      // Track D（2026-05-03）：彻底移除客户端硬超时。
+      //   原 90s 客户端 timeout vs 服务端实测 88s 仅 2s 余量 —— 任何抖动都让客户端先于服务端宣告失败。
+      //   新契约：服务端是终态唯一来源，仅在 status='error' 时才弹失败模态框；
+      //          客户端永不主动放弃，只随 elapsed 切文案 + 拉慢轮询节奏，给用户"系统还在工作"的同理心。
+      //   兜底：服务端 Bull `timeout: 480000`（queue.js）8 分钟 zombie protection 会发 'failed' 事件 → status='error'。
       const activeBatch = parseTask.getActiveParseBatch()
       const activeTask = parseTask.getActiveParseTask()
       const startedAt = (activeBatch && activeBatch.startedAt) || (activeTask && activeTask.startedAt)
-      if (startedAt) {
-        const elapsed = Date.now() - Number(startedAt || 0)
-        // 单文件 90s；批量 90s + 每多 1 份 +20s，封顶 180s
-        const fileCount = activeBatch ? activeBatch.fileIds.length : 1
-        const timeoutMs = Math.min(180 * 1000, 90 * 1000 + Math.max(0, fileCount - 1) * 20 * 1000)
-
-        const stuck = activeBatch
-          ? (!activeBatch.done && (activeBatch.completedCount || 0) + (activeBatch.erroredCount || 0) < fileCount)
-          : (activeTask && (activeTask.status === 'parsing' || activeTask.status === 'analyzing' || activeTask.status === 'uploading'))
-
-        if (elapsed > timeoutMs && stuck) {
-          parseTask.clearActiveParseBatch()
-          parseTask.clearActiveParseTask()
-          this.handleParseFailure({
-            errorMsg: `解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙。我们直接帮您手填关键信息？`
-          })
-          return
-        }
-      }
+      const elapsedSec = startedAt ? Math.floor((Date.now() - Number(startedAt)) / 1000) : 0
+      this.adjustPollIntervalForElapsed(elapsedSec)
 
       // 批量分支：用 /api/medical/parse-status-batch 一次拿全部状态
       if (this.data.isBatchParse && activeBatch) {
