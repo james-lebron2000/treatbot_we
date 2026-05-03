@@ -229,6 +229,13 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
   try {
     // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
     // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
+    // Track D（2026-05-03）：每次 attempt 8 分钟硬上限，zombie protection。
+    //   - Doubao 单次 HTTP timeout 已是 180s（llmClient.js）；正常 88-180s 完成。
+    //   - 加这条只为防御 worker 内部死锁 / HTTP socket 不释放等极端情况；
+    //     触发后 Bull 会发 'failed' 事件，handleOcrJobFailed 写 status='error'，
+    //     客户端轮询读到 status='error' 才弹失败模态框。
+    //   - 客户端已彻底删除硬超时（pages/upload/upload.js Track D），
+    //     服务端是终态唯一来源；这条 timeout 是兜底，不是默认路径。
     const job = await Promise.race([
       ocrQueue.add(taskData, {
         attempts: OCR_JOB_ATTEMPTS,
@@ -236,6 +243,7 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
           type: 'ocrExponential',
           delay: OCR_JOB_BACKOFF_DELAY
         },
+        timeout: 480000,
         removeOnComplete: 10,
         removeOnFail: false
       }),
