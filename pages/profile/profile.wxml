@@ -1,7 +1,8 @@
 <view class="container">
-  <view class="user-card">
+  <!-- 用户卡 —— Landing 同款 .hero-shell radial 浅光（替代之前 dark-blue gradient） -->
+  <view class="user-card hero-shell">
     <view class="user-card-top">
-      <view class="identity-badge">ACCOUNT</view>
+      <view class="identity-badge">我的账户</view>
     </view>
     <view class="user-card-main">
       <image class="avatar" src="{{userInfo.avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill"></image>
@@ -14,30 +15,39 @@
 
   <view class="privacy-promise-card">
     <view class="privacy-promise-head">
-      <text class="privacy-promise-icon">🔒</text>
+      <icon name="lock" color="brand" size="44" strokeWidth="2" />
       <text class="privacy-promise-title">数愈健康承诺</text>
     </view>
     <view class="privacy-promise-bullets">
-      <text class="privacy-promise-bullet">✓ 我们不存储您的任何隐私数据</text>
-      <text class="privacy-promise-bullet">✓ 所有信息由您自己保管</text>
-      <text class="privacy-promise-bullet">✓ 您随时可以带走或删除</text>
+      <view class="privacy-promise-bullet">
+        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+        <text class="privacy-promise-bullet-text">我们不存储您的任何隐私数据</text>
+      </view>
+      <view class="privacy-promise-bullet">
+        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+        <text class="privacy-promise-bullet-text">所有信息由您自己保管</text>
+      </view>
+      <view class="privacy-promise-bullet">
+        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+        <text class="privacy-promise-bullet-text">您随时可以带走或删除</text>
+      </view>
     </view>
-    <text class="privacy-promise-link" bindtap="showPrivacyPolicy">了解我们如何处理您的数据 →</text>
+    <view class="privacy-promise-link" bindtap="showPrivacyPolicy">
+      <text class="privacy-promise-link-text">了解我们如何处理您的数据</text>
+      <icon name="arrow-right" color="brand" size="24" />
+    </view>
   </view>
 
   <view class="stats-grid">
     <view class="stats-item" bindtap="goToRecords">
-      <text class="stats-kicker">Records</text>
       <text class="stats-num">{{stats.records}}</text>
       <text class="stats-label">病历</text>
     </view>
     <view class="stats-item" bindtap="goToMatches">
-      <text class="stats-kicker">Matches</text>
       <text class="stats-num">{{stats.matches}}</text>
       <text class="stats-label">找到的新药</text>
     </view>
     <view class="stats-item" bindtap="goToApplications">
-      <text class="stats-kicker">Applies</text>
       <text class="stats-num">{{stats.applications}}</text>
       <text class="stats-label">正在联络的</text>
     </view>
@@ -48,22 +58,34 @@
     <view class="menu-subtitle">看病历、看找到的新药、看研究团队对接进度。</view>
     <view class="menu-list">
       <view class="menu-item" bindtap="goToRecords">
-        <view class="menu-icon">档</view>
-        <text class="menu-text">我的病历</text>
-        <text class="menu-meta">已整理好</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-brand">
+          <icon name="clipboard-list" color="brand" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">我的病历</text>
+          <text class="menu-meta">已整理好</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="goToMatches">
-        <view class="menu-icon">药</view>
-        <text class="menu-text">找到的新药</text>
-        <text class="menu-meta">能用的新药清单</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-lilac">
+          <icon name="pill" color="lilac" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">找到的新药</text>
+          <text class="menu-meta">能用的新药清单</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="goToApplications">
-        <view class="menu-icon">报</view>
-        <text class="menu-text">正在联络的新药</text>
-        <text class="menu-meta">看看到哪一步了</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-mint">
+          <icon name="phone-call" color="mint" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">正在联络的新药</text>
+          <text class="menu-meta">看看到哪一步了</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
     </view>
   </view>
@@ -73,41 +95,65 @@
     <view class="menu-subtitle">随时可以带走或删除，所有信息由您自己保管。</view>
     <view class="menu-list">
       <view class="menu-item" bindtap="showPrivacyPolicy">
-        <view class="menu-icon">隐</view>
-        <text class="menu-text">了解我们如何处理您的数据</text>
-        <text class="menu-meta">详细政策</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-brand">
+          <icon name="shield-check" color="brand" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">了解我们如何处理您的数据</text>
+          <text class="menu-meta">详细政策</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <!-- Q3-红线 §A.2：合规自助三件套 -->
       <view class="menu-item" bindtap="goToConsent">
-        <view class="menu-icon">同</view>
-        <text class="menu-text">我的同意记录</text>
-        <text class="menu-meta">查看授权</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-brand">
+          <icon name="check-circle" color="brand" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">我的同意记录</text>
+          <text class="menu-meta">查看授权</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="exportMyData">
-        <view class="menu-icon">导</view>
-        <text class="menu-text">导出我的数据</text>
-        <text class="menu-meta">复制到剪贴板</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-mint">
+          <icon name="upload-cloud" color="mint" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">导出我的数据</text>
+          <text class="menu-meta">复制到剪贴板</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="deleteMyAccount">
-        <view class="menu-icon">销</view>
-        <text class="menu-text">注销账号</text>
-        <text class="menu-meta">不可恢复</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-red">
+          <icon name="trash-2" color="red" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">注销账号</text>
+          <text class="menu-meta">不可恢复</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="contactSupport">
-        <view class="menu-icon">联</view>
-        <text class="menu-text">遇到问题找我们</text>
-        <text class="menu-meta">客服支持</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-mint">
+          <icon name="phone-call" color="mint" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">遇到问题找我们</text>
+          <text class="menu-meta">客服支持</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="menu-item" bindtap="aboutUs">
-        <view class="menu-icon">介</view>
-        <text class="menu-text">关于数愈健康</text>
-        <text class="menu-meta">我们是谁</text>
-        <text class="menu-arrow">›</text>
+        <view class="menu-icon menu-icon-brand">
+          <icon name="lightbulb" color="brand" size="36" />
+        </view>
+        <view class="menu-text-wrap">
+          <text class="menu-text">关于数愈健康</text>
+          <text class="menu-meta">我们是谁</text>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
     </view>
   </view>

@@ -50,7 +50,60 @@ const PATHS = {
   lightbulb:
     '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>' +
     '<path d="M9 18h6"/>' +
-    '<path d="M10 22h4"/>'
+    '<path d="M10 22h4"/>',
+
+  // Q3 视觉对齐 §C.1：第二批 12 个 —— 替换 emoji / 中文字符 / `›` / `✓` 等所有非 Lucide 图标
+  camera:
+    '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>' +
+    '<circle cx="12" cy="13" r="3"/>',
+
+  'upload-cloud':
+    '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>' +
+    '<path d="M12 12v9"/>' +
+    '<path d="m16 16-4-4-4 4"/>',
+
+  check:
+    '<polyline points="20 6 9 17 4 12"/>',
+
+  'check-circle':
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="m9 12 2 2 4-4"/>',
+
+  'x-circle':
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<line x1="15" y1="9" x2="9" y2="15"/>' +
+    '<line x1="9" y1="9" x2="15" y2="15"/>',
+
+  'alert-circle':
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<line x1="12" y1="8" x2="12" y2="12"/>' +
+    '<line x1="12" y1="16" x2="12.01" y2="16"/>',
+
+  'chevron-right':
+    '<polyline points="9 18 15 12 9 6"/>',
+
+  'arrow-right':
+    '<line x1="5" y1="12" x2="19" y2="12"/>' +
+    '<polyline points="12 5 19 12 12 19"/>',
+
+  'trash-2':
+    '<polyline points="3 6 5 6 21 6"/>' +
+    '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' +
+    '<path d="M10 11v6"/>' +
+    '<path d="M14 11v6"/>' +
+    '<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+
+  plus:
+    '<line x1="12" y1="5" x2="12" y2="19"/>' +
+    '<line x1="5" y1="12" x2="19" y2="12"/>',
+
+  user:
+    '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>' +
+    '<circle cx="12" cy="7" r="4"/>',
+
+  lock:
+    '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>' +
+    '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
 }
 
 // 与 shared/tokens/tokens.json 保持同步；改色优先改 tokens.json 再回填这里。

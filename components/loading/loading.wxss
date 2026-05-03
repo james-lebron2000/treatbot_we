@@ -1,10 +1,11 @@
-/** components/loading/loading.wxss **/
+/** components/loading/loading.wxss
+ * Q3 视觉对齐 §C.4：删 Ant Design 青绿渐变 → 三个 brand 实色小圆 + bounce。 */
 .loading-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40rpx;
+  padding: 32rpx;             /* --s-4 */
 }
 
 .loading-container.fullscreen {
@@ -13,20 +14,20 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   z-index: 9999;
 }
 
 .loading-animation {
   display: flex;
-  gap: 16rpx;
-  margin-bottom: 20rpx;
+  gap: 16rpx;                 /* --s-2 */
+  margin-bottom: 16rpx;
 }
 
 .loading-circle {
   width: 20rpx;
   height: 20rpx;
-  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  background: var(--brand);
   border-radius: 50%;
   animation: loading-bounce 1.4s ease-in-out infinite both;
 }
@@ -40,6 +41,6 @@
 }
 
 .loading-text {
-  font-size: 36rpx;
-  color: #374151;
+  font-size: 28rpx;           /* --fs-callout */
+  color: var(--text-dim);
 }

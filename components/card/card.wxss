@@ -1,14 +1,16 @@
-/** components/card/card.wxss **/
+/** components/card/card.wxss
+ * Q3 视觉对齐 §C.2：Landing 同款卡 —— 实白 + 1px 细边 + 32rpx 圆角，默认无阴影。
+ * 颜色用 var()，尺寸/阴影写 rpx（CSS variable 中的 px 不随屏宽缩放）。 */
 .card {
-  background: #fff;
-  border-radius: 16rpx;
+  background: var(--bg);
+  border-radius: 32rpx;       /* --r-lg */
   box-sizing: border-box;
 }
 
 .card.shadow {
-  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2rpx 4rpx rgba(15, 23, 42, 0.04), 0 2rpx 6rpx rgba(15, 23, 42, 0.06);
 }
 
 .card.border {
-  border: 1rpx solid #f0f0f0;
+  border: 2rpx solid var(--line);
 }

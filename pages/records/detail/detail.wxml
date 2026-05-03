@@ -122,7 +122,10 @@
       <view class="match-card" wx:for="{{matches}}" wx:key="id">
         <view class="match-card-head">
           <view class="match-card-name-group">
-            <text class="match-card-name">💊 {{item.drugName}}<text class="match-card-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            <view class="match-card-name-row">
+              <icon name="pill" color="lilac" size="32" />
+              <text class="match-card-name">{{item.drugName}}<text class="match-card-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            </view>
             <text class="match-card-class" wx:if="{{item.drugClass}}">{{item.drugClass}}</text>
           </view>
           <view class="match-score-badge level-{{item.matchTone}}">

@@ -1,15 +1,20 @@
-/** 公共样式 **/
+/** pages/upload/upload.wxss
+ * Q3 视觉对齐 §E.2（Plan web-h5-cozy-gizmo V2）：
+ *   - 配色：青绿 #1b9c85 / 琥珀 #e6a93d 全替为 var(--brand)；状态色用 *-text companion
+ *   - 卡片：实白 + 1rpx solid var(--line) + 32rpx 圆角，删 glass morphism / backdrop-filter
+ *   - Progress：实色 brand fill（去 3 色渐变）+ 慢速浅 shine
+ *   - Track C-3 v2 进度模拟（线性 60s）逻辑保持不动 */
 
-/* 上传页面样式 */
+/* step indicator -------------------------------------------------------- */
 .step-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 22rpx 24rpx;
+  padding: 24rpx;
   margin-bottom: 24rpx;
-  border-radius: 24rpx;
-  background: linear-gradient(135deg, #fff8ef 0%, #f7fbff 56%, #eef7f3 100%);
-  box-shadow: 0 10rpx 30rpx rgba(28, 63, 45, 0.06);
+  border-radius: 32rpx;       /* --r-lg */
+  background: var(--bg);
+  border: 2rpx solid var(--line);
 }
 
 .step {
@@ -20,57 +25,78 @@
 }
 
 .step-dot {
-  width: 58rpx;
-  height: 58rpx;
-  line-height: 58rpx;
+  width: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
   text-align: center;
-  background: #f0efe9;
-  color: #1e293b;
+  background: var(--bg-soft);
+  color: var(--text-muted);
   border-radius: 50%;
   font-size: 28rpx;
   font-weight: 700;
-  margin-bottom: 14rpx;
-  border: 2rpx solid rgba(16, 24, 40, 0.08);
+  margin-bottom: 12rpx;
+  border: 2rpx solid var(--line);
 }
 
 .step.active .step-dot {
-  background: linear-gradient(135deg, #1b9c85 0%, #0f766e 100%);
+  background: var(--brand);
   color: #fff;
-  border-color: transparent;
-  box-shadow: 0 8rpx 18rpx rgba(15, 118, 110, 0.22);
+  border-color: var(--brand);
 }
 
 .step-text {
-  font-size: 26rpx;
-  color: #334155;
-  letter-spacing: 1rpx;
+  font-size: 24rpx;
+  color: var(--text-muted);
 }
 
 .step.active .step-text {
-  color: #11453d;
+  color: var(--brand);
   font-weight: 600;
 }
 
 .step-line {
-  width: 70rpx;
-  height: 8rpx;
-  background: rgba(17, 69, 61, 0.08);
+  width: 64rpx;
+  height: 4rpx;
+  background: var(--line);
   border-radius: 999rpx;
-  margin: 0 20rpx;
-  margin-bottom: 46rpx;
+  margin: 0 16rpx 44rpx;
 }
 
 .step-line.active {
-  background: linear-gradient(90deg, #1b9c85 0%, #e6a93d 100%);
+  background: var(--brand);
 }
 
-/* 上传区域 */
+/* upload section ------------------------------------------------------- */
+.upload-section {
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 32rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+}
+
+.upload-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8rpx;
+  line-height: 1.4;
+}
+
+.upload-desc {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin-bottom: 24rpx;
+}
+
+/* upload area --------------------------------------------------------- */
 .upload-area {
-  background: #fff;
-  border: 2rpx dashed #d9d9d9;
-  border-radius: 16rpx;
-  padding: 60rpx 40rpx;
-  margin-bottom: 30rpx;
+  background: var(--bg-soft);
+  border: 4rpx dashed var(--brand-soft);
+  border-radius: 32rpx;
+  padding: 56rpx 32rpx;
+  margin-bottom: 24rpx;
   text-align: center;
 }
 
@@ -81,25 +107,28 @@
 }
 
 .upload-icon {
-  font-size: 64rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .upload-text {
   display: block;
-  font-size: 34rpx;
-  color: #0f172a;
-  margin-bottom: 12rpx;
+  font-size: 32rpx;
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 8rpx;
 }
 
 .upload-hint {
   display: block;
   font-size: 26rpx;
-  color: #1e293b;
+  color: var(--text-muted);
   line-height: 1.55;
 }
 
-/* 图片预览 */
+/* preview list -------------------------------------------------------- */
 .image-preview-list {
   display: flex;
   flex-wrap: wrap;
@@ -115,31 +144,27 @@
 .preview-item image {
   width: 100%;
   height: 100%;
-  border-radius: 12rpx;
+  border-radius: 16rpx;
 }
 
 .file-preview {
   width: 100%;
   height: 100%;
-  border-radius: 12rpx;
-  background: #f7faff;
-  border: 1rpx solid #d6e4ff;
+  border-radius: 16rpx;
+  background: var(--bg);
+  border: 2rpx solid var(--line);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 12rpx;
   box-sizing: border-box;
-}
-
-.file-icon {
-  font-size: 42rpx;
-  margin-bottom: 8rpx;
+  gap: 8rpx;
 }
 
 .file-name {
-  font-size: 26rpx;
-  color: #1e293b;
+  font-size: 24rpx;
+  color: var(--text);
   line-height: 1.3;
   text-align: center;
   display: -webkit-box;
@@ -150,9 +175,10 @@
 }
 
 .file-type {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #1677ff;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--brand);
+  font-weight: 600;
 }
 
 .delete-btn {
@@ -163,7 +189,7 @@
   height: 40rpx;
   line-height: 36rpx;
   text-align: center;
-  background: #ff4d4f;
+  background: var(--red);
   color: #fff;
   border-radius: 50%;
   font-size: 30rpx;
@@ -176,38 +202,35 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2rpx dashed #d9d9d9;
-  border-radius: 12rpx;
-}
-
-.add-icon {
-  font-size: 42rpx;
-  color: #374151;
-  margin-bottom: 8rpx;
+  border: 4rpx dashed var(--brand-soft);
+  border-radius: 16rpx;
+  background: var(--bg-soft);
+  gap: 4rpx;
 }
 
 .add-text {
-  font-size: 26rpx;
-  color: #374151;
+  font-size: 24rpx;
+  color: var(--text-muted);
 }
 
 .section-label {
   font-size: 30rpx;
   font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 20rpx;
+  color: var(--text);
+  margin-bottom: 16rpx;
 }
 
-/* 备注 */
+/* remark section ------------------------------------------------------ */
 .remark-section {
-  margin-bottom: 30rpx;
+  margin-bottom: 24rpx;
 }
 
 .remark-input {
   width: 100%;
   height: 200rpx;
-  background: #f5f5f5;
-  border-radius: 12rpx;
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: 16rpx;
   padding: 20rpx;
   font-size: 28rpx;
   box-sizing: border-box;
@@ -216,36 +239,38 @@
 .remark-count {
   text-align: right;
   font-size: 24rpx;
-  color: #374151;
+  color: var(--text-muted);
   margin-top: 8rpx;
 }
 
-/* 处理中动画 */
+/* processing section -------------------------------------------------- */
 .processing-section {
   padding: 24rpx 0 12rpx;
 }
 
 .processing-shell {
-  background:
-    radial-gradient(circle at top right, rgba(230, 169, 61, 0.18), transparent 28%),
-    linear-gradient(165deg, #fffaf1 0%, #f8fcff 52%, #f2fbf6 100%);
-  border-radius: 28rpx;
-  padding: 38rpx 28rpx 30rpx;
-  box-shadow: 0 18rpx 40rpx rgba(16, 24, 40, 0.08);
-  border: 1rpx solid rgba(17, 69, 61, 0.08);
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 32rpx;
+  padding: 40rpx 28rpx 32rpx;
+}
+
+.processing-hero {
+  text-align: center;
+  margin-bottom: 32rpx;
 }
 
 .processing-animation {
   display: flex;
   justify-content: center;
-  gap: 20rpx;
-  margin-bottom: 28rpx;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
 }
 
 .animation-circle {
-  width: 22rpx;
-  height: 22rpx;
-  background: linear-gradient(135deg, #1b9c85 0%, #e6a93d 100%);
+  width: 20rpx;
+  height: 20rpx;
+  background: var(--brand);
   border-radius: 50%;
   animation: bounce 1.4s ease-in-out infinite both;
 }
@@ -259,31 +284,25 @@
 }
 
 .processing-title {
-  font-size: 38rpx;
+  font-size: 36rpx;
   font-weight: 700;
-  color: #17312b;
-  margin-bottom: 14rpx;
+  color: var(--text);
+  margin-bottom: 8rpx;
   line-height: 1.45;
-  text-align: center;
 }
 
 .processing-desc {
   font-size: 28rpx;
-  color: #1e293b;
-  margin-bottom: 32rpx;
+  color: var(--text-dim);
   line-height: 1.6;
-  text-align: center;
 }
 
-.progress-section {
-  margin-bottom: 28rpx;
-}
-
+/* progress panel ------------------------------------------------------ */
 .progress-panel {
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 22rpx;
-  padding: 24rpx 24rpx 20rpx;
-  border: 1rpx solid rgba(17, 69, 61, 0.06);
+  background: var(--bg-soft);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  border: 2rpx solid var(--line);
   margin-bottom: 24rpx;
 }
 
@@ -291,36 +310,37 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 18rpx;
+  margin-bottom: 16rpx;
 }
 
 .progress-kicker {
   font-size: 26rpx;
-  color: #334155;
-  letter-spacing: 2rpx;
+  color: var(--text-dim);
+  letter-spacing: 1rpx;
 }
 
 .progress-number {
   font-size: 48rpx;
   line-height: 1;
   font-weight: 800;
-  color: #11453d;
+  color: var(--brand);
+  letter-spacing: -1rpx;
 }
 
 .progress-bar {
   position: relative;
-  height: 18rpx;
-  background: rgba(17, 69, 61, 0.1);
+  height: 16rpx;
+  background: var(--brand-soft);
   border-radius: 999rpx;
   overflow: hidden;
-  margin-bottom: 14rpx;
+  margin-bottom: 12rpx;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #1b9c85 0%, #24b4a3 48%, #e6a93d 100%);
+  background: var(--brand);            /* 实色，删 3 色渐变 */
   border-radius: 999rpx;
-  transition: width 0.3s;
+  transition: width 0.3s ease;
 }
 
 .progress-shine {
@@ -329,8 +349,8 @@
   left: -30%;
   width: 30%;
   height: 100%;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.55) 48%, transparent 100%);
-  animation: progressShine 1.8s linear infinite;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 48%, transparent 100%);
+  animation: progressShine 3s linear infinite;     /* 慢速浅 shine */
 }
 
 @keyframes progressShine {
@@ -339,79 +359,79 @@
 }
 
 .progress-meta {
-  font-size: 26rpx;
-  color: #334155;
+  font-size: 24rpx;
+  color: var(--text-dim);
   line-height: 1.5;
 }
 
-/* Track C-3（PRD-2026Q3）：ETA 倒数文案，比"切到其他页面"提示更醒目 */
 .progress-eta {
   display: block;
-  font-size: 28rpx;
-  color: #12796b;
+  font-size: 26rpx;
+  color: var(--brand);
   font-weight: 600;
-  margin-bottom: 6rpx;
+  margin-bottom: 4rpx;
 }
 
+/* background tip ------------------------------------------------------ */
 .background-tip {
-  margin-bottom: 28rpx;
-  padding: 22rpx 24rpx;
-  border-radius: 20rpx;
-  background: rgba(18, 121, 107, 0.08);
-  border: 1rpx solid rgba(18, 121, 107, 0.12);
+  margin-bottom: 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 24rpx;
+  background: var(--brand-soft);
+  border: 2rpx solid transparent;
   text-align: left;
 }
 
 .background-tip-title {
   display: block;
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 600;
-  color: #11453d;
-  margin-bottom: 10rpx;
+  color: var(--brand);
+  margin-bottom: 8rpx;
 }
 
 .background-tip-text {
   display: block;
   font-size: 26rpx;
-  color: #1e293b;
-  line-height: 1.6;
+  color: var(--text-dim);
+  line-height: 1.55;
 }
 
+/* parse step cards ---------------------------------------------------- */
 .parse-steps {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  margin-bottom: 26rpx;
+  margin-bottom: 24rpx;
 }
 
 .parse-step-card {
   display: flex;
   align-items: flex-start;
-  gap: 18rpx;
+  gap: 16rpx;
   padding: 20rpx 18rpx;
-  border-radius: 20rpx;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1rpx solid rgba(17, 69, 61, 0.08);
+  border-radius: 24rpx;
+  background: var(--bg);
+  border: 2rpx solid var(--line);
   transition: all 0.3s;
 }
 
 .parse-step-card.current {
-  background: linear-gradient(135deg, rgba(27, 156, 133, 0.14) 0%, rgba(230, 169, 61, 0.12) 100%);
-  border-color: rgba(27, 156, 133, 0.26);
-  box-shadow: 0 12rpx 24rpx rgba(17, 69, 61, 0.08);
+  background: var(--brand-soft);
+  border-color: var(--brand);
 }
 
 .parse-step-card.completed {
-  background: rgba(242, 251, 246, 0.96);
-  border-color: rgba(27, 156, 133, 0.18);
+  background: var(--mint-soft);
+  border-color: transparent;
 }
 
 .parse-step-badge {
   width: 56rpx;
   height: 56rpx;
   border-radius: 50%;
-  background: #f1efe8;
-  color: #1e293b;
+  background: var(--bg-soft);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -421,12 +441,12 @@
 }
 
 .parse-step-card.current .parse-step-badge {
-  background: linear-gradient(135deg, #1b9c85 0%, #e6a93d 100%);
+  background: var(--brand);
   color: #fff;
 }
 
 .parse-step-card.completed .parse-step-badge {
-  background: #1b9c85;
+  background: var(--mint);
   color: #fff;
 }
 
@@ -439,90 +459,84 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20rpx;
-  margin-bottom: 8rpx;
+  gap: 16rpx;
+  margin-bottom: 4rpx;
 }
 
 .parse-step-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #17312b;
+  color: var(--text);
 }
 
 .parse-step-state {
-  font-size: 24rpx;
+  font-size: 22rpx;
   line-height: 1;
-  padding: 8rpx 12rpx;
+  padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  background: #edf1ee;
-  color: #334155;
+  background: var(--mint-soft);
+  color: var(--mint-text);
+  font-weight: 600;
 }
 
 .parse-step-state.current {
-  background: rgba(230, 169, 61, 0.18);
-  color: #9a6200;
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .parse-step-state.pending {
-  background: #f2f1ec;
-  color: #475569;
+  background: var(--bg-soft);
+  color: var(--text-muted);
 }
 
 .parse-step-desc {
   display: block;
   font-size: 26rpx;
-  color: #334155;
-  line-height: 1.6;
+  color: var(--text-dim);
+  line-height: 1.55;
 }
 
-.background-actions {
-  display: flex;
-  gap: 20rpx;
-  margin-top: 34rpx;
-}
-
-.background-actions .btn {
-  flex: 1;
-}
-
-/* 结果页面 */
+/* result section ----------------------------------------------------- */
 .result-section {
-  padding: 56rpx 28rpx;
+  padding: 48rpx 24rpx;
 }
 
 .result-header {
   text-align: center;
-  margin-bottom: 30rpx;
+  margin-bottom: 32rpx;
 }
 
 .success-icon {
-  width: 120rpx;
-  height: 120rpx;
-  line-height: 120rpx;
-  background: #52c41a;
+  width: 112rpx;
+  height: 112rpx;
+  background: var(--mint);
   color: #fff;
   border-radius: 50%;
-  font-size: 56rpx;
-  margin: 0 auto 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24rpx;
 }
 
 .success-title {
-  font-size: 38rpx;
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 14rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12rpx;
 }
 
 .success-desc {
   font-size: 28rpx;
-  color: #1e293b;
+  color: var(--text-dim);
+  line-height: 1.55;
 }
 
+/* summary card ------------------------------------------------------- */
 .summary-card {
-  background: linear-gradient(145deg, #f6ffed 0%, #f2fbff 100%);
-  border: 1rpx solid #d6f5df;
-  border-radius: 18rpx;
-  padding: 26rpx;
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 32rpx;
+  padding: 24rpx;
   margin-bottom: 24rpx;
 }
 
@@ -534,30 +548,31 @@
 }
 
 .summary-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #237804;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .summary-score {
-  font-size: 38rpx;
+  font-size: 36rpx;
   font-weight: 700;
-  color: #1890ff;
+  color: var(--brand);
 }
 
 .summary-progress-track {
   width: 100%;
-  height: 18rpx;
-  border-radius: 10rpx;
-  background: #e8edf3;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
   overflow: hidden;
   margin-bottom: 16rpx;
 }
 
 .summary-progress-fill {
   height: 100%;
-  border-radius: 10rpx;
-  background: linear-gradient(90deg, #13c2c2 0%, #1890ff 100%);
+  border-radius: 999rpx;
+  background: var(--brand);
+  transition: width 0.3s ease;
 }
 
 .summary-metrics {
@@ -569,41 +584,41 @@
 }
 
 .summary-metric {
-  font-size: 28rpx;
-  color: #0f172a;
+  font-size: 26rpx;
+  color: var(--text-dim);
 }
 
 .summary-metric.warning {
-  color: #d48806;
+  color: var(--amber-text);
   font-weight: 600;
 }
 
 .summary-metric.success {
-  color: #389e0d;
+  color: var(--mint-text);
   font-weight: 600;
 }
 
 .summary-note {
   display: block;
   margin-top: 12rpx;
-  font-size: 26rpx;
-  color: #334155;
+  font-size: 24rpx;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
+/* structured sections ------------------------------------------------ */
 .structured-sections {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
-  margin-bottom: 26rpx;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
 }
 
 .structured-section-card {
-  background: #fff;
-  border-radius: 16rpx;
+  background: var(--bg);
+  border-radius: 32rpx;
   padding: 24rpx;
-  border: 1rpx solid #f0f0f0;
-  box-shadow: 0 8rpx 20rpx rgba(0, 0, 0, 0.04);
+  border: 2rpx solid var(--line);
 }
 
 .structured-section-head {
@@ -614,17 +629,18 @@
 }
 
 .structured-section-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .structured-section-count {
-  font-size: 26rpx;
-  color: #1677ff;
-  background: #e6f4ff;
+  font-size: 22rpx;
+  color: var(--brand);
+  background: var(--brand-soft);
   padding: 6rpx 14rpx;
   border-radius: 999rpx;
+  font-weight: 600;
 }
 
 .structured-field {
@@ -632,7 +648,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 14rpx;
-  border-top: 1rpx solid #f5f5f5;
+  border-top: 2rpx solid var(--line);
   padding: 16rpx 0;
 }
 
@@ -642,19 +658,19 @@
 }
 
 .structured-field.is-missing {
-  background: #fffaf0;
-  border-radius: 10rpx;
+  background: var(--amber-soft);
+  border-radius: 16rpx;
   padding: 14rpx 12rpx;
 }
 
 .structured-field-left {
-  min-width: 230rpx;
+  min-width: 220rpx;
   max-width: 360rpx;
 }
 
 .structured-field-label {
   font-size: 28rpx;
-  color: #1e293b;
+  color: var(--text-dim);
   line-height: 1.5;
 }
 
@@ -666,84 +682,94 @@
 }
 
 .field-tag {
-  font-size: 22rpx;
+  font-size: 20rpx;
   line-height: 1;
-  padding: 7rpx 10rpx;
+  padding: 6rpx 10rpx;
   border-radius: 999rpx;
+  font-weight: 600;
 }
 
 .field-tag.required {
-  color: #0958d9;
-  background: #e6f4ff;
+  color: var(--brand);
+  background: var(--brand-soft);
 }
 
 .field-tag.missing {
-  color: #ad6800;
-  background: #fff2e8;
+  color: var(--amber-text);
+  background: var(--amber-soft);
 }
 
 .structured-field-value {
   flex: 1;
   text-align: right;
-  font-size: 30rpx;
-  color: #0f172a;
+  font-size: 28rpx;
+  color: var(--text);
   font-weight: 500;
   line-height: 1.5;
   word-break: break-all;
 }
 
-/* 提示 */
+/* tips ---------------------------------------------------------------- */
 .tips-section {
-  background: #e6f7ff;
-  border-radius: 12rpx;
+  background: var(--brand-soft);
+  border-radius: 24rpx;
   padding: 24rpx;
-  margin-bottom: 40rpx;
+  margin-bottom: 32rpx;
 }
 
 .tips-title {
-  font-size: 30rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 28rpx;
   font-weight: 600;
-  color: #1890ff;
-  margin-bottom: 16rpx;
+  color: var(--brand);
+  margin-bottom: 12rpx;
+}
+
+.tips-title-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--brand);
+  line-height: 1;
 }
 
 .tips-list {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 8rpx;
 }
 
 .tip-item {
-  font-size: 28rpx;
-  color: #1e293b;
-  line-height: 1.6;
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: 1.55;
 }
 
-/* 操作栏 */
+/* action bar ---------------------------------------------------------- */
 .action-bar {
   display: flex;
-  gap: 20rpx;
-  padding: 20rpx 0;
+  gap: 16rpx;
+  padding: 16rpx 0;
 }
 
 /* Track C-2（PRD-2026Q3）：第三步（结果页）的 action-bar 在 missingFields 较多时
-   会被 gap-section 顶到屏外，主按钮「看看为家人找到的新药」无法直接点。改为 sticky
-   到底，并在背景上加微阴影区分 gap-section 黄底，让用户随时能看到 CTA。
-   备注：第一步上传页的 action-bar 没有 gap-section 同台，sticky 也无害（仍贴底）。 */
+   会被 gap-section 顶到屏外。改为 sticky 到底，并在背景上加微阴影区分 gap-section
+   黄底，让用户随时能看到 CTA。 */
 .result-section .action-bar {
   position: sticky;
   bottom: 0;
   margin-top: 24rpx;
   padding: 24rpx 0;
-  background: #fafafa;
-  box-shadow: 0 -4rpx 12rpx rgba(0, 0, 0, 0.04);
+  background: var(--bg-soft);
+  box-shadow: 0 -4rpx 12rpx rgba(15, 23, 42, 0.04);
   z-index: 10;
 }
 
 .action-bar .btn {
   flex: 1;
-  margin-bottom: 20rpx;
-  height: 98rpx;
+  margin-bottom: 0;
+  height: 96rpx;
   font-size: 32rpx;
 }
 
@@ -751,80 +777,14 @@
   opacity: 0.5;
 }
 
-.upload-title {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 12rpx;
-  line-height: 1.4;
-}
-
-.upload-desc {
-  font-size: 28rpx;
-  color: #1e293b;
-  line-height: 1.5;
-  margin-bottom: 28rpx;
-}
-
+/* gap section（缺字段补全） ------------------------------------------- */
 .gap-section {
-  background: #fff7e6;
-  border-radius: 16rpx;
+  background: var(--amber-soft);
+  border-radius: 32rpx;
   padding: 24rpx;
-  margin-bottom: 30rpx;
+  margin-bottom: 24rpx;
 }
 
-.gap-title {
-  font-size: 30rpx;
-  color: #d46b08;
-  font-weight: 600;
-  margin-bottom: 20rpx;
-}
-
-.gap-item {
-  margin-bottom: 20rpx;
-}
-
-.gap-item:last-child {
-  margin-bottom: 0;
-}
-
-.gap-label {
-  font-size: 28rpx;
-  color: #92400e;
-  margin-bottom: 12rpx;
-}
-
-.gap-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-
-.gap-option {
-  padding: 12rpx 20rpx;
-  border-radius: 24rpx;
-  border: 1rpx solid #ffd591;
-  color: #92400e;
-  font-size: 26rpx;
-}
-
-.gap-option.active {
-  background: #fa8c16;
-  color: #fff;
-  border-color: #fa8c16;
-}
-
-.gap-input {
-  background: #fff;
-  border: 1rpx solid #ffd591;
-  border-radius: 10rpx;
-  padding: 18rpx 20rpx;
-  font-size: 28rpx;
-}
-
-/* Track C-2（PRD-2026Q3）：missingFields 多到 8+ 时的 UX 重做 ——
-     头部进度条 + 分组折叠卡片，让用户一眼看到「还差几项」+ 在不展开全部的情况下
-     仍能看到底部 sticky CTA。 */
 .gap-header {
   display: flex;
   align-items: center;
@@ -840,33 +800,40 @@
   min-width: 0;
 }
 
+.gap-title {
+  font-size: 30rpx;
+  color: var(--amber-text);
+  font-weight: 700;
+}
+
 .gap-subtitle {
-  font-size: 24rpx;
-  color: #92400e;
-  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--amber-text);
+  margin-top: 4rpx;
+  opacity: 0.8;
 }
 
 .gap-progress {
   width: 180rpx;
   height: 10rpx;
-  background: #fff1d6;
-  border-radius: 6rpx;
+  background: rgba(180, 83, 9, 0.18);
+  border-radius: 999rpx;
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .gap-progress-fill {
   height: 100%;
-  background: #fa8c16;
+  background: var(--amber);
   transition: width 240ms ease-out;
 }
 
 .gap-group-card {
-  background: #fff;
-  border-radius: 14rpx;
+  background: var(--bg);
+  border-radius: 24rpx;
   margin-bottom: 16rpx;
-  padding: 22rpx 24rpx;
-  border: 1rpx solid #ffe7ba;
+  padding: 20rpx 24rpx;
+  border: 2rpx solid rgba(180, 83, 9, 0.16);
 }
 
 .gap-group-card:last-child {
@@ -881,26 +848,36 @@
 
 .gap-group-title {
   font-size: 28rpx;
-  color: #1e293b;
+  color: var(--text);
   font-weight: 600;
   flex: 1;
 }
 
 .gap-group-count {
-  font-size: 24rpx;
-  color: #d46b08;
-  background: #fff7e6;
-  padding: 4rpx 14rpx;
-  border-radius: 12rpx;
+  font-size: 22rpx;
+  color: var(--amber-text);
+  background: var(--amber-soft);
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-weight: 600;
 }
 
 .gap-group-toggle {
-  font-size: 24rpx;
-  color: #fa8c16;
+  font-size: 22rpx;
+  color: var(--amber);
+  font-weight: 600;
 }
 
 .gap-group-body {
-  margin-top: 18rpx;
+  margin-top: 16rpx;
+}
+
+.gap-item {
+  margin-bottom: 16rpx;
+}
+
+.gap-item:last-child {
+  margin-bottom: 0;
 }
 
 .gap-label-row {
@@ -911,9 +888,46 @@
   flex-wrap: wrap;
 }
 
+.gap-label {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
 .gap-hint {
   font-size: 22rpx;
-  color: #94a3b8;
+  color: var(--text-muted);
+}
+
+.gap-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.gap-option {
+  padding: 12rpx 20rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid rgba(180, 83, 9, 0.32);
+  color: var(--amber-text);
+  font-size: 24rpx;
+  background: var(--bg);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.gap-option.active {
+  background: var(--amber);
+  color: #fff;
+  border-color: var(--amber);
+}
+
+.gap-input {
+  background: var(--bg);
+  border: 2rpx solid rgba(180, 83, 9, 0.32);
+  border-radius: 16rpx;
+  padding: 18rpx 20rpx;
+  font-size: 28rpx;
+  color: var(--text);
 }
 
 /* 细节字号统一 */
@@ -922,14 +936,14 @@
 .gap-option,
 .file-name,
 .file-type {
-  font-size: 26rpx;
+  font-size: 24rpx;
 }
 
 /* PRD-2026Q2 §3.7：上传主按钮下方的手动录入 ghost 入口 */
 .manual-entry-link {
   margin-top: 16rpx;
   text-align: center;
-  font-size: 28rpx;
-  color: #0F2B57;
+  font-size: 26rpx;
+  color: var(--brand);
   text-decoration: underline;
 }

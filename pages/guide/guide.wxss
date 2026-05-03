@@ -1,6 +1,7 @@
+/* guide —— Plan §G token-swap polish；删除 Bootstrap-era 紫色渐变 */
 .container {
   height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--lilac-text) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -105,7 +106,7 @@
 
 .btn-primary {
   background: #fff;
-  color: #667eea;
+  color: var(--brand);
   border: none;
 }
 

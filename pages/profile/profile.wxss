@@ -1,13 +1,11 @@
-.user-card {
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 32%),
-    linear-gradient(145deg, #0f2b57 0%, #163a73 52%, #255493 100%);
-  border-radius: 34rpx;
-  padding: 28rpx 26rpx 30rpx;
+/* profile 页 —— Apple-cozy 重设计（Plan §E.5）
+ * 重灾区：用户卡 dark-blue gradient → Landing 同款 .hero-shell radial 浅光
+ * 9 个中文字符假 icon → Lucide SVG */
+
+/* 用户卡：复用 .hero-shell 基底，仅做 padding 微调 */
+.user-card.hero-shell {
+  padding: 32rpx 28rpx 32rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 26rpx 48rpx rgba(15, 43, 87, 0.22);
 }
 
 .user-card-top {
@@ -15,29 +13,35 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 22rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .identity-badge {
-  padding: 10rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 30rpx;
-  letter-spacing: 2rpx;
+  padding: 8rpx 18rpx;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 0.5rpx;
 }
 
 .user-card-main {
   display: flex;
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .avatar {
   width: 120rpx;
   height: 120rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--bg);
   margin-right: 24rpx;
-  border: 4rpx solid rgba(255, 255, 255, 0.18);
+  border: 4rpx solid var(--bg);
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.08);
 }
 
 .user-info {
@@ -46,158 +50,26 @@
 
 .user-name {
   display: block;
-  font-size: 50rpx;
+  font-size: 44rpx;
   font-weight: 700;
-  color: #fff;
+  color: var(--text);
   margin-bottom: 8rpx;
-}
-
-.user-phone {
-  display: block;
-  font-size: 36rpx;
-  color: rgba(255, 255, 255, 0.88);
-  margin-bottom: 8rpx;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
 
 .user-note {
   display: block;
-  font-size: 31rpx;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.68);
+  font-size: 26rpx;
+  line-height: var(--lh-relaxed);
+  color: var(--text-dim);
 }
 
-.edit-btn {
-  height: 64rpx;
-  line-height: 64rpx;
-  padding: 0 24rpx;
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 999rpx;
-  color: #fff;
-  font-size: 33rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.18);
-}
-
-.stats-grid {
-  display: flex;
-  gap: 14rpx;
-  margin-bottom: 28rpx;
-}
-
-.stats-item {
-  flex: 1;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.88);
-  border-radius: 28rpx;
-  padding: 24rpx 14rpx;
-  border: 1rpx solid rgba(15, 43, 87, 0.07);
-  box-shadow: 0 16rpx 32rpx rgba(15, 43, 87, 0.06);
-}
-
-.stats-kicker {
-  display: block;
-  margin-bottom: 8rpx;
-  font-size: 28rpx;
-  letter-spacing: 1.6rpx;
-  color: #8da0bf;
-}
-
-.stats-num {
-  display: block;
-  font-size: 54rpx;
-  font-weight: 700;
-  color: #0f2b57;
-  margin-bottom: 6rpx;
-}
-
-.stats-label {
-  font-size: 32rpx;
-  color: #516783;
-}
-
-.menu-section {
-  margin-bottom: 30rpx;
-}
-
-.menu-title {
-  font-size: 42rpx;
-  font-weight: 700;
-  color: #12233d;
-  margin-bottom: 8rpx;
-}
-
-.menu-subtitle {
-  display: block;
-  font-size: 30rpx;
-  color: #7b8faa;
-  line-height: 1.6;
-  margin-bottom: 16rpx;
-}
-
-.menu-list {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 28rpx;
-  overflow: hidden;
-  border: 1rpx solid rgba(15, 43, 87, 0.06);
-  box-shadow: 0 18rpx 36rpx rgba(15, 43, 87, 0.06);
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  padding: 26rpx 24rpx;
-  border-bottom: 1rpx solid rgba(15, 43, 87, 0.06);
-}
-
-.menu-item:last-child {
-  border-bottom: none;
-}
-
-.menu-icon {
-  width: 66rpx;
-  height: 66rpx;
-  margin-right: 18rpx;
-  border-radius: 20rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(145deg, rgba(15, 43, 87, 0.08) 0%, rgba(31, 77, 143, 0.12) 100%);
-  color: #0f2b57;
-  font-size: 34rpx;
-  font-weight: 700;
-}
-
-.menu-text {
-  flex: 1;
-  font-size: 38rpx;
-  font-weight: 600;
-  color: #12233d;
-}
-
-.menu-meta {
-  font-size: 30rpx;
-  color: #7b8faa;
-  margin-right: 16rpx;
-}
-
-.menu-arrow {
-  font-size: 42rpx;
-  color: #9eb0c9;
-}
-
-.version-info {
-  text-align: center;
-  padding: 22rpx 0 34rpx;
-  color: #8ca0bb;
-  font-size: 30rpx;
-  letter-spacing: 0.8rpx;
-}
-
-/* 数愈健康承诺卡 */
+/* 数愈健康承诺卡 —— mint 系 */
 .privacy-promise-card {
-  background: linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
-  border: 1rpx solid #d1fae5;
+  background: var(--mint-soft);
   border-radius: 24rpx;
-  padding: 24rpx 28rpx;
+  padding: 24rpx 26rpx;
   margin-bottom: 24rpx;
 }
 
@@ -208,31 +80,183 @@
   margin-bottom: 14rpx;
 }
 
-.privacy-promise-icon {
-  font-size: 40rpx;
-}
-
 .privacy-promise-title {
-  font-size: 38rpx;
-  font-weight: 600;
-  color: #065f46;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--mint-text);
+  letter-spacing: -0.01em;
 }
 
 .privacy-promise-bullets {
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 10rpx;
 }
 
 .privacy-promise-bullet {
-  font-size: 34rpx;
-  color: #374151;
-  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.privacy-promise-bullet-text {
+  font-size: 28rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 
 .privacy-promise-link {
-  display: inline-block;
-  margin-top: 14rpx;
-  font-size: 34rpx;
-  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 16rpx;
+}
+
+.privacy-promise-link-text {
+  font-size: 28rpx;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* Stats grid —— 大数字 brand 色，紧凑 3 列 */
+.stats-grid {
+  display: flex;
+  gap: 14rpx;
+  margin-bottom: 32rpx;
+}
+
+.stats-item {
+  flex: 1;
+  text-align: center;
+  background: var(--bg);
+  border-radius: 28rpx;
+  padding: 28rpx 14rpx;
+  border: 2rpx solid var(--line);
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stats-item:active {
+  transform: translateY(-2rpx);
+}
+
+.stats-num {
+  display: block;
+  font-size: 56rpx;
+  font-weight: 700;
+  color: var(--brand);
+  margin-bottom: 4rpx;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.stats-label {
+  font-size: 24rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
+}
+
+/* Menu sections */
+.menu-section {
+  margin-bottom: 32rpx;
+}
+
+.menu-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6rpx;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+
+.menu-subtitle {
+  display: block;
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
+  margin-bottom: 16rpx;
+}
+
+.menu-list {
+  background: var(--bg);
+  border-radius: 24rpx;
+  overflow: hidden;
+  border: 2rpx solid var(--line);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 22rpx;
+  border-bottom: 2rpx solid var(--line);
+  transition: background 150ms ease-out;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:active {
+  background: var(--bg-soft);
+}
+
+/* 图标徽章 —— 用 *-soft 底，对应色 Lucide 描线在内 */
+.menu-icon {
+  width: 72rpx;
+  height: 72rpx;
+  margin-right: 18rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.menu-icon-brand {
+  background: var(--brand-soft);
+}
+
+.menu-icon-mint {
+  background: var(--mint-soft);
+}
+
+.menu-icon-lilac {
+  background: var(--lilac-soft);
+}
+
+.menu-icon-amber {
+  background: var(--amber-soft);
+}
+
+.menu-icon-red {
+  background: var(--red-soft);
+}
+
+.menu-text-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  min-width: 0;
+}
+
+.menu-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+  line-height: var(--lh-normal);
+}
+
+.menu-meta {
+  font-size: 24rpx;
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+.version-info {
+  text-align: center;
+  padding: 24rpx 0 40rpx;
+  color: var(--text-muted);
+  font-size: 24rpx;
+  letter-spacing: 0.4rpx;
 }

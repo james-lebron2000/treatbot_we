@@ -1,4 +1,5 @@
-/** pages/upload/status/status.wxss **/
+/* upload/status —— Plan §G token-swap polish
+ * 「token 化但不重设计」：替换 Ant Design 调色板 (#1890ff/#36cfc9/#52c41a/#ff4d4f) */
 .status-section {
   text-align: center;
   padding: 60rpx 40rpx;
@@ -11,10 +12,11 @@
 .pulse-circle {
   width: 100rpx;
   height: 100rpx;
-  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  background: var(--brand);
   border-radius: 50%;
   margin: 0 auto;
   animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.25);
 }
 
 @keyframes pulse {
@@ -25,17 +27,19 @@
 
 .status-title {
   display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #333;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text);
   margin-bottom: 16rpx;
+  letter-spacing: -0.01em;
 }
 
 .status-desc {
   display: block;
-  font-size: 36rpx;
-  color: #1e293b;
+  font-size: 28rpx;
+  color: var(--text-dim);
   margin-bottom: 40rpx;
+  line-height: var(--lh-relaxed);
 }
 
 .progress-bar {
@@ -43,24 +47,24 @@
 }
 
 .progress-track {
-  height: 16rpx;
-  background: #f0f0f0;
-  border-radius: 8rpx;
+  height: 12rpx;
+  background: var(--brand-soft);
+  border-radius: var(--r-pill);
   overflow: hidden;
   margin-bottom: 16rpx;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #1890ff 0%, #36cfc9 100%);
-  border-radius: 8rpx;
+  background: var(--brand);
+  border-radius: var(--r-pill);
   transition: width 0.3s;
 }
 
 .progress-text {
-  font-size: 40rpx;
-  font-weight: 600;
-  color: #1890ff;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--brand);
 }
 
 .steps-list {
@@ -77,27 +81,27 @@
 }
 
 .step-icon {
-  font-size: 40rpx;
-  color: #475569;
+  font-size: 36rpx;
+  color: var(--text-muted);
 }
 
 .step-item.completed .step-icon {
-  color: #52c41a;
+  color: var(--mint-text);
 }
 
 .step-item.active .step-icon {
-  color: #1890ff;
+  color: var(--brand);
 }
 
 .step-name {
-  font-size: 32rpx;
-  color: #374151;
+  font-size: 26rpx;
+  color: var(--text-dim);
 }
 
 .step-item.completed .step-name,
 .step-item.active .step-name {
-  color: #333;
-  font-weight: 500;
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* 结果区域 */
@@ -111,49 +115,52 @@
 }
 
 .success-icon {
-  width: 120rpx;
-  height: 120rpx;
-  line-height: 120rpx;
-  background: #52c41a;
-  color: #fff;
+  width: 112rpx;
+  height: 112rpx;
+  background: var(--mint);
   border-radius: 50%;
-  font-size: 68rpx;
   margin: 0 auto 20rpx;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.25);
 }
 
 .success-title {
   display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #333;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text);
   margin-bottom: 12rpx;
+  letter-spacing: -0.01em;
 }
 
 .success-desc {
   display: block;
-  font-size: 36rpx;
-  color: #1e293b;
+  font-size: 28rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
 }
 
 .result-card {
-  background: #f6ffed;
-  border-radius: 16rpx;
-  padding: 30rpx;
+  background: var(--mint-soft);
+  border-radius: 24rpx;
+  padding: 28rpx;
   margin-bottom: 40rpx;
 }
 
 .card-title {
-  font-size: 40rpx;
-  font-weight: 600;
-  color: #52c41a;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--mint-text);
   margin-bottom: 20rpx;
+  letter-spacing: -0.01em;
 }
 
 .info-list {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 16rpx;
 }
 
 .info-item {
@@ -163,20 +170,20 @@
 
 .info-label {
   width: 160rpx;
-  font-size: 36rpx;
-  color: #1e293b;
+  font-size: 28rpx;
+  color: var(--text-dim);
 }
 
 .info-value {
   flex: 1;
-  font-size: 38rpx;
-  color: #333;
-  font-weight: 500;
+  font-size: 28rpx;
+  color: var(--text);
+  font-weight: 600;
 }
 
 .action-btns {
   display: flex;
-  gap: 20rpx;
+  gap: 16rpx;
 }
 
 .action-btns .btn {
@@ -190,27 +197,30 @@
 }
 
 .error-icon {
-  width: 120rpx;
-  height: 120rpx;
-  line-height: 120rpx;
-  background: #ff4d4f;
-  color: #fff;
+  width: 112rpx;
+  height: 112rpx;
+  background: var(--red);
   border-radius: 50%;
-  font-size: 68rpx;
   margin: 0 auto 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 24rpx rgba(220, 38, 38, 0.25);
 }
 
 .error-title {
   display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #333;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text);
   margin-bottom: 16rpx;
+  letter-spacing: -0.01em;
 }
 
 .error-desc {
   display: block;
-  font-size: 36rpx;
-  color: #1e293b;
+  font-size: 28rpx;
+  color: var(--text-dim);
   margin-bottom: 40rpx;
+  line-height: var(--lh-relaxed);
 }

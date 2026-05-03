@@ -63,13 +63,16 @@
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
       <!-- U4：人话理由 —— 置顶一行解释「为什么这种新药适合」，不取代下面的 score / decisionHint。 -->
-      <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
+      <view class="human-reason">
+        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+        <text class="human-reason-text">为什么适合：{{item.humanReason}}</text>
+      </view>
 
       <!-- 货架卡片 header：药品名 = 主标题；类别/剂型 = 副标题；评分 = 右侧大徽章 -->
       <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
         <view class="match-content">
           <view class="drug-headline">
-            <text class="drug-icon">💊</text>
+            <icon name="pill" color="lilac" size="36" />
             <text class="drug-name">{{item.drugName}}</text>
             <text class="drug-code" wx:if="{{item.drugCode}}">/ {{item.drugCode}}</text>
           </view>
@@ -125,7 +128,7 @@
         <view class="detail-panel" wx:if="{{item.inclusion.length > 0}}">
           <text class="detail-panel-title">能用这种新药的条件</text>
           <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="criterion" wx:key="index">
-            <text class="criteria-icon">+</text>
+            <icon name="check" color="mint" size="28" strokeWidth="2.5" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
@@ -133,14 +136,17 @@
         <view class="detail-panel" wx:if="{{item.exclusion.length > 0}}">
           <text class="detail-panel-title">不能用这种新药的情况</text>
           <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="criterion" wx:key="index">
-            <text class="criteria-icon">-</text>
+            <icon name="x-circle" color="red" size="28" strokeWidth="2" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
 
         <view class="match-actions">
           <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看用药详情</button>
-          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">📞 申请免费用药</button>
+          <button class="btn btn-primary apply-btn" catchtap="applyTrial" data-id="{{item.id}}">
+            <icon name="phone-call" color="white" size="32" />
+            <text class="apply-btn-text">申请免费用药</text>
+          </button>
         </view>
       </view>
     </view>

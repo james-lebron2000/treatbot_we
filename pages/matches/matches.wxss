@@ -1,3 +1,7 @@
+/* matches 页 —— Apple-cozy 重设计（Plan §E.3）
+ * 一种主色（var(--brand)）+ companion soft/text 状态色 + 实白卡 + 1rpx 边
+ * 删除：dark gradient score badge / glass morphism / 8% opacity tint */
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -12,58 +16,60 @@
 
 .page-title {
   display: block;
-  font-size: 42rpx;
+  font-size: 44rpx;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
   margin-bottom: 8rpx;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
 
 .page-subtitle {
   display: block;
-  font-size: 26rpx;
-  color: #374151;
-  line-height: 1.6;
+  font-size: 28rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
 }
 
 .filter-btn {
-  padding: 16rpx 24rpx;
-  background: rgba(255, 255, 255, 0.86);
-  border-radius: 999rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  padding: 14rpx 28rpx;
+  background: var(--bg);
+  border-radius: var(--r-pill);
+  border: 2rpx solid var(--brand-soft);
   font-size: 26rpx;
   font-weight: 600;
-  color: #111827;
-  box-shadow: 0 14rpx 30rpx rgba(15, 23, 42, 0.04);
+  color: var(--brand);
 }
 
 .match-stats {
   display: flex;
   gap: 14rpx;
-  margin-bottom: 22rpx;
+  margin-bottom: 24rpx;
 }
 
 .stat-item {
   flex: 1;
-  background: rgba(255, 255, 255, 0.86);
-  border-radius: 26rpx;
-  padding: 24rpx 14rpx;
+  background: var(--bg);
+  border-radius: 28rpx;
+  padding: 28rpx 14rpx;
   text-align: center;
-  border: 1rpx solid rgba(15, 23, 42, 0.05);
-  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.05);
+  border: 2rpx solid var(--line);
 }
 
 .stat-value {
   display: block;
-  font-size: 40rpx;
+  font-size: 48rpx;
   font-weight: 700;
-  color: #111827;
-  margin-bottom: 8rpx;
+  color: var(--brand);
+  margin-bottom: 6rpx;
+  line-height: 1;
+  letter-spacing: -0.01em;
 }
 
 .stat-label {
   font-size: 24rpx;
-  color: #374151;
-  line-height: 1.45;
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 
 .score-rule-tip,
@@ -72,30 +78,27 @@
 .fallback-tip,
 .processing-banner {
   border-radius: 24rpx;
-  padding: 18rpx 20rpx;
+  padding: 20rpx 24rpx;
   margin-bottom: 16rpx;
   font-size: 26rpx;
-  line-height: 1.65;
+  line-height: var(--lh-relaxed);
 }
 
 .score-rule-tip {
-  background: rgba(37, 99, 235, 0.08);
-  border: 1rpx solid rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .score-fallback-tip,
 .supplement-tip,
 .fallback-tip {
-  background: rgba(217, 119, 6, 0.08);
-  border: 1rpx solid rgba(217, 119, 6, 0.12);
-  color: #b45309;
+  background: var(--amber-soft);
+  color: var(--amber-text);
 }
 
 .processing-banner {
-  background: rgba(255, 255, 255, 0.86);
-  border: 1rpx solid rgba(15, 23, 42, 0.05);
-  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.05);
+  background: var(--bg);
+  border: 2rpx solid var(--line);
 }
 
 .processing-banner-head {
@@ -108,47 +111,51 @@
 .processing-banner-title {
   font-size: 30rpx;
   font-weight: 700;
-  color: #111827;
+  color: var(--text);
 }
 
 .processing-banner-progress {
   font-size: 30rpx;
   font-weight: 700;
-  color: #1d4ed8;
+  color: var(--brand);
 }
 
 .processing-banner-text {
   display: block;
   font-size: 26rpx;
-  color: #374151;
+  color: var(--text-dim);
   margin-bottom: 14rpx;
 }
 
 .processing-banner-bar {
   height: 10rpx;
-  border-radius: 999rpx;
-  background: rgba(29, 78, 216, 0.08);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
   overflow: hidden;
 }
 
 .processing-banner-fill {
   height: 100%;
-  border-radius: 999rpx;
-  background: linear-gradient(90deg, #111827 0%, #2563eb 100%);
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  transition: width 200ms ease-out;
 }
 
 .supplement-text {
   display: block;
+  color: var(--amber-text);
 }
 
 .supplement-btn {
   margin-top: 14rpx;
-  height: 68rpx;
-  line-height: 68rpx;
+  height: 72rpx;
+  line-height: 72rpx;
   font-size: 26rpx;
-  border-radius: 999rpx;
-  background: #111827;
-  color: #fff;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--brand);
+  border: 2rpx solid var(--brand-soft);
+  font-weight: 600;
 }
 
 .matches-list {
@@ -158,21 +165,35 @@
 }
 
 .match-card {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg);
   border-radius: 32rpx;
   padding: 28rpx 24rpx 24rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 20rpx 40rpx rgba(15, 23, 42, 0.06);
+  border: 2rpx solid var(--line);
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms;
 }
 
-/* U4：卡片顶部的人话理由 —— 紧贴 padding 顶部，绿色 14sp，不抢占 score 视觉权重。 */
+.match-card:active {
+  transform: translateY(-2rpx);
+  box-shadow: var(--shadow-1);
+}
+
+/* U4：人话理由 —— Lucide check icon + mint 文本，置顶给一行解释 */
 .human-reason {
-  display: block;
-  margin: -8rpx 0 14rpx;
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin: 0 0 16rpx;
+  padding: 14rpx 16rpx;
+  background: var(--mint-soft);
+  border-radius: 16rpx;
+}
+
+.human-reason-text {
+  flex: 1;
   font-size: 28rpx;
-  line-height: 1.5;
-  color: #0A6E3A;
-  font-weight: 500;
+  line-height: var(--lh-normal);
+  color: var(--mint-text);
+  font-weight: 600;
 }
 
 .match-card-header {
@@ -190,80 +211,73 @@
   gap: 10rpx;
 }
 
+/* Score badge —— 实色 brand 圆，去除 dark gradient */
 .match-score-badge {
-  width: 106rpx;
-  height: 106rpx;
+  width: 110rpx;
+  height: 110rpx;
   border-radius: 50%;
-  background: linear-gradient(145deg, #111827 0%, #334155 100%);
+  background: var(--brand);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   color: #fff;
-  box-shadow: 0 14rpx 30rpx rgba(15, 23, 42, 0.18);
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.25);
 }
 
 .match-score-badge .score {
   font-size: 32rpx;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.01em;
 }
 
 .match-score-badge .label {
   margin-top: 6rpx;
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .match-content {
   flex: 1;
-  padding-right: 0;
-  margin-bottom: 0;
 }
 
 .match-title {
   display: block;
   font-size: 30rpx;
   font-weight: 700;
-  color: #111827;
-  line-height: 1.42;
-  margin-bottom: 0;
+  color: var(--text);
+  line-height: var(--lh-normal);
 }
 
-/* 阿里健康/美团买药货架风格：药品名作为卡片主标题 */
+/* 货架卡片 header —— 药品名为主标题，icon 在前 */
 .drug-headline {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 8rpx;
+  gap: 10rpx;
   margin-bottom: 6rpx;
-}
-
-.drug-icon {
-  font-size: 30rpx;
-  line-height: 1;
-  flex-shrink: 0;
 }
 
 .drug-name {
   font-size: 38rpx;
   font-weight: 700;
-  color: #0f172a;
-  line-height: 1.3;
+  color: var(--text);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
 
 .drug-code {
   font-size: 26rpx;
-  color: #475569;
+  color: var(--text-muted);
   font-weight: 600;
-  letter-spacing: 0.5rpx;
 }
 
 .drug-subline {
   display: block;
   font-size: 26rpx;
-  color: #1e293b;
-  line-height: 1.5;
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 
 .drug-class,
@@ -271,33 +285,61 @@
 .drug-brand {
   display: inline;
   font-size: 26rpx;
-  color: #1e293b;
+  color: var(--text-dim);
 }
 
-/* 绿色"免费用药"标签 —— 强 CTA 视觉锚 */
-.tag-free {
-  background: linear-gradient(145deg, #15803d 0%, #16a34a 100%);
-  color: #fff;
-  font-weight: 700;
-  padding: 6rpx 18rpx;
-  border-radius: 999rpx;
+/* 标签系统：复用 app.wxss .pill 体系；这里只声明 .tag 别名容器样式 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 16rpx;
+  border-radius: var(--r-pill);
   font-size: 24rpx;
-  letter-spacing: 0.5rpx;
-  box-shadow: 0 4rpx 10rpx rgba(21, 128, 61, 0.25);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tag-free {
+  background: var(--mint);
+  color: #fff;
+}
+
+.tag-primary {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.tag-level {
+  font-weight: 600;
+}
+
+.level-high {
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+.level-mid {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+}
+
+.level-low {
+  background: var(--bg-soft);
+  color: var(--text-dim);
 }
 
 .match-source {
   display: block;
-  font-size: 28rpx;
-  color: #374151;
+  font-size: 26rpx;
+  color: var(--text-dim);
   margin-top: 6rpx;
-  line-height: 1.55;
+  line-height: var(--lh-normal);
 }
 
 .match-expand-indicator {
   font-size: 24rpx;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-dim);
 }
 
 .match-card-summary {
@@ -311,33 +353,14 @@
   margin-bottom: 14rpx;
 }
 
-.tag-level {
-  font-weight: 700;
-}
-
-.level-high {
-  background: rgba(21, 128, 61, 0.1);
-  color: #15803d;
-}
-
-.level-mid {
-  background: rgba(217, 119, 6, 0.1);
-  color: #b45309;
-}
-
-.level-low {
-  background: rgba(15, 23, 42, 0.07);
-  color: #1e293b;
-}
-
 .match-indication,
 .match-institution,
 .match-meta,
 .match-summary {
   display: block;
   font-size: 26rpx;
-  line-height: 1.6;
-  color: #4b5563;
+  line-height: var(--lh-relaxed);
+  color: var(--text-dim);
 }
 
 .match-meta,
@@ -348,9 +371,10 @@
 .match-card-expanded {
   margin-top: 18rpx;
   padding-top: 18rpx;
-  border-top: 1rpx solid rgba(15, 23, 42, 0.06);
+  border-top: 2rpx solid var(--line);
 }
 
+/* Decision banner —— 用 companion soft/text 配色 */
 .decision-banner {
   border-radius: 20rpx;
   padding: 16rpx 18rpx;
@@ -363,47 +387,44 @@
 
 .decision-label {
   font-size: 24rpx;
-  padding: 8rpx 14rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.72);
+  padding: 6rpx 14rpx;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.65);
+  font-weight: 600;
 }
 
 .decision-text {
   flex: 1;
   text-align: right;
   font-size: 26rpx;
-  font-weight: 700;
-  line-height: 1.45;
+  font-weight: 600;
+  line-height: var(--lh-normal);
 }
 
 .tone-good {
-  background: rgba(21, 128, 61, 0.08);
-  border: 1rpx solid rgba(21, 128, 61, 0.12);
-  color: #15803d;
+  background: var(--mint-soft);
+  color: var(--mint-text);
 }
 
 .tone-normal {
-  background: rgba(37, 99, 235, 0.08);
-  border: 1rpx solid rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .tone-warn {
-  background: rgba(217, 119, 6, 0.08);
-  border: 1rpx solid rgba(217, 119, 6, 0.12);
-  color: #b45309;
+  background: var(--amber-soft);
+  color: var(--amber-text);
 }
 
 .tone-risk {
-  background: rgba(185, 28, 28, 0.08);
-  border: 1rpx solid rgba(185, 28, 28, 0.12);
-  color: #b91c1c;
+  background: var(--red-soft);
+  color: var(--red-text);
 }
 
 .detail-panel {
-  background: rgba(248, 250, 252, 0.88);
-  border-radius: 22rpx;
-  padding: 18rpx;
+  background: var(--bg-soft);
+  border-radius: 20rpx;
+  padding: 20rpx;
   margin-bottom: 14rpx;
 }
 
@@ -411,7 +432,7 @@
   display: block;
   font-size: 26rpx;
   font-weight: 700;
-  color: #111827;
+  color: var(--text);
   margin-bottom: 12rpx;
 }
 
@@ -422,22 +443,22 @@
 }
 
 .sub-center-chip {
-  padding: 10rpx 16rpx;
-  border-radius: 999rpx;
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
+  padding: 8rpx 16rpx;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 24rpx;
   font-weight: 600;
 }
 
 .column-empty {
-  color: #374151;
+  color: var(--text-muted);
 }
 
 .column-empty text {
   font-size: 26rpx;
-  color: #374151;
-  line-height: 1.55;
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
 }
 
 .criteria-item {
@@ -451,32 +472,33 @@
   margin-bottom: 0;
 }
 
-.criteria-icon {
-  font-size: 26rpx;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-.criteria-item.inclusion .criteria-icon {
-  color: #15803d;
-}
-
-.criteria-item.exclusion .criteria-icon {
-  color: #b91c1c;
-}
-
 .criteria-text {
   flex: 1;
   font-size: 26rpx;
-  color: #4b5563;
-  line-height: 1.6;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
 }
 
 .match-actions {
   display: flex;
   gap: 14rpx;
+  margin-top: 6rpx;
 }
 
 .match-actions .btn {
   flex: 1;
+}
+
+/* 申请按钮 —— icon + 文本居中 */
+.apply-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+}
+
+.apply-btn-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #fff;
 }

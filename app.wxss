@@ -1,48 +1,56 @@
 /**app.wxss**/
+/* Q3 视觉对齐 §B（Plan web-h5-cozy-gizmo V2）：以 Landing A 级语言为 SSoT 的 baseline。
+   说明：tokens.wxss 内 spacing/radii/font 用 px，但 WXSS var() 会原样输出 px（不随屏宽缩放）。
+   因此本文件颜色用 var(--*)，但所有尺寸（padding/radius/font-size/shadow）写 rpx。
+   对应关系：1px = 2rpx；var(--s-4)=16px → 32rpx；var(--r-lg)=16px → 32rpx；--fs-body=15px → 30rpx。 */
 @import '/styles/tokens.wxss';
 @import './styles/common.wxss';
 
+/* B.1 page 全局 ------------------------------------------------------------ */
 page {
-  font-family: 'SF Pro Display', 'SF Pro Text', 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.98) 0%, rgba(247, 250, 254, 0.98) 24%, rgba(238, 244, 251, 1) 100%);
-  color: #12233d;
-  font-size: 38rpx;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 30rpx;          /* --fs-body 15px → 30rpx */
+  line-height: 1.65;          /* --lh-relaxed */
 }
 
 .container {
-  padding: 28rpx 26rpx 52rpx;
+  padding: 32rpx 32rpx 96rpx; /* --s-4 / --s-4 / --s-12 */
 }
 
-/* 卡片样式 */
+/* B.2 .card —— Landing 同款 ------------------------------------------------ */
 .card {
-  background: rgba(255, 255, 255, 0.88);
-  border-radius: 28rpx;
-  padding: 30rpx;
-  margin-bottom: 24rpx;
-  border: 1rpx solid rgba(15, 43, 87, 0.08);
-  box-shadow: 0 18rpx 42rpx rgba(15, 43, 87, 0.07);
-  backdrop-filter: blur(12rpx);
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 32rpx;       /* --r-lg */
+  padding: 48rpx;             /* --s-6 */
+  margin-bottom: 32rpx;       /* --s-4 */
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms;
 }
 
-/* 按钮样式 */
+.card:active {
+  transform: translateY(-2rpx);
+  box-shadow: 0 2rpx 4rpx rgba(15, 23, 42, 0.04), 0 2rpx 6rpx rgba(15, 23, 42, 0.06);
+}
+
+/* B.3 .btn 体系 ------------------------------------------------------------ */
 .btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 92rpx;
+  height: 88rpx;
   border-radius: 999rpx;
-  font-size: 39rpx;
+  font-size: 30rpx;           /* --fs-body */
   font-weight: 600;
-  letter-spacing: 0.4rpx;
-  /* Week 4 §F.4：全站微交互 —— 按下 0.98× + 100ms cubic-bezier */
+  letter-spacing: 0;
   transition: background 150ms ease, transform 100ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-primary {
   background: var(--brand);
   color: #fff;
+  box-shadow: 0 12rpx 36rpx rgba(37, 99, 235, 0.25);
 }
 
 .btn-primary:active {
@@ -50,32 +58,149 @@ page {
   background: var(--brand-hover);
 }
 
-.btn-default {
+.btn-primary[disabled],
+.btn-primary.disabled {
+  background: var(--text-muted);
+  box-shadow: none;
+  opacity: 0.5;
+}
+
+/* 旧别名：.btn-default 视为 ghost，渐进迁移用 */
+.btn-default,
+.btn-ghost {
   background: var(--bg);
-  color: var(--text);
-  border: 1rpx solid var(--line);
+  color: var(--brand);
+  border: 2rpx solid var(--brand-soft);
 }
 
-.btn-default:active {
+.btn-default:active,
+.btn-ghost:active {
   transform: scale(0.98);
-  background: var(--bg-soft);
+  background: var(--brand-soft);
+  border-color: var(--brand);
 }
 
-/* 文本样式 */
-.text-primary { color: #1f4d8f; }
-.text-success { color: #15803d; }
-.text-warning { color: #b45309; }
-.text-error { color: #b91c1c; }
-.text-muted { color: #6e809e; }
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+}
 
-.text-lg { font-size: 46rpx; }
-.text-md { font-size: 42rpx; }
-.text-sm { font-size: 34rpx; }
-.text-xs { font-size: 30rpx; }
+.btn-danger:active {
+  transform: scale(0.98);
+  background: #b91c1c;
+}
+
+.btn.disabled {
+  opacity: 0.5;
+}
+
+/* B.4 字号 utility（语义命名替代 .text-lg/md/sm/xs） ----------------------- */
+.text-display  { font-size: 68rpx; line-height: 1.25; font-weight: 700; }
+.text-title    { font-size: 44rpx; line-height: 1.25; font-weight: 700; }
+.text-subtitle { font-size: 34rpx; line-height: 1.5;  font-weight: 600; }
+.text-body     { font-size: 30rpx; line-height: 1.65; }
+.text-callout  { font-size: 28rpx; line-height: 1.5; }
+.text-caption  { font-size: 24rpx; line-height: 1.5;  color: var(--text-muted); }
+
+/* 兼容旧字号 utility（只改尺寸，颜色由元素自行控制） */
+.text-lg { font-size: 44rpx; line-height: 1.25; }
+.text-md { font-size: 34rpx; line-height: 1.5; }
+.text-sm { font-size: 30rpx; line-height: 1.65; }
+.text-xs { font-size: 24rpx; line-height: 1.5; }
+
+/* B.5 颜色 utility ---------------------------------------------------------- */
+.text-brand   { color: var(--brand); }
+.text-mint    { color: var(--mint-text); }
+.text-amber   { color: var(--amber-text); }
+.text-red     { color: var(--red-text); }
+.text-dim     { color: var(--text-dim); }
+.text-muted   { color: var(--text-muted); }
+
+/* 旧 utility 别名 → 新语义色 */
+.text-primary { color: var(--brand); }
+.text-success { color: var(--mint-text); }
+.text-warning { color: var(--amber-text); }
+.text-error   { color: var(--red-text); }
 
 .font-bold { font-weight: 700; }
 
-/* 布局 */
+/* B.6 状态 pill ------------------------------------------------------------ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.pill-brand { background: var(--brand-soft); color: var(--brand); }
+.pill-mint  { background: var(--mint-soft);  color: var(--mint-text); }
+.pill-amber { background: var(--amber-soft); color: var(--amber-text); }
+.pill-red   { background: var(--red-soft);   color: var(--red-text); }
+.pill-lilac { background: var(--lilac-soft); color: var(--lilac-text); }
+
+/* 旧 .tag-* 别名（让现有页面默认就拿到 pill 视觉，避免 cascade 拉胯） */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.tag-primary { background: var(--brand-soft); color: var(--brand); }
+.tag-success { background: var(--mint-soft);  color: var(--mint-text); }
+.tag-warning { background: var(--amber-soft); color: var(--amber-text); }
+.tag-error   { background: var(--red-soft);   color: var(--red-text); }
+
+/* B.7 hero shell（仅 index/profile 用） ------------------------------------ */
+.hero-shell {
+  position: relative;
+  padding: 96rpx 32rpx 64rpx;
+  background:
+    radial-gradient(ellipse 120% 80% at 20% 10%, var(--brand-soft) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, var(--mint-soft) 0%, transparent 50%),
+    var(--bg);
+  border-radius: 32rpx;
+  overflow: hidden;
+  margin-bottom: 32rpx;
+}
+
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 20rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  margin-bottom: 24rpx;
+}
+
+.hero-title {
+  font-size: 80rpx;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.5rpx;
+  color: var(--text);
+}
+
+.hero-title .accent { color: var(--brand); }
+
+.hero-subtitle {
+  font-size: 32rpx;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-top: 24rpx;
+}
+
+/* 布局 utility --------------------------------------------------------------- */
 .flex { display: flex; }
 .flex-column { flex-direction: column; }
 .flex-wrap { flex-wrap: wrap; }
@@ -84,83 +209,86 @@ page {
 .justify-between { justify-content: space-between; }
 .flex-1 { flex: 1; }
 
-/* 间距 */
+/* 间距 utility（与 token spacing 对齐：4/8/12/16/24/32/48 px → rpx ×2） ------ */
+.mt-1 { margin-top: 8rpx; }
+.mt-2 { margin-top: 16rpx; }
+.mt-3 { margin-top: 24rpx; }
+.mt-4 { margin-top: 32rpx; }
+.mt-6 { margin-top: 48rpx; }
+.mt-8 { margin-top: 64rpx; }
+
+.mb-1 { margin-bottom: 8rpx; }
+.mb-2 { margin-bottom: 16rpx; }
+.mb-3 { margin-bottom: 24rpx; }
+.mb-4 { margin-bottom: 32rpx; }
+.mb-6 { margin-bottom: 48rpx; }
+.mb-8 { margin-bottom: 64rpx; }
+
+.mr-1 { margin-right: 8rpx; }
+.mr-2 { margin-right: 16rpx; }
+.mr-3 { margin-right: 24rpx; }
+
+.ml-1 { margin-left: 8rpx; }
+.ml-2 { margin-left: 16rpx; }
+.ml-3 { margin-left: 24rpx; }
+
+/* 旧值兼容 */
 .mt-10 { margin-top: 10rpx; }
 .mt-20 { margin-top: 20rpx; }
 .mt-30 { margin-top: 30rpx; }
-
 .mb-10 { margin-bottom: 10rpx; }
 .mb-20 { margin-bottom: 20rpx; }
 .mb-30 { margin-bottom: 30rpx; }
-
 .mr-10 { margin-right: 10rpx; }
 .mr-20 { margin-right: 20rpx; }
-
 .ml-10 { margin-left: 10rpx; }
 .ml-20 { margin-left: 20rpx; }
-
 .p-20 { padding: 20rpx; }
 .p-30 { padding: 30rpx; }
 
-/* 标签 */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 10rpx 18rpx;
-  border-radius: 999rpx;
-  font-size: 30rpx;
-  font-weight: 600;
-  letter-spacing: 0.2rpx;
-}
-
-.tag-primary {
-  background: rgba(31, 77, 143, 0.1);
-  color: #1f4d8f;
-}
-
-.tag-success {
-  background: rgba(21, 128, 61, 0.1);
-  color: #166534;
-}
-
-.tag-warning {
-  background: rgba(180, 83, 9, 0.1);
-  color: #b45309;
-}
-
-/* 空状态 */
+/* 空状态（基础版 —— 详细在 components/empty/） ----------------------------- */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 110rpx 54rpx;
+  padding: 96rpx 48rpx;
   border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1rpx solid rgba(15, 43, 87, 0.05);
+  background: var(--bg);
+  border: 2rpx solid var(--line);
 }
 
 .empty-state image {
-  width: 240rpx;
-  height: 240rpx;
-  margin-bottom: 30rpx;
+  width: 200rpx;
+  height: 200rpx;
+  margin-bottom: 24rpx;
+  opacity: 0.6;
 }
 
 .empty-state text {
-  color: #6e809e;
-  font-size: 38rpx;
+  color: var(--text-dim);
+  font-size: 30rpx;
 }
 
-/* 加载状态 */
+/* 加载状态（基础版 —— 详细在 components/loading/） ------------------------- */
 .loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40rpx;
+  padding: 32rpx;
 }
 
 .loading text {
-  margin-left: 20rpx;
-  color: #6e809e;
-  font-size: 36rpx;
+  margin-left: 16rpx;
+  color: var(--text-dim);
+  font-size: 28rpx;
+}
+
+/* 操作栏 ------------------------------------------------------------------- */
+.action-bar {
+  padding: 16rpx 0;
+}
+
+.action-bar .btn {
+  margin-bottom: 16rpx;
 }

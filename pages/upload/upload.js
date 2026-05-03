@@ -65,29 +65,26 @@ const STATUS_TEXT_MAP = {
   completed:   { minProgress: 100, step: 3, text: copy.status.completed }
 }
 
-// Track C-3：进度条曲线参数。
-//   PROGRESS_CEIL_DURING_RUN —— 模拟阶段最高 92%，避免抢答（剩 8% 留给 completed）
-//   PROGRESS_TICK_MS         —— 每 250ms 重算一次，肉眼平滑且不抢主线程
-//   PROGRESS_EASE_K          —— logistic 减速系数；越大越快接近上限
+// Track C-3 v2：进度条曲线 ——「线性 × 1 分钟基线」。
+// 设计目标：
+//   1. 进度数字与进度条宽度永远 100% 同步（同一个 parseProgress 驱动）
+//   2. 时间感知诚实：t=ETA/2 时 bar≈46%，t=ETA 时 bar≈92%；不再前段窜
+//   3. 单文件 ETA 默认 60s；这是后端 OCR + 视觉抽取 + 结构化端到端 P50 实测值
+//
+// PROGRESS_CEIL_DURING_RUN —— 模拟阶段最高 92%，留 8% 给 completed 冲线
+// PROGRESS_TICK_MS         —— 每 250ms 一次，肉眼平滑且不抢主线程
 const PROGRESS_CEIL_DURING_RUN = 92
 const PROGRESS_TICK_MS = 250
-// PROGRESS_EASE_K：logistic 减速系数。
-//   K=2.4 → 前段窜得快（t=1s 到 19%）；
-//   K=2.0 → 前段沉稳（t=1s 到 ~9%, t=ETA 到 80%）；
-//   K=1.6 → 前段太慢（t=1s 到 ~7%, 用户觉得"没动"）。
-//   2.0 是"从 1% 慢慢爬"+"ETA 时刻给后端 20% 冲刺空间"的折中。
-const PROGRESS_EASE_K = 2.0
 
-// 单文件耗时基线（秒）—— 实测分布：
-//   图片 OCR：8-14s，取 11s
-//   PDF（markitdown 文本路径）：12-18s
-//   PDF（vision 路径，扫描件）：18-30s，统一按 22s 估
-const ETA_PER_IMAGE_SECONDS = 11
-const ETA_PER_PDF_SECONDS = 22
+// 单文件耗时基线（秒）—— 用户反馈以「1 分钟」为预期：
+//   图片：拍照 OCR + 视觉抽取，端到端约 45-75s，取 60s
+//   PDF：与图片相当（markitdown / vision 路径），统一 60s
+const ETA_PER_IMAGE_SECONDS = 60
+const ETA_PER_PDF_SECONDS = 60
 // 多文件并行加成：服务端 queue concurrency=2，多出来的份按 0.4× 累加
-//   1 份 image：11s
-//   3 份 image：11 + 0.4×11 + 0.4×11 ≈ 19.8s
-//   2 份 pdf：22 + 0.4×22 ≈ 30.8s
+//   1 份：60s
+//   2 份：60 + 0.4×60 = 84s
+//   3 份：60 + 0.4×60 + 0.4×60 = 108s
 const ETA_CONCURRENCY_FACTOR = 0.4
 
 const estimateEtaSeconds = (files) => {
@@ -507,24 +504,23 @@ Page({
   },
 
   /**
-   * Track C-3（PRD-2026Q3）：启动「基于预期时长的进度模拟」。
-   *   入参 totalSeconds：本次预期总耗时（estimateEtaSeconds 算出来的）
+   * Track C-3 v2（PRD-2026Q3）：启动「线性进度模拟」。
+   *   入参 totalSeconds：本次预期总耗时（estimateEtaSeconds 算出来的，单文件默认 60s）
    *
    * 曲线设计（关键）：
-   *   eased = 1 - exp(-PROGRESS_EASE_K * elapsed/ETA)   // 0 → ~0.95
-   *   target = 1 + eased * (CEIL - 1)                   // 1% → ~92%
+   *   ratio = min(1, elapsed/ETA)
+   *   target = 1 + ratio * 91          // 1% → 92%
    *
-   * 等价于：t=0 时 1%，t=0.3·ETA 时 ~46%，t=ETA 时 ~85%，
-   * t=1.5·ETA 时 ~89%，t=3·ETA 时 ~92%（永远到不了）。
+   * 等价于：t=0 → 1%，t=ETA/2 → 46%，t=ETA → 92%，t>ETA → 92%（封顶等后端）
    * 这样：
    *   - 实际处理快 → 后端 status=completed 来时直接冲 100%
-   *   - 实际处理慢 → UI 在末段慢爬，用户不会觉得"卡死"
+   *   - 实际处理慢 → UI 在 92% 处停住，用户知道"快好了，再等等"
    *   - 后端 status 跳跃（如直接到 analyzing）→ statusMinFloor 把 UI 立即抬上去
    */
   startSimulatedProgress(totalSeconds) {
     this.clearProgressTimer()
     this.simulationStartedAt = Date.now()
-    this.simulationEtaMs = Math.max(8000, Number(totalSeconds || 15) * 1000)
+    this.simulationEtaMs = Math.max(8000, Number(totalSeconds || 60) * 1000)
     this.statusMinFloor = 1
     this.completionFlooded = false
     this.setData({
@@ -540,13 +536,13 @@ Page({
   /**
    * Track C-3：单次进度 tick。逻辑分三档：
    *   1. completionFlooded —— completed status 已到，正在冲 100%
-   *   2. 模拟阶段 —— 走 logistic 曲线 + statusMinFloor + 不倒退
+   *   2. 模拟阶段 —— 线性 ratio × 92%，比例诚实（t=ETA/2 → 46%, t=ETA → 92%）
    *   3. ETA 倒数显示
    */
   simulationTick() {
     const now = Date.now()
     const elapsedMs = Math.max(0, now - (this.simulationStartedAt || now))
-    const etaMs = this.simulationEtaMs || 15000
+    const etaMs = this.simulationEtaMs || 60000
     const cur = Number(this.data.parseProgress || 0)
 
     if (this.completionFlooded) {
@@ -560,9 +556,9 @@ Page({
       return
     }
 
-    const ratio = elapsedMs / etaMs
-    const eased = 1 - Math.exp(-PROGRESS_EASE_K * ratio)
-    let target = 1 + eased * (PROGRESS_CEIL_DURING_RUN - 1)
+    // 线性曲线：elapsed/ETA 直接映射到 1% → 92%。诚实：bar 位置 ≈ 已耗时占比。
+    const ratio = Math.min(1, elapsedMs / etaMs)
+    let target = 1 + ratio * (PROGRESS_CEIL_DURING_RUN - 1)
     // 后端 status 推上来的 floor —— 让 UI 不能低于真实 stage
     target = Math.max(target, Number(this.statusMinFloor || 1))
     // 永不倒退（用户切回页 / 解析超时返回原 status 时）
@@ -913,9 +909,10 @@ Page({
         // 状态文案：还没全部完成时显示 analyzing；全部完成或部分完成时根据成功数显示
         if (!batchResult.done) {
           this.setProgressTarget('analyzing', Math.max(20, overallProgress))
+          // 只覆盖文案；进度条由 simulator 推动 —— 直接 setData parseProgress 会让数字
+          // 与 parseProgressStyle（条宽）短暂错位（用户感知为"条快、数字慢"）。
           this.setData({
-            processingStatus: `已处理 ${completedCount + erroredCount} / ${total} 份…`,
-            parseProgress: Math.max(20, overallProgress)
+            processingStatus: `已处理 ${completedCount + erroredCount} / ${total} 份…`
           })
           return
         }
