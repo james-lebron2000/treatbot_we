@@ -18,7 +18,11 @@ const tokens = JSON.parse(await readFile(resolve(__dirname, 'tokens.json'), 'utf
 const HEADER = `/* AUTO-GENERATED from shared/tokens/tokens.json — do not edit by hand.
    Run \`node shared/tokens/build.mjs\` (or \`pnpm -C web tokens:build\`) to regenerate. */`
 
-function buildCss(t) {
+// WXSS gotcha: WeChat Mini Program does NOT match the `:root` selector — CSS custom
+// properties declared there silently no-op, leaving every `var(--brand)` etc. unresolved
+// (UI falls back to black text on white bg). The fix is to declare them on `page`,
+// which IS the WXSS equivalent of <html>. Web/H5 .css files keep `:root` as normal.
+function buildCss(t, selector = ':root') {
   const lines = []
   const groups = [
     ['', t.color],
@@ -34,7 +38,7 @@ function buildCss(t) {
       lines.push(`  --${prefix}${k}: ${v};`)
     }
   }
-  return `${HEADER}\n:root {\n${lines.join('\n')}\n}\n`
+  return `${HEADER}\n${selector} {\n${lines.join('\n')}\n}\n`
 }
 
 const TARGETS = [
@@ -45,16 +49,19 @@ const TARGETS = [
   'server/public/admin/tokens.css',
 ]
 
-const css = buildCss(tokens)
+const cssWeb = buildCss(tokens, ':root')
+const cssWxss = buildCss(tokens, 'page')
+const cssFor = (rel) => (rel.endsWith('.wxss') ? cssWxss : cssWeb)
 const isCheck = process.argv.includes('--check')
 
 let stale = 0
 for (const rel of TARGETS) {
   const target = resolve(repoRoot, rel)
+  const expected = cssFor(rel)
   if (isCheck) {
     let existing = ''
     try { existing = await readFile(target, 'utf8') } catch {}
-    if (existing !== css) {
+    if (existing !== expected) {
       console.error(`✗ stale: ${rel}`)
       stale++
     } else {
@@ -62,7 +69,7 @@ for (const rel of TARGETS) {
     }
   } else {
     await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, css, 'utf8')
+    await writeFile(target, expected, 'utf8')
     console.log(`✓ wrote ${rel}`)
   }
 }

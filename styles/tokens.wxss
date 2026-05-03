@@ -1,6 +1,6 @@
 /* AUTO-GENERATED from shared/tokens/tokens.json — do not edit by hand.
    Run `node shared/tokens/build.mjs` (or `pnpm -C web tokens:build`) to regenerate. */
-:root {
+page {
   --brand: #2563eb;
   --brand-hover: #1d4ed8;
   --brand-soft: #dbeafe;
