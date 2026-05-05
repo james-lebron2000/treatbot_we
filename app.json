@@ -10,6 +10,7 @@
     "pages/matches/detail/detail",
     "pages/profile/profile",
     "pages/profile/consent/consent",
+    "pages/profile/privacy/privacy",
     "pages/demo/demo",
     "pages/demo/matches/matches",
     "pages/records/detail/detail"
@@ -40,7 +41,7 @@
       },
       {
         "pagePath": "pages/matches/matches",
-        "text": "匹配",
+        "text": "新药",
         "iconPath": "images/match.png",
         "selectedIconPath": "images/match-active.png"
       },

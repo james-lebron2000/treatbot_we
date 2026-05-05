@@ -28,7 +28,9 @@
   <!-- Q3 视觉对齐 §E.1：Hero 改用 .hero-shell（Landing 同款 radial 浅光） -->
   <view class="hero-section hero-shell">
     <view class="hero-content">
-      <text class="hero-eyebrow">数愈健康 · 用药全程免费</text>
+      <!-- PRD-2026Q2 §P0-6：用 view 而非 text 承载 pill 样式
+           （text 元素在 WeChat 下 padding/inline-flex 表现不稳，导致 pill 高度被压扁） -->
+      <view class="hero-eyebrow"><text>数愈健康 · 用药全程免费</text></view>
       <text class="hero-title">让每一份病历</text>
       <text class="hero-title">都找到<text class="accent">能用的新药</text></text>
       <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、找到能免费用上的新药。数据完全由您掌管。</text>
@@ -36,18 +38,25 @@
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
 
+  <!-- PRD-2026Q2 §P0-1：数字降为中性色（不抢主 CTA），第三格用 lock 图标 +
+       caption 出处替代「零」字（避免抽象、增强可信度）。 -->
   <view class="stats-section">
     <view class="stat-item">
       <text class="stat-number">5,000+</text>
       <text class="stat-label">在研新药</text>
+      <text class="stat-caption">来自 chinadrugtrials.org.cn</text>
     </view>
     <view class="stat-item">
       <text class="stat-number">10,000+</text>
       <text class="stat-label">已找到免费用药</text>
+      <text class="stat-caption">含三甲合作渠道</text>
     </view>
     <view class="stat-item">
-      <text class="stat-number">零</text>
-      <text class="stat-label">隐私数据留存</text>
+      <view class="stat-icon-wrap">
+        <icon name="lock" color="brand" size="64" />
+      </view>
+      <text class="stat-label">数据由您掌控</text>
+      <text class="stat-caption">个保法第 13 条第二款（二）项</text>
     </view>
   </view>
 
@@ -92,20 +101,20 @@
     </view>
   </view>
 
-  <view class="processing-card card" wx:if="{{activeParseTask}}">
-    <view class="processing-card-head">
-      <text class="processing-card-title">我们正在看懂这份病历</text>
-      <text class="processing-card-progress">{{activeParseTask.progress}}%</text>
-    </view>
-    <text class="processing-card-text">{{activeParseTask.text}}</text>
-    <view class="processing-card-bar">
-      <view class="processing-card-fill" style="width: {{activeParseTask.progress}}%;"></view>
-    </view>
-    <view class="processing-card-actions">
+  <!-- PRD-2026Q2 §P1-3：抽公共 <parse-progress-banner>，actions slot 注入两个文本链接。 -->
+  <parse-progress-banner
+    wx:if="{{activeParseTask}}"
+    title="我们正在看懂这份病历"
+    progress="{{activeParseTask.progress}}"
+    statusText="{{activeParseTask.text}}"
+    showActions="{{true}}"
+    class="processing-card-wrap"
+  >
+    <view slot="actions" class="processing-card-actions-slot">
       <text class="processing-card-link" bindtap="goToRecords">看病历</text>
       <text class="processing-card-link" bindtap="goToMatches">看新药</text>
     </view>
-  </view>
+  </parse-progress-banner>
 
   <view class="loading" wx:if="{{loading}}">
     <text>马上好…</text>

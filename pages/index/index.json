@@ -1,7 +1,8 @@
 {
   "usingComponents": {
     "help-fab": "/components/help-fab/help-fab",
-    "icon": "/components/icon/icon"
+    "icon": "/components/icon/icon",
+    "parse-progress-banner": "/components/parse-progress-banner/parse-progress-banner"
   },
   "enablePullDownRefresh": true,
   "backgroundColor": "#f0f7ff"

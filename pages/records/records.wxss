@@ -185,3 +185,28 @@
   background: var(--amber-soft);
   border-radius: var(--r-pill);
 }
+
+/* PRD-2026Q2 §P1-6：复购钩子条 —— 卡片内的「带行动」次级提示。
+   icon + 文本一体；88rpx 触达高度（padding 16rpx 上下 + 文字行高 1.4 ≈ 56rpx 内容）。 */
+.record-hook {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 12rpx;
+  padding: 16rpx 20rpx;
+  background: var(--brand-soft);
+  border-radius: 16rpx;
+  transition: opacity 150ms ease-out;
+}
+
+.record-hook:active {
+  opacity: 0.7;
+}
+
+.record-hook-text {
+  font-size: 26rpx;
+  color: var(--brand);
+  font-weight: 600;
+  line-height: 1.4;
+  flex: 1;
+}

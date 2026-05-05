@@ -1,27 +1,117 @@
-/* profile/privacy —— Plan §G token-swap polish */
-.card {
-  background: var(--bg);
-  border-radius: 24rpx;
-  padding: 28rpx;
-  margin-bottom: 18rpx;
-  border: 2rpx solid var(--line);
+/* PRD-2026Q2 §P0-2 隐私承诺页
+   - 顶部 hero-shell 复用首页同款 radial 浅光，配 shield-check 大图标
+   - 5 张卡，每张 check-circle / phone-call 前缀 + 主副两段文字
+   - 末尾「拨打客服」CTA 用 .btn-primary 全宽 */
+
+.privacy-hero {
+  padding: 48rpx 32rpx 36rpx;
+  text-align: center;
+  margin-bottom: 24rpx;
 }
 
-.title {
-  font-size: 32rpx;
+.privacy-hero-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16rpx;
+}
+
+.privacy-hero-title {
+  font-size: 56rpx;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 14rpx;
-  letter-spacing: -0.01em;
-}
-
-.desc {
-  font-size: 28rpx;
-  color: var(--text-dim);
-  line-height: var(--lh-relaxed);
+  line-height: 1.2;
+  letter-spacing: -0.5rpx;
   margin-bottom: 12rpx;
 }
 
-.desc:last-child {
+.privacy-hero-subtitle {
+  font-size: 28rpx;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.privacy-card {
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 24rpx;
+  padding: 28rpx;
+  margin-bottom: 18rpx;
+}
+
+.privacy-card-head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.privacy-card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.privacy-card-body {
+  padding-left: 50rpx;  /* 与 head 文字左对齐：icon 36rpx + gap 14rpx */
+}
+
+.privacy-card-desc {
+  font-size: 28rpx;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 8rpx;
+}
+
+.privacy-card-desc:last-child {
   margin-bottom: 0;
+}
+
+.privacy-card-desc-muted {
+  color: var(--text-muted);
+  font-size: 26rpx;
+}
+
+/* 客服卡：高亮一点 */
+.privacy-card-contact {
+  background: var(--brand-soft);
+  border-color: transparent;
+}
+
+.privacy-contact-line {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+  margin-top: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.privacy-contact-phone {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--brand);
+  letter-spacing: -0.5rpx;
+  line-height: 1;
+}
+
+.privacy-contact-hours {
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
+.btn-call {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  width: 100%;
+}
+
+.privacy-legal {
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 32rpx 32rpx 48rpx;
 }

@@ -234,6 +234,12 @@ Page({
     },
     summaryProgressStyle: 'width: 0%;',
     missingFields: [],
+    // PRD-2026Q2 §P1-7：step 3 主 CTA 文案随 missingFields 数量动态切换
+    // 在 applyParsedPresentation 内同步刷新，无 wxs computed 依赖。
+    primaryCtaText: '看看为家人找到的新药',
+    // PRD-2026Q2 §T2-5：multi-line placeholder（绑定到 data 而非 WXML 字面量，
+    // 防止微信 WXML 解析器把 &#10; 当成普通字符串而不解码）。
+    remarkPlaceholder: '例如：\n· 上周刚做完第 3 周期化疗，医生说效果不太好\n· 一直在吃奥希替尼，但 CT 显示又长大了\n· 想找口服的、不用打针的方案',
     // Track C-2（PRD-2026Q3）：分组式 gap UI 的状态
     //   gapSections    — schema.buildGapSections 输出，按 GROUP_META 顺序分组
     //   collapsedGroups— { [groupKey]: boolean }，true 表示该组当前折叠
@@ -1131,6 +1137,12 @@ Page({
       this.data.collapsedGroups
     )
 
+    // PRD-2026Q2 §P1-7：动态主 CTA 文案
+    const missingCount = presentation.missingFields.length
+    const primaryCtaText = missingCount > 0
+      ? `再补 ${missingCount} 项更准 · 直接看新药`
+      : '信息已齐 · 看找到的新药'
+
     this.setData({
       parsedData: presentation.normalized,
       parsedSections: presentation.parsedSections,
@@ -1143,7 +1155,8 @@ Page({
         totalMissing: initialTotal,
         filledNow,
         percent
-      }
+      },
+      primaryCtaText
     })
     return presentation
   },
@@ -1235,26 +1248,17 @@ Page({
       }, 260)
     }
 
-    // PRD-2026Q3 §U7：上传 + 解析 100% 完成后，停留 ~1.2s 让用户看到完成态
-    // 再自动跳到结构化病历浏览页（pages/records/detail）。这样用户的认知是
-    //   「上传 → 看到完成 → 看到自家病历的完整卡片视图」一气呵成。
-    // 关键缺信息（PDF 模态、缺失字段）会先打断跳转：
-    //   - PDF 模态期间不跳；
-    //   - 仍有 missingFields 时不跳，让用户在当前页用 gapSection 完成补全后再走 startMatching。
-    const shouldAutoRedirect =
-      missingFields.length === 0 &&
-      !this.data.pdfQualityHintShown &&
-      resolvedRecordId
-    if (shouldAutoRedirect) {
-      this.autoRedirectTimer = setTimeout(() => {
-        wx.redirectTo({
-          url: `/pages/records/detail/detail?id=${encodeURIComponent(resolvedRecordId)}&fromUpload=1`,
-          fail: () => {
-            // redirectTo 失败（如目标页未注册）时，至少让用户能手动跳过去
-            wx.showToast({ title: '已为您整理好病历，可在「病历」中查看', icon: 'none' })
-          }
-        })
-      }, 1200)
+    // PRD-2026Q2 §P0-3：取消「1.2s 后自动跳转到病历详情页」。
+    // 旧行为：上传 + 解析 100% 完成后强行 redirectTo /pages/records/detail
+    //         —— 老人/家属还没看清「找到的新药」就被踢走，找不回来。
+    // 新行为：停留在 step 3 完成态，弹一个轻量 toast 确认数据已存，
+    //         由用户主动点 sticky CTA「看看为家人找到的新药」决定下一步。
+    if (missingFields.length === 0 && !this.data.pdfQualityHintShown && resolvedRecordId) {
+      wx.showToast({
+        title: '信息已保存',
+        icon: 'success',
+        duration: 1500
+      })
     }
   },
 

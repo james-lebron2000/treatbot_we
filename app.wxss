@@ -124,6 +124,32 @@ page {
 
 .font-bold { font-weight: 700; }
 
+/* PRD-2026Q2 §T2-2：step 数字圆 utility —— 统一三个站点（index 3-step / onboarding banner / upload 步骤指示器）
+   - 默认态：56rpx 圆 + bg-soft + text-muted（"待办"）
+   - .active：brand 实色 + 白字 + soft glow（"进行中/已完成"）
+   - 此前 48rpx vs 56rpx 不一致，且 active 配色都是直接 brand 实填，缺少 soft 中间态 */
+.step-num {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 1;
+  border: 2rpx solid var(--line);
+  flex-shrink: 0;
+}
+
+.step-num.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
 /* B.6 状态 pill ------------------------------------------------------------ */
 .pill {
   display: inline-flex;

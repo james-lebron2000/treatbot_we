@@ -103,7 +103,12 @@ const PATHS = {
 
   lock:
     '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>' +
-    '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
+    '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+
+  // PRD-2026Q2 §P0-4：matches 空状态「订阅通知」card 用
+  bell:
+    '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>' +
+    '<path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
 }
 
 // 与 shared/tokens/tokens.json 保持同步；改色优先改 tokens.json 再回填这里。

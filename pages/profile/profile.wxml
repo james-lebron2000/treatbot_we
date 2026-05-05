@@ -77,6 +77,10 @@
         </view>
         <icon name="chevron-right" color="text-muted" size="32" />
       </view>
+      <!-- PRD-2026Q2 §P0-8：「正在联络的新药」菜单项暂时下线
+           原因：进入仅是一个 modal「将在后续版本开放」，制造期待落空。
+           顾问联系入口已在「您的数据」分组的「遇到问题找我们」覆盖。
+           跟踪：等 PRD-2026Q3 H4「申请追踪」上线后恢复，届时改 navigateTo /pages/applications/applications。
       <view class="menu-item" bindtap="goToApplications">
         <view class="menu-icon menu-icon-mint">
           <icon name="phone-call" color="mint" size="36" />
@@ -87,6 +91,7 @@
         </view>
         <icon name="chevron-right" color="text-muted" size="32" />
       </view>
+      -->
     </view>
   </view>
 
@@ -158,7 +163,10 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q2 §T2-3：拆为 2 行 —— 旧版「数愈健康 · 陪您一起… · v1.1.0」三段挤一行，
+       价值文案被版本号稀释，一眼读不出主体。新版第一行突出品牌＋价值，第二行只放版本号。 -->
   <view class="version-info">
-    <text>数愈健康 · 陪您一起，帮家人找到下一步 · v1.1.0</text>
+    <text class="version-tagline">数愈健康 · 陪您一起，帮家人找到下一步</text>
+    <text class="version-build">v1.1.0</text>
   </view>
 </view>

@@ -42,6 +42,12 @@
         <text class="match-count empty" wx:else>暂未找到能用的新药</text>
         <text class="gap-hint" wx:if="{{item.missingCount > 0}}">待补 {{item.missingCount}} 项</text>
       </view>
+      <!-- PRD-2026Q2 §P1-6：复购钩子 —— 病历过期或缺基因时给一个温和的复诊入口。
+           颜色用 brand，与 CTA 同语义；catchtap 防止冒泡到卡片整体的 viewRecord。 -->
+      <view wx:if="{{item.hookText}}" class="record-hook" catchtap="goToUpload">
+        <icon name="plus" color="brand" size="28" strokeWidth="2.5" />
+        <text class="record-hook-text">{{item.hookText}}</text>
+      </view>
     </view>
   </view>
 

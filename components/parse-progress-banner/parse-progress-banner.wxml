@@ -1,0 +1,16 @@
+<!-- PRD-2026Q2 §P1-3：抽离 matches + index 两处的解析进度条共用组件
+     - 视觉对齐：title / progress% / 状态文本 / fill bar 一处定义
+     - 行为：actions slot 让宿主页注入「看病历 / 看新药」等链接 -->
+<view class="ppb">
+  <view class="ppb-head">
+    <text class="ppb-title">{{title}}</text>
+    <text class="ppb-progress">{{progress}}%</text>
+  </view>
+  <text class="ppb-text">{{statusText}}</text>
+  <view class="ppb-bar">
+    <view class="ppb-fill" style="width: {{progress}}%;"></view>
+  </view>
+  <view class="ppb-actions" wx:if="{{showActions}}">
+    <slot name="actions"></slot>
+  </view>
+</view>

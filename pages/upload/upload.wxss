@@ -91,9 +91,12 @@
 }
 
 /* upload area --------------------------------------------------------- */
+/* PRD-2026Q2 §P1-2：dashed 边色 brand-soft → brand。
+   旧 brand-soft (#dbeafe) 在浅蓝 bg-soft 底色上几乎看不见虚线；
+   实蓝边对比度 ≥ 4.5:1，符合 WCAG AA 老花镜可读性。 */
 .upload-area {
   background: var(--bg-soft);
-  border: 4rpx dashed var(--brand-soft);
+  border: 4rpx dashed var(--brand);
   border-radius: 32rpx;
   padding: 56rpx 32rpx;
   margin-bottom: 24rpx;
@@ -773,15 +776,25 @@
   font-size: 32rpx;
 }
 
+/* PRD-2026Q2 §P1-7：单 CTA 时让按钮占满宽度（不再需要 flex 1 与隐形伙伴分宽） */
+.action-bar-single .btn {
+  width: 100%;
+}
+
 .btn.disabled {
   opacity: 0.5;
 }
 
 /* gap section（缺字段补全） ------------------------------------------- */
+/* PRD-2026Q2 §P1-1：amber 大底色拆细。
+   旧：整块 amber-soft 底，让用户感觉「整段都坏了」。
+   新：白底 + amber 描边（轻量提示），仅缺失字段（.is-missing）保留 amber 高亮。
+   amber 的存在感缩小到「点状提示」级别。 */
 .gap-section {
-  background: var(--amber-soft);
+  background: var(--bg);
+  border: 2rpx solid var(--amber-soft);
   border-radius: 32rpx;
-  padding: 24rpx;
+  padding: 32rpx 24rpx;
   margin-bottom: 24rpx;
 }
 
@@ -791,6 +804,9 @@
   justify-content: space-between;
   margin-bottom: 24rpx;
   gap: 24rpx;
+  padding: 16rpx 20rpx;
+  background: var(--amber-soft);
+  border-radius: 20rpx;
 }
 
 .gap-header-left {

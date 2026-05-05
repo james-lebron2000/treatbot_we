@@ -58,11 +58,14 @@
         </view>
       </view>
 
+      <!-- PRD-2026Q2 §T2-5：placeholder 给具体例子，家属知道该写什么。
+           旧版「最近的治疗方案、医生说过的话、最新检查等」抽象，家属看了不知道写啥；
+           新版给 3 个真实场景，让用户照葫芦画瓢，提高填写率。 -->
       <view class="remark-section">
         <view class="section-label">想告诉我们什么？（选填）</view>
         <textarea
           class="remark-input"
-          placeholder="例如最近的治疗方案、医生说过的话、最新检查等"
+          placeholder="{{remarkPlaceholder}}"
           maxlength="500"
           bindinput="onRemarkInput"
           value="{{remark}}"
@@ -121,7 +124,9 @@
           wx:for-index="index"
         >
           <view class="parse-step-badge">
-            <text wx:if="{{parseStep > index}}" class="parse-step-badge-text">✓</text>
+            <!-- PRD-2026Q2 §P0-5：完成态用 Lucide check 而非 Unicode ✓
+                 （✓ 在跨厂商安卓上字形差异大，老花镜下可读性差） -->
+            <icon wx:if="{{parseStep > index}}" name="check" color="white" size="28" strokeWidth="3" />
             <text wx:elif="{{parseStep === index}}" class="parse-step-badge-text">{{index + 1}}</text>
             <text wx:else class="parse-step-badge-text">{{index + 1}}</text>
           </view>
@@ -258,9 +263,14 @@
       </view>
     </view>
 
-    <view class="action-bar">
-      <button class="btn btn-default" bindtap="editResult">信息已补好</button>
-      <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">看看为家人找到的新药</button>
+    <!-- PRD-2026Q2 §P1-7：双按钮简化为单 CTA。
+         旧：「信息已补好（次）」+「看看为家人找到的新药（主）」—— 两个按钮做同一件事，
+              「信息已补好」只是把字段保存到本地，对用户无感，反而分散注意力。
+         新：单一 primary 按钮，文案随 missingFields 数量动态切换：
+              missing > 0 → "再补 X 项更准 · 直接看新药"
+              missing == 0 → "信息已齐 · 看找到的新药" -->
+    <view class="action-bar action-bar-single">
+      <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">{{primaryCtaText}}</button>
     </view>
   </view>
 

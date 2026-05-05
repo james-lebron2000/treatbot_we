@@ -139,11 +139,13 @@
   transform: translateY(-2rpx);
 }
 
+/* PRD-2026Q2 §P0-1：与首页 stat-number 同步，数字色 → var(--text)，
+   让 brand 蓝在 profile 内只用于 CTA 与 menu icon。 */
 .stats-num {
   display: block;
   font-size: 56rpx;
   font-weight: 700;
-  color: var(--brand);
+  color: var(--text);
   margin-bottom: 4rpx;
   line-height: 1;
   letter-spacing: -0.01em;
@@ -253,10 +255,28 @@
   line-height: var(--lh-normal);
 }
 
+/* PRD-2026Q2 §T2-3：拆为「价值文案 + 版本号」上下两行
+   - tagline：主色调（text-dim）+ 26rpx，告诉用户「这是个什么 app」
+   - build：弱化（text-muted）+ 22rpx，只给开发者看的版本号 */
 .version-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 32rpx 0 40rpx;
   text-align: center;
-  padding: 24rpx 0 40rpx;
+}
+
+.version-tagline {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: 1.5;
+  letter-spacing: 0.2rpx;
+}
+
+.version-build {
+  font-size: 22rpx;
   color: var(--text-muted);
-  font-size: 24rpx;
+  line-height: 1.4;
   letter-spacing: 0.4rpx;
 }
