@@ -48,6 +48,9 @@ docker-compose up -d
 | [api-spec.md](docs/api-spec.md) | 20分钟 | API 接口规范 |
 | [production-plan.md](docs/production-plan.md) | 30分钟 | 架构设计 |
 | [performance-optimization.md](docs/performance-optimization.md) | 15分钟 | 性能优化 |
+| [frontend-miniprogram-guide.md](docs/frontend-miniprogram-guide.md) | 25分钟 | 小程序前端指南（设计思想 / 工程结构 / 已完成的两轮 / 待办与坑） |
+| [design-system.md](docs/design-system.md) | 15分钟 | 跨端视觉语言 SSoT（token 工作流） |
+| [brand-voice-guidelines.md](docs/brand-voice-guidelines.md) | 15分钟 | 中文文案纪律（6 条铁律 / 禁用词） |
 
 ### 运维文档
 | 文档 | 阅读时间 | 说明 |

@@ -2,6 +2,7 @@
 
 > 跨端共享的视觉语言。**Landing 是 source of truth**，小程序 / Web / Admin / Demo 都向它对齐。
 > 本文为日常维护手册：改 token、加组件、做新页时翻这一份。
+> **小程序专属指南** 在 [`docs/frontend-miniprogram-guide.md`](frontend-miniprogram-guide.md)（设计思想 / 工程结构 / 已完成的两轮 / 待办与坑）。
 
 ## 0. 文档地图
 
