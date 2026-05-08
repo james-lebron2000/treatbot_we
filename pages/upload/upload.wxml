@@ -256,7 +256,7 @@
     </view>
 
     <view class="action-bar">
-      <button class="btn btn-default" bindtap="editResult">信息已补好</button>
+      <button class="btn btn-default" bindtap="editResult" loading="{{submittingGap}}">信息已补好</button>
       <button class="btn btn-primary" bindtap="startMatching" loading="{{submittingGap}}">看看为家人找到的新药</button>
     </view>
   </view>

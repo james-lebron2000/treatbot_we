@@ -1285,8 +1285,12 @@ Page({
     wx.setStorageSync('structuredRecordDraft', normalized)
   },
 
-  editResult() {
-    const { missingFields, structuredSummary } = this.data
+  async editResult() {
+    if (this.data.submittingGap) {
+      return
+    }
+
+    const { missingFields, structuredSummary, fileId, parsedData, recordId } = this.data
     if (missingFields.length > 0) {
       wx.showToast({
         title: `仍有${missingFields.length}项待补充`,
@@ -1295,10 +1299,33 @@ Page({
       return
     }
 
-    wx.showToast({
-      title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已确认',
-      icon: 'success'
-    })
+    this.setData({ submittingGap: true })
+    wx.showLoading({ title: '保存中...' })
+
+    try {
+      if (fileId) {
+        await api.enrichMedicalRecord(fileId, parsedData)
+      }
+
+      const currentRecordId = recordId || fileId || ''
+      if (currentRecordId) {
+        wx.setStorageSync('currentRecordId', currentRecordId)
+      }
+      wx.setStorageSync('structuredRecordDraft', parsedData)
+
+      wx.showToast({
+        title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已保存',
+        icon: 'success'
+      })
+    } catch (error) {
+      wx.showToast({
+        title: resolveErrorCopy(error),
+        icon: 'none'
+      })
+    } finally {
+      wx.hideLoading()
+      this.setData({ submittingGap: false })
+    }
   },
 
   async startMatching() {
