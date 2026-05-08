@@ -22,6 +22,9 @@
 const { Op } = require('sequelize');
 const { sequelize, ApplicationStatusEvent, TrialApplication, CroCompany } = require('../models');
 const logger = require('../utils/logger');
+// PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：cro_name 是 CRO 自填字段，
+// 历史只 `"`-quote 但没拦 = + - @ 起头 → Excel 仍按公式求值。集中式转义。
+const { escapeCsvCell } = require('../utils/csvSafe');
 
 const TZ_OFFSET_MINUTES = 8 * 60;
 
@@ -160,18 +163,29 @@ const toCsv = (summary) => {
   const headers = ['月份', 'CRO ID', 'CRO 公司', '试验 ID', '合格状态', '合格线索数', '单价(元)', '小计(元)'];
   const lines = [headers.join(',')];
   for (const r of summary.rows) {
+    // 每个单元格走 escapeCsvCell —— 公式触发字符自动前缀单引号 + 双引号包裹。
+    // cro_name 是用户输入；其它字段是 ID / 数值，仍走转义保持一致性。
     lines.push([
-      summary.month,
-      r.cro_id,
-      `"${(r.cro_name || '').replace(/"/g, '""')}"`,
-      r.trial_id,
-      r.qualified_status,
-      r.count,
-      r.unit_price.toFixed(2),
-      r.amount.toFixed(2)
+      escapeCsvCell(summary.month),
+      escapeCsvCell(r.cro_id),
+      escapeCsvCell(r.cro_name || ''),
+      escapeCsvCell(r.trial_id),
+      escapeCsvCell(r.qualified_status),
+      escapeCsvCell(r.count),
+      escapeCsvCell(r.unit_price.toFixed(2)),
+      escapeCsvCell(r.amount.toFixed(2))
     ].join(','));
   }
-  lines.push(['合计', '', '', '', '', summary.total_count, '', summary.total_amount.toFixed(2)].join(','));
+  lines.push([
+    escapeCsvCell('合计'),
+    escapeCsvCell(''),
+    escapeCsvCell(''),
+    escapeCsvCell(''),
+    escapeCsvCell(''),
+    escapeCsvCell(summary.total_count),
+    escapeCsvCell(''),
+    escapeCsvCell(summary.total_amount.toFixed(2))
+  ].join(','));
   return '﻿' + lines.join('\n') + '\n';
 };
 

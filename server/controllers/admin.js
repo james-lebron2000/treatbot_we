@@ -37,6 +37,8 @@ const ADMIN_STATUS_TO_FUNNEL_EVENT = {
 };
 // PRD-2026Q2 §2.3：PII 脱敏。list 响应出门前走一道 mask，reveal 单字段走审计日志旁路。
 const { maskPhone, maskName } = require('../utils/mask');
+// PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：集中式 CSV 转义。
+const { toCsv: csvSafeToCsv } = require('../utils/csvSafe');
 const {
   ADMIN_TOKEN_EXPIRES_IN,
   getConfiguredAdmin,
@@ -220,24 +222,11 @@ const buildDailyTrend = ({ start, end, users, records, applications }) => {
   return result;
 };
 
-const toCsv = (rows) => {
-  if (!rows.length) {
-    return '';
-  }
-
-  const headers = Array.from(rows.reduce((set, row) => {
-    Object.keys(row).forEach((key) => set.add(key));
-    return set;
-  }, new Set()));
-
-  const escapeCell = (value) => {
-    const text = value === undefined || value === null ? '' : `${value}`;
-    return `"${text.replace(/"/g, '""')}"`;
-  };
-
-  const body = rows.map((row) => headers.map((key) => escapeCell(row[key])).join(','));
-  return `${headers.join(',')}\n${body.join('\n')}`;
-};
+// PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：
+// 老实现只 `"`-quote 单元格但没处理首字符 `= + - @` —— Excel 仍按公式求值。
+// 现在统一走 utils/csvSafe.toCsv：所有命中 FORMULA_TRIGGERS 的单元格自动前缀 `'`。
+// 包装薄薄一层只是为了保留旧签名 toCsv(rows) 不破坏既有调用点。
+const toCsv = (rows) => csvSafeToCsv(rows);
 
 const parseRecordIds = (value) => {
   if (Array.isArray(value)) {

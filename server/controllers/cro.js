@@ -4,6 +4,8 @@ const { Op, fn, col } = require('sequelize');
 const { CroCompany, TrialApplication, Trial, User, MedicalRecord, CroExportLog, AdminAuditLog } = require('../models');
 const { success, error } = require('../utils/response');
 const { safeText } = require('../utils/text');
+// PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：CRO export 也走集中式 CSV 转义。
+const { escapeCsvCell } = require('../utils/csvSafe');
 const logger = require('../utils/logger');
 const { JWT_SECRET } = require('../utils/jwtSecret');
 // PRD-2026Q4 T0-10：转化漏斗埋点
@@ -402,8 +404,10 @@ const exportCroApplications = async (req, res, next) => {
     }
 
     const headers = EXPORT_HEADERS;
-    const escape = (v) => `"${`${v == null ? '' : v}`.replace(/"/g, '""')}"`;
-    const csv = [headers.join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\n');
+    // PRD-2026Q4 T0-7 followup：每个 cell 走 escapeCsvCell（首字符为 = + - @ \t \r 时
+    // 前缀单引号）—— 防止患者把 `=HYPERLINK(...)` 塞进昵称 / 备注 / 主诉，CRO 在
+    // Excel 打开 leads_xxx.csv 时被公式劫持。Headers 是硬编码中文，不需要转义。
+    const csv = [headers.join(','), ...rows.map((r) => headers.map((h) => escapeCsvCell(r[h])).join(','))].join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="leads_${trialIds.join('_')}.csv"`);
     return res.send(`\uFEFF${csv}`);

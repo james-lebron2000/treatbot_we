@@ -181,12 +181,15 @@ describe('billing.computeMonthly — T1-4', () => {
 
     expect(csv.charCodeAt(0)).toBe(0xFEFF);
     const lines = csv.replace(/^﻿/, '').trim().split('\n');
+    // headers 仍按原顺序（不转义，硬编码字面量）。
     expect(lines[0]).toBe('月份,CRO ID,CRO 公司,试验 ID,合格状态,合格线索数,单价(元),小计(元)');
-    expect(lines[1]).toContain('cro_A');
+    // PRD-2026Q4 T0-7 followup（CSV formula injection）：每个 cell 都走 escapeCsvCell，
+    // 因此身份字段也被双引号包裹（这是 OWASP 推荐 + 防御一致性，不破坏 Excel 显示）。
+    expect(lines[1]).toContain('"cro_A"');
     expect(lines[1]).toContain('"A 公司"');
-    expect(lines[1].endsWith(',1,100.00,100.00')).toBe(true);
-    expect(lines[2].startsWith('合计,')).toBe(true);
-    expect(lines[2].endsWith(',1,,100.00')).toBe(true);
+    expect(lines[1].endsWith(',"1","100.00","100.00"')).toBe(true);
+    expect(lines[2].startsWith('"合计",')).toBe(true);
+    expect(lines[2].endsWith(',"1","","100.00"')).toBe(true);
   });
 
   test('7) 非法 month 抛错', async () => {
