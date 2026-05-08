@@ -21,7 +21,9 @@ const EVENTS = [
   'upload_success',
   'match_view',
   'trial_apply',
-  'application_submitted'
+  'application_submitted',
+  // Plan §Phase 3.2：客户端模糊度 advisory（用于阈值校准）
+  'client_blur_advisory'
 ];
 
 const METADATA_MAX_BYTES = 2048;

@@ -2,6 +2,8 @@ const Queue = require('bull');
 const logger = require('../utils/logger');
 const { processMedicalImage } = require('./ocr');
 const { MedicalRecord, OcrJobFailure } = require('../models');
+// Plan §Phase 1.2：OCR 结果缓存（按 file_hash + prompt_version）
+const ocrCache = require('./ocrCache');
 // Q3-红线 §A.3：Sentry 软依赖（DSN 未配置时退化为 noop）
 let _sentry = null;
 try {
@@ -19,7 +21,10 @@ const captureException = (_sentry && _sentry.captureException)
 const OCR_JOB_ATTEMPTS = 5;
 const OCR_JOB_BACKOFF_DELAY = 8000;
 const OCR_JOB_BACKOFF_MAX = 90000;
-const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURRENCY || '2', 10));
+// Plan §Phase 1.1：默认并发 2 → 4。上游 Doubao/Kimi 配额已确认可放开；token bucket
+// （services/llmRateLimiter）兜底，永远不会撞 LLM provider 端的配额上限。
+// 仍可通过 OCR_QUEUE_CONCURRENCY 环境变量覆盖（运维灰度回退用）。
+const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURRENCY || '4', 10));
 
 // Redis 连接配置
 //
@@ -91,22 +96,119 @@ const hasMeaningfulOcrResult = (result = {}) => {
  *   - 成功 → update 全部结构化字段 + ocrMeta，再发完成通知
  *   - 任何失败 → update status=error + structured.error
  */
+// Plan §Phase 3.1：用户主动取消 sentinel error。catch 块按 code 识别后：
+//   - 不写 status='error'
+//   - 不上报 Sentry
+//   - SSE 推 cancelled 事件
+//   - 返回 { success:false, cancelled:true }
+class OcrCancelledError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'OcrCancelledError';
+    this.code = 'OCR_CANCELLED';
+  }
+}
+
+// 读取最新 record 快照，cancelled_at 非空即抛 OcrCancelledError；
+// 同时把快照返回给调用方（避免再发一次 findOne 给 Phase 1.2 cache 查询）。
+const assertNotCancelled = async (recordId) => {
+  const record = await MedicalRecord.findOne({ where: { id: recordId } });
+  if (record && record.cancelled_at) {
+    throw new OcrCancelledError('用户已取消解析');
+  }
+  return record;
+};
+
+const publishRecordEventSafe = async (recordId, payload) => {
+  try {
+    const recordEvents = require('./recordEvents');
+    await recordEvents.publishRecordEvent(recordId, payload);
+  } catch (e) {
+    logger.warn('publishRecordEvent 抛错（忽略）', { recordId, error: e && e.message });
+  }
+};
+
 const runOcrTask = async (data, opts = {}) => {
   const { recordId, imageUrl, mimeType, fileKey, userId } = data;
   const { jobId } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
 
+  let fileHash = null;
   try {
+    // Plan §Phase 3.1：第一道取消闸 —— worker 启动瞬间用户已点过取消的快路径。
+    // 同一次 findOne 顺手给 Phase 1.2 拿到 file_hash。
+    const recordSnap = await assertNotCancelled(recordId);
+    fileHash = recordSnap && recordSnap.file_hash;
+
+    // Plan §Phase 1.2：先尝试缓存命中（按 file_hash + prompt_version）。
+    // 命中时跳过整段 LLM/OCR 流程，直接 hydrate `MedicalRecord.structured` + status='completed'。
+    if (fileHash) {
+      const cached = await ocrCache.get(fileHash);
+      const updateArgs = ocrCache.buildUpdateArgsFromPayload(cached);
+      if (updateArgs) {
+        await MedicalRecord.update(updateArgs, { where: { id: recordId } });
+        logger.info('OCR 缓存命中，跳过 LLM 调用', { recordId, fileHash });
+        await publishRecordEventSafe(recordId, { status: 'completed', fromCache: true });
+        if (userId) {
+          try {
+            await Promise.race([
+              notificationQueue.add({ type: 'ocr_completed', recordId, userId, fromCache: true }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('notify_add_timeout_2s')), 2000)
+              )
+            ]);
+          } catch (notifyErr) {
+            logger.warn('完成通知入队失败（cache hit）', {
+              recordId,
+              error: notifyErr.message
+            });
+          }
+        }
+        return { success: true, recordId, cacheHit: true };
+      }
+    }
+
+    // Plan §Phase 1.3：阶段一 → analyzing（LLM 调用即将开始）。
+    // 同步打 status='running' + status_phase='analyzing'，
+    // 客户端轮询/SSE 立刻拿到 (analyzing, 55%) 而不是卡在 1%。
     await MedicalRecord.update(
-      { status: 'running' },
+      { status: 'running', status_phase: 'analyzing' },
       { where: { id: recordId } }
     );
+    await publishRecordEventSafe(recordId, {
+      status: 'running',
+      statusPhase: 'analyzing',
+      progress: 55
+    });
 
     const result = await processMedicalImage({
       sourceUrl: imageUrl,
       mimeType,
       fileKey
     });
+
+    // Plan §Phase 3.1：第二道取消闸 —— OCR 跑完后再查一次 cancelled_at。
+    // LLM 调用是 60-180s，用户在中途取消是常见场景；此时 OCR 结果丢弃，不写 completed。
+    await assertNotCancelled(recordId);
+
+    // Plan §Phase 1.3：阶段二 → structuring（schema 校验 / 字段合并 / 写库）。
+    // 这一段虽然只有 ~1s，但用户进度条留在 90% 比直接跳 100% 体感更连续。
+    try {
+      await MedicalRecord.update(
+        { status_phase: 'structuring' },
+        { where: { id: recordId } }
+      );
+      await publishRecordEventSafe(recordId, {
+        status: 'running',
+        statusPhase: 'structuring',
+        progress: 90
+      });
+    } catch (phaseErr) {
+      // 阶段切换的 DB 写入是 advisory，失败不要影响主路径
+      logger.warn('status_phase=structuring 切换失败（忽略）', {
+        recordId, error: phaseErr && phaseErr.message
+      });
+    }
 
     if (!hasMeaningfulOcrResult(result)) {
       // 修复方案 Track 2.2：错误信息带 provider + text.length，写到 structured.error
@@ -118,6 +220,8 @@ const runOcrTask = async (data, opts = {}) => {
 
     await MedicalRecord.update({
       status: 'completed',
+      // Plan §Phase 1.3：终态清空 status_phase，避免 mapParseStatus 在边缘 case 上误判。
+      status_phase: null,
       diagnosis: result.entities.diagnosis,
       stage: result.entities.stage,
       gene_mutation: result.entities.geneMutation,
@@ -139,6 +243,14 @@ const runOcrTask = async (data, opts = {}) => {
       where: { id: recordId }
     });
 
+    // Plan §Phase 1.2：OCR 成功后写回缓存（best-effort）。同 hash 后续上传 → 直接命中。
+    if (fileHash) {
+      const payload = ocrCache.buildPayloadFromResult(result);
+      ocrCache.set(fileHash, payload).catch((e) => {
+        logger.warn('ocrCache.set 异常（忽略）', { recordId, error: e && e.message });
+      });
+    }
+
     // 完成通知（best-effort：通知队列也要 Redis，挂掉不影响主流程）
     if (userId) {
       try {
@@ -156,9 +268,18 @@ const runOcrTask = async (data, opts = {}) => {
       }
     }
 
+    // Plan §Phase 3.1 & §Phase 2.3：把 completed 状态 push 给订阅 SSE 的客户端。
+    await publishRecordEventSafe(recordId, { status: 'completed' });
+
     logger.info('OCR处理完成:', { recordId });
     return { success: true, recordId };
   } catch (error) {
+    // Plan §Phase 3.1：用户取消是"软"事件 —— 不写 status='error'、不进 Sentry、不重抛（避免 Bull DLQ）。
+    if (error && (error.code === 'OCR_CANCELLED' || error instanceof OcrCancelledError)) {
+      logger.info('OCR 任务被用户取消', { recordId, jobId: jobId || 'inproc' });
+      await publishRecordEventSafe(recordId, { status: 'cancelled' });
+      return { success: false, recordId, cancelled: true };
+    }
     logger.error('OCR处理失败:', { recordId, error: error.message });
     // Q3-红线 §A.3：上报到 Sentry（DSN 未配置时静默 noop）
     captureException(error, {
@@ -170,6 +291,8 @@ const runOcrTask = async (data, opts = {}) => {
     try {
       await MedicalRecord.update({
         status: 'error',
+        // Phase 1.3：error 是终态，清空 status_phase
+        status_phase: null,
         structured: { error: error.message }
       }, {
         where: { id: recordId }
@@ -177,6 +300,14 @@ const runOcrTask = async (data, opts = {}) => {
     } catch (dbErr) {
       logger.error('OCR 失败状态回写失败:', { recordId, error: dbErr.message });
     }
+
+    // Plan §Phase 2.3：把 error 状态推给在线 SSE 客户端（best-effort，不阻塞重抛）
+    try {
+      await publishRecordEventSafe(recordId, {
+        status: 'error',
+        errorMsg: error.message
+      });
+    } catch (_e) { /* noop */ }
 
     throw error;
   }
@@ -253,6 +384,24 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
     ]);
 
     logger.info('OCR任务已添加:', { recordId, jobId: job.id });
+    // Plan §Phase 1.3：入队成功立刻打 status_phase='queued'。
+    // 这一步是 advisory（DB 写失败不影响主路径），让客户端进度条 25% → "等待解析中…"
+    // 不再卡在 1%。
+    try {
+      await MedicalRecord.update(
+        { status_phase: 'queued' },
+        { where: { id: recordId } }
+      );
+      await publishRecordEventSafe(recordId, {
+        status: 'pending',
+        statusPhase: 'queued',
+        progress: 25
+      });
+    } catch (phaseErr) {
+      logger.warn('status_phase=queued 切换失败（忽略）', {
+        recordId, error: phaseErr && phaseErr.message
+      });
+    }
     return job.id;
   } catch (queueErr) {
     // Bull 入队失败（多半是 Redis 不可达 / connectTimeout 触发 / enableOfflineQueue=false 直接抛）
@@ -371,11 +520,40 @@ const retryFailure = async (failureId) => {
   return { jobId: job.id, retried: failure.retried + 1 };
 };
 
+// Plan §Phase 3.4：客户端 step 2 占位卡上方"前面还有 N 份在处理"。
+//   返回 { waiting, active, total }。
+//   - waiting：还没被 worker pick 的；
+//   - active：正在跑（受 OCR_QUEUE_CONCURRENCY 限）；
+//   - total：waiting + active —— 用户体感"前面还有"的口径；
+//
+// 容错：Redis 连不通 / Bull 异常时返回 null —— 上层渲染 null 时直接不显示文案，
+// 不能因为这点装饰拖死上传响应。
+const getQueueDepth = async () => {
+  try {
+    const counts = await ocrQueue.getJobCounts();
+    const waiting = Number(counts.waiting || 0);
+    const active = Number(counts.active || 0);
+    return {
+      waiting,
+      active,
+      total: waiting + active
+    };
+  } catch (e) {
+    logger.warn('[queue] getQueueDepth 失败:', { error: e.message });
+    return null;
+  }
+};
+
 module.exports = {
   ocrQueue,
   notificationQueue,
   addOCRTask,
   getJobStatus,
   retryFailure,
-  __testables: { handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY }
+  getQueueDepth,
+  __testables: {
+    handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY, getQueueDepth,
+    // Plan §Phase 3.1 单测入口
+    runOcrTask, OcrCancelledError, assertNotCancelled
+  }
 };

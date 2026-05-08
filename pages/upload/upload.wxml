@@ -100,6 +100,21 @@
         <view class="processing-desc">{{processingStatus}}</view>
       </view>
 
+      <!-- Plan §Phase 3.3：文件名启发式占位卡 ——
+           OCR 跑 30-90s，让用户在等待时立刻看到"已经知道您给的是什么类型"。
+           这只是猜测；OCR 完成后跳到 step 3，这张卡随 currentStep 切换自动消失。 -->
+      <view class="placeholder-hint-card" wx:if="{{placeholderHints.length > 0}}">
+        <text class="placeholder-hint-kicker">已收到您的文件</text>
+        <view class="placeholder-hint-list">
+          <view class="placeholder-hint-chip" wx:for="{{placeholderHints}}" wx:key="label">
+            <text class="placeholder-hint-label">{{item.label}}</text>
+            <text class="placeholder-hint-count" wx:if="{{item.count > 1}}">×{{item.count}}</text>
+          </view>
+        </view>
+        <!-- Plan §Phase 3.4：队列深度提示 —— 只在 queueAhead > 0 时显示 -->
+        <text class="placeholder-hint-queue" wx:if="{{queueAhead > 0}}">前面还有 {{queueAhead}} 份在处理，请稍候</text>
+      </view>
+
       <view class="progress-panel">
         <view class="progress-panel-head">
           <text class="progress-kicker">当前进度</text>

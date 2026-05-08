@@ -2,8 +2,14 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const schema = require('../../utils/schema')
 const parseTask = require('../../utils/parse-task')
+// Plan §Phase 2.1：客户端直传 COS（用户最痛点的解药）。本地 mode / 全部 PUT 失败时回落 legacy。
+const cosDirectUploader = require('../../utils/cosDirectUploader')
 // Q3-红线 §B.2：upload_start / upload_success 漏斗事件
 const { track } = require('../../utils/track')
+// Plan §Phase 3.2：模糊度 advisory 纯计算（variance-of-Laplacian）
+const { computeLaplacianVariance } = require('../../utils/blurAdvisory')
+// Plan §Phase 3.3：文件名启发式占位卡规则
+const { inferFileHint, buildPlaceholderHints } = require('../../utils/placeholderHints')
 // PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.js`）。
 // 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
 // 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
@@ -148,6 +154,71 @@ const compressImageAsync = (src) =>
     })
   })
 
+// Plan §Phase 3.2：客户端模糊度建议（variance-of-Laplacian）。
+//   - 200×200 灰度图上跑 5-point Laplacian 算子，方差 < 阈值即认定可能模糊。
+//   - **advisory only**：不阻塞用户上传，只 toast 一次提示 —— 误报不影响体验。
+//   - 老版本基础库（< 2.16.1，无 wx.createOffscreenCanvas type:'2d'）直接 skipped，等价于
+//     "没意见"，与无此功能完全等价。
+//   - 任何异常一律 skipped —— 模糊检测失败不能阻断主上传流。
+const BLUR_ADVISORY_SIZE = 200
+// 经验阈值：OpenCV 社区惯例 < 100 视为模糊；这里取 80 是 conservative ——
+// 漏报无伤大雅（用户没看到提示），误报会教用户"机器在乱讲"，所以宁紧不宽。
+const BLUR_VARIANCE_THRESHOLD = 80
+// 单图分析硬上限 1.5s：极少数格式 onload 事件不会触发，用 setTimeout 兜底，避免拖死整批。
+const BLUR_ASSESS_TIMEOUT_MS = 1500
+
+const assessImageBlurAsync = (filePath) =>
+  new Promise((resolve) => {
+    const skip = (reason) => resolve({ score: 0, isBlurry: false, skipped: true, reason })
+    try {
+      if (typeof wx.createOffscreenCanvas !== 'function') {
+        skip('no_offscreen')
+        return
+      }
+      const canvas = wx.createOffscreenCanvas({
+        type: '2d',
+        width: BLUR_ADVISORY_SIZE,
+        height: BLUR_ADVISORY_SIZE
+      })
+      if (!canvas || typeof canvas.createImage !== 'function' || typeof canvas.getContext !== 'function') {
+        skip('no_canvas_api')
+        return
+      }
+      const ctx = canvas.getContext('2d')
+      const img = canvas.createImage()
+      let settled = false
+      const safeResolve = (v) => {
+        if (settled) return
+        settled = true
+        resolve(v)
+      }
+      const guard = setTimeout(() => safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'timeout' }), BLUR_ASSESS_TIMEOUT_MS)
+      img.onload = () => {
+        try {
+          ctx.drawImage(img, 0, 0, BLUR_ADVISORY_SIZE, BLUR_ADVISORY_SIZE)
+          const imgData = ctx.getImageData(0, 0, BLUR_ADVISORY_SIZE, BLUR_ADVISORY_SIZE)
+          const variance = computeLaplacianVariance(imgData.data, BLUR_ADVISORY_SIZE)
+          clearTimeout(guard)
+          safeResolve({
+            score: Math.round(variance),
+            isBlurry: variance < BLUR_VARIANCE_THRESHOLD,
+            skipped: false
+          })
+        } catch (e) {
+          clearTimeout(guard)
+          safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'compute_error' })
+        }
+      }
+      img.onerror = () => {
+        clearTimeout(guard)
+        safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'image_error' })
+      }
+      img.src = filePath
+    } catch (e) {
+      skip('exception')
+    }
+  })
+
 const getFileSizeAsync = (filePath) =>
   new Promise((resolve) => {
     try {
@@ -250,7 +321,15 @@ Page({
     submittingGap: false,
     parseFallbackNotified: false,
     hasPdfUpload: false,
-    pdfQualityHintShown: false
+    pdfQualityHintShown: false,
+    // Plan §Phase 3.3：基于文件名启发式给的占位卡数据；进入 step 2 立即可见，
+    // OCR 完成后由 step 3 的真实结果取代。每项 { label, count }。
+    placeholderHints: [],
+    // Plan §Phase 3.4：队列深度（"前面还有 N 份在处理"）。
+    //   null = 服务端没回 / Redis 异常 → 不显示；
+    //   0 = 队列已空 → 也不显示（没必要让用户知道"前面还有 0 份"，等价无信息）；
+    //   >0 = 显示"前面还有 N 份在处理"。
+    queueAhead: null
   },
 
   onLoad() {
@@ -444,9 +523,41 @@ Page({
       })
     }
 
+    // Plan §Phase 3.2：模糊度 advisory —— 在文件加进 tempFiles 前并行评估，
+    // 任意一张 isBlurry 就 toast 一次（不阻塞）；老基础库 / 失败一律 skipped 等同没事。
+    // 注意时机：先 setData 让用户看到缩略图，再异步 advisory —— 模糊评估 ~50-200ms，
+    // 不该把这点延迟塞进感知路径。
+    const imageFiles = processed.filter((f) => f.fileType === 'image')
+    if (imageFiles.length > 0) {
+      Promise.all(imageFiles.map((f) => assessImageBlurAsync(f.path)))
+        .then((results) => {
+          const blurryCount = results.filter((r) => r && r.isBlurry).length
+          if (blurryCount === 0) return
+          // 单文件 vs 多文件文案分两套，避免 "1 张" 这种生硬措辞
+          const title = imageFiles.length === 1
+            ? '照片可能有点糊，仍可上传'
+            : `有 ${blurryCount} 张照片可能模糊，仍可上传`
+          wx.showToast({ title, icon: 'none', duration: 2400 })
+          try {
+            track('client_blur_advisory', {
+              blurryCount,
+              total: imageFiles.length,
+              threshold: BLUR_VARIANCE_THRESHOLD,
+              // 把每张分数寄出来便于后续校准阈值（数字而非路径，无 PII）
+              scores: results.map((r) => (r && typeof r.score === 'number' ? r.score : -1))
+            })
+          } catch (e) {}
+        })
+        .catch(() => {})
+    }
+
     // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
+    // Plan §Phase 3.3：每份文件挂一个 hint 字段，step 2 占位卡读这个字段。
+    const withHints = processed.map((f) => ({ ...f, hint: inferFileHint(f) }))
+    const nextTempFiles = [...currentFiles, ...withHints].slice(0, 5)
     this.setData({
-      tempFiles: [...currentFiles, ...processed].slice(0, 5)
+      tempFiles: nextTempFiles,
+      placeholderHints: buildPlaceholderHints(nextTempFiles)
     })
   },
 
@@ -482,7 +593,11 @@ Page({
     const { index } = e.currentTarget.dataset
     const tempFiles = [...this.data.tempFiles]
     tempFiles.splice(index, 1)
-    this.setData({ tempFiles })
+    this.setData({
+      tempFiles,
+      // Plan §Phase 3.3：删文件后占位卡需重算，否则会显示已删除文件的类型
+      placeholderHints: buildPlaceholderHints(tempFiles)
+    })
   },
 
   onRemarkInput(e) {
@@ -651,7 +766,12 @@ Page({
       etaText: '',
       processingStatus: copy.status.pending,
       parseFallbackNotified: false,
-      pdfQualityHintShown: false
+      pdfQualityHintShown: false,
+      // Plan §Phase 3.3：占位卡是一次会话级别的，结果到达 step 3 后由真实数据取代；
+      // 重置时清空避免下一次会话误用上一份的占位猜测。
+      placeholderHints: [],
+      // Plan §Phase 3.4：队列深度只在本次会话有意义，重置时清掉避免下一次显示陈旧数字
+      queueAhead: null
     })
     // Track C-3：模拟器内部状态也一起清掉，避免下次开始时被旧值干扰
     this.simulationStartedAt = 0
@@ -707,7 +827,72 @@ Page({
       //     reset，被 utils/api.js 当成单次 fail 走完一次重试后仍失败的极端情况
       //   - 保持串行：单份失败时同步重试一次，不会让整批上传卡更久（最多 +1.5s × N）
       const PAGE_LEVEL_RETRY_DELAY_MS = 800
-      for (let i = 0; i < this.data.tempFiles.length; i += 1) {
+      // Plan §Phase 3.4：保留每次响应的 queueDepth；最后一次（最新值）赢，
+      // 让 step 2 显示"前面还有 N 份"用最新观察到的队列状态。
+      let lastQueueDepth = null
+
+      // Plan §Phase 2.1：先试 STS 直传 COS。失败 / 服务端 mode='local' 时回落 legacy 老路径。
+      //   - 成功：fileIds 就位、queueDepth 拿到，直接跳过下面的 wx.uploadFile 串行循环。
+      //   - 部分 PUT 失败：finalize 仍会成功，successCount < total 时把失败份计入 uploadErrors，
+      //     不阻塞已上传份继续解析。
+      let directUploadDone = false
+      try {
+        const directRes = await cosDirectUploader.directUploadFiles(
+          {
+            tempFiles: this.data.tempFiles,
+            type: 'auto',
+            remark: this.data.remark,
+            concurrency: 3,
+            onProgress: ({ phase, done, total }) => {
+              // 直传期间把进度细化到 10–28%，让 step 2 进度条不再静默
+              const ratio = total > 0 ? done / total : 0
+              const target = phase === 'finalizing'
+                ? 28
+                : 10 + Math.floor(ratio * 16)
+              this.setProgressTarget('uploading', target)
+            }
+          },
+          {
+            fetchSts: api.fetchUploadSts,
+            finalize: api.finalizeUpload
+          }
+        )
+        if (Array.isArray(directRes.fileIds) && directRes.fileIds.length > 0) {
+          fileIds.push(...directRes.fileIds)
+          // 把 PUT 阶段的失败映射成 page-level uploadErrors，与 legacy 路径展示一致
+          if (Array.isArray(directRes.putErrors) && directRes.putErrors.length) {
+            directRes.putErrors.forEach((p) => {
+              uploadErrors.push({
+                name: (p && p.originalName) || '未知文件',
+                message: (p && p.message) || '直传失败'
+              })
+            })
+          }
+          // finalize 响应里的 queueDepth 也喂给 step 2 文案
+          if (directRes.queueDepth && typeof directRes.queueDepth === 'object') {
+            lastQueueDepth = directRes.queueDepth
+          }
+          directUploadDone = true
+          try {
+            track('upload_direct_ok', {
+              fileCount: fileIds.length,
+              putErrors: (directRes.putErrors && directRes.putErrors.length) || 0
+            })
+          } catch (_) { /* ignore */ }
+        }
+      } catch (directErr) {
+        const code = directErr && directErr.code
+        // local 模式 / 全部 PUT 失败 / STS 异常 → 静默回落 legacy
+        console.warn('[upload] direct upload fell back to legacy:', code || (directErr && directErr.message))
+        try {
+          track('upload_direct_fallback', {
+            code: code || 'unknown',
+            message: (directErr && directErr.message) || ''
+          })
+        } catch (_) { /* ignore */ }
+      }
+
+      for (let i = 0; !directUploadDone && i < this.data.tempFiles.length; i += 1) {
         const file = this.data.tempFiles[i]
         // 上传过程中给用户一点进度提示（10% → 30% 平均分摊）
         const stepProgress = 10 + Math.floor((i / this.data.tempFiles.length) * 20)
@@ -733,6 +918,10 @@ Page({
             })
             const payload = pickPayload(res)
             const fid = payload.fileId || payload.recordId || payload.id || ''
+            // Plan §Phase 3.4：服务端可能返回 null（Redis 不通时）—— 任何非 object 都跳过，UI 默认不显示
+            if (payload.queueDepth && typeof payload.queueDepth === 'object') {
+              lastQueueDepth = payload.queueDepth
+            }
             if (fid) {
               fileIds.push(fid)
               succeeded = true
@@ -781,6 +970,13 @@ Page({
       const isBatch = fileIds.length > 1
       const primaryFileId = fileIds[0]
 
+      // Plan §Phase 3.4：减掉本次成功入队的份数 ——
+      //   服务端返回的 total 是「含本批的整队当前总长」，而用户想看的是
+      //   "我前面还有几份"。最少 0，避免出现"前面还有 -1 份"。
+      const queueAhead = lastQueueDepth && typeof lastQueueDepth.total === 'number'
+        ? Math.max(0, lastQueueDepth.total - fileIds.length)
+        : null
+
       this.setData({
         uploading: false,
         fileId: primaryFileId,
@@ -793,7 +989,8 @@ Page({
           : '文件已上传，等待AI解析...',
         parseFallbackNotified: false,
         hasPdfUpload: this.data.tempFiles.some((file) => file.fileType === 'pdf'),
-        pdfQualityHintShown: false
+        pdfQualityHintShown: false,
+        queueAhead
       })
 
       const taskMeta = {
