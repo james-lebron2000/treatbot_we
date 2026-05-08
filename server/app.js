@@ -24,6 +24,24 @@ const healthController = require('./controllers/health');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// PRD-2026Q4 T0-7 followup（rate-limit per-client）：生产部署是 nginx → docker，
+// 没有 `trust proxy` 时 req.ip 始终是 nginx 容器 IP（同一个），导致：
+//   1) middleware/rateLimit.js 的 keyGenerator 用 req.userId || req.ip → 所有未登录
+//      请求（/admin/login, /auth/h5-login, /auth/send-code）共享一个 bucket，
+//      strictLimiter 20/15min 变成「全平台 20/15min」全局 throttle，攻击者捡便宜，
+//      正常用户被误伤；
+//   2) 审计日志走 X-Forwarded-For 手解，已经正确，但其它依赖 req.ip 的代码（abuse
+//      check, log meta）也是错的。
+// 正确：信任 1 跳代理（nginx）。生产 deploy 必须确保 nginx 设置 X-Forwarded-For
+// 头并丢弃用户传入的同名头，否则客户端可伪造 IP。
+//
+// 仅生产 / 类生产环境启用——dev/test 直连访问，开启会让本地 curl 通过 X-Forwarded-For
+// 伪造源 IP 制造混淆，对调试不利且无收益。
+const TRUST_PROXY_HOPS = process.env.NODE_ENV === 'production' ? 1 : 0;
+if (TRUST_PROXY_HOPS > 0) {
+  app.set('trust proxy', TRUST_PROXY_HOPS);
+}
+
 // Q3-红线 §A.3：Sentry requestHandler 必须放在所有业务 middleware 之前，
 // 这样它能捕获完整的请求上下文。SENTRY_DSN 未配置时退化为 noop。
 app.use(sentry.requestHandler);
