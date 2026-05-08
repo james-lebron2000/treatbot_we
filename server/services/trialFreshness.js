@@ -152,11 +152,35 @@ const getHealthSnapshot = async () => {
     })
   ]);
 
+  // PRD-2026Q3 T1-1：附最近 30 条 trial_change_log，便于 admin 一眼看变更趋势
+  let recentChanges = [];
+  try {
+    const { TrialChangeLog } = require('../models');
+    if (TrialChangeLog && typeof TrialChangeLog.findAll === 'function') {
+      const rows = await TrialChangeLog.findAll({
+        order: [['created_at', 'DESC']],
+        limit: 30
+      });
+      recentChanges = rows.map((r) => ({
+        trial_id: r.trial_id,
+        nct_id: r.nct_id,
+        field: r.field,
+        old_value: r.old_value,
+        new_value: r.new_value,
+        source: r.source,
+        created_at: r.created_at
+      }));
+    }
+  } catch (e) {
+    // 表不存在 / 查询失败时不阻塞健康度返回（迁移未跑环境）
+  }
+
   return {
     stale14d,
     stale30d,
     autoClosedLast24h,
-    lastRun: latest ? latest.last_verified_at : null
+    lastRun: latest ? latest.last_verified_at : null,
+    recentChanges
   };
 };
 

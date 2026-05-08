@@ -6,14 +6,15 @@
 #
 # 避免把 make/g++ 留在最终镜像里（减小体积 + 缩小攻击面）。
 #
-# 基础镜像：node:18-bookworm-slim（Debian glibc）
-# 切换原因：markitdown 0.1.0+ 强依赖 magika ~=0.6.1 → onnxruntime；onnxruntime
-# 不发布 musllinux wheel（PEP 656），Alpine/musl 上 pip 只能源码构建却没有上游支持，
-# 反复回溯所有 markitdown 历史版本最终 ResolutionImpossible（run 25249824970 卡 17min）。
-# 切到 Debian glibc 后 manylinux 轮子直接可用，install < 60s，无需 cargo/rust 工具链。
+# 基础镜像：node:20-bookworm-slim（Debian glibc）
+# Node 18 已于 2025-04 EOL；PRD-2026Q3 T1-5 升级至 Node 20 LTS。
+# 切到 Debian glibc 的原因：markitdown 0.1.0+ 强依赖 magika ~=0.6.1 → onnxruntime；
+# onnxruntime 不发布 musllinux wheel（PEP 656），Alpine/musl 上 pip 只能源码构建却没有
+# 上游支持，反复回溯所有历史版本 ResolutionImpossible（run 25249824970 卡 17min）。
+# Debian glibc 上 manylinux 轮子直接可用，install < 60s，无需 cargo/rust 工具链。
 
 # =========== Stage 1: 安装依赖 ===========
-FROM node:18-bookworm-slim AS deps
+FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 
 # 安装原生 npm 模块编译工具链（仅 deps 阶段，最终镜像不会保留）
@@ -27,7 +28,7 @@ RUN npm ci --omit=dev
 
 
 # =========== Stage 2: 运行时镜像 ===========
-FROM node:18-bookworm-slim AS runtime
+FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 
 # 运行时需要 python3 + markitdown[pdf]（文本 PDF）+ poppler-utils/pdftoppm（扫描 PDF 拆页）

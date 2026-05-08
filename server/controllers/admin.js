@@ -23,6 +23,18 @@ const { sanitizeTrial, safeText, escapeLike } = require('../utils/text');
 const { parseArrayField, scoreRecordAgainstTrial, STATUS_TEXT_MAP } = require('../services/matchEngine');
 // PRD-2026Q2 §2.4：试验新鲜度健康度视图
 const trialFreshness = require('../services/trialFreshness');
+// PRD-2026Q3 T0-2：状态机 + 通知 stub
+const stateMachine = require('../services/applicationStateMachine');
+const notify = require('../services/notify');
+// PRD-2026Q4 T0-10：admin 推进状态时同样要触发漏斗事件，与 cro.updateApplicationStatus 共享同一份映射逻辑。
+const funnelTracker = require('../services/funnelTracker');
+const ADMIN_STATUS_TO_FUNNEL_EVENT = {
+  contacted: funnelTracker.EVENTS.CRO_CONTACTED,
+  screened: funnelTracker.EVENTS.SCREENED,
+  enrolled: funnelTracker.EVENTS.ENROLLED,
+  rejected: funnelTracker.EVENTS.REJECTED,
+  withdrawn: funnelTracker.EVENTS.WITHDRAWN
+};
 // PRD-2026Q2 §2.3：PII 脱敏。list 响应出门前走一道 mask，reveal 单字段走审计日志旁路。
 const { maskPhone, maskName } = require('../utils/mask');
 const {
@@ -91,6 +103,8 @@ const getAdminSession = async (req, res, next) => {
       admin: {
         id: req.adminUser?.id || req.userId,
         username: req.adminUser?.username || '',
+        // PRD-2026Q3 T1-6：把当前角色暴露给前端，让管理后台按角色隐藏入口
+        role: req.adminUser?.role || req.adminRole || null,
         canReveal: Boolean(req.adminUser?.canReveal)
       }
     }));
@@ -845,31 +859,87 @@ const getApplicationList = async (req, res, next) => {
 const updateApplicationStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, remark } = req.body;
+    const { status, remark, reason } = req.body;
 
     const application = await TrialApplication.findByPk(id);
     if (!application) {
       return res.status(404).json({ code: 404, message: '报名记录不存在', data: null });
     }
 
-    const oldStatus = application.status;
-    await application.update({
-      status,
-      remark: remark || application.remark
-    });
+    try {
+      const result = await stateMachine.transition(id, status, {
+        actor: { type: 'admin', id: req.userId },
+        reason: reason || remark || null,
+        extraFields: remark ? { remark } : {}
+      });
 
-    logger.info('报名状态已更新:', {
-      applicationId: id,
-      oldStatus,
-      newStatus: status,
-      operator: req.userId
-    });
+      notify.applicationStatusChanged({
+        applicationId: id, from: result.from, to: result.to,
+        actor: { type: 'admin', id: req.userId }, reason: reason || remark
+      }).catch((e) => logger.warn('[notify] admin 状态通知失败', { err: e.message }));
 
+      // PRD-2026Q4 T0-10：admin 推进状态也触发漏斗事件（与 cro 路径并行）
+      if (result.from !== result.to) {
+        const eventName = ADMIN_STATUS_TO_FUNNEL_EVENT[result.to];
+        if (eventName) {
+          try {
+            funnelTracker.track(eventName, {
+              user_id: result.application.user_id,
+              entity_id: result.application.id,
+              payload: { trial_id: result.application.trial_id, prev_status: result.from, source: 'admin' }
+            });
+          } catch (trackErr) {
+            logger.warn('[admin] 漏斗埋点失败（已吞）:', { id, status, error: trackErr.message });
+          }
+        }
+      }
+
+      logger.info('报名状态已更新:', {
+        applicationId: id, oldStatus: result.from, newStatus: result.to, operator: req.userId
+      });
+
+      res.json(success({
+        id: result.application.id,
+        status: result.application.status,
+        from: result.from,
+        updatedAt: result.application.updated_at
+      }, '状态更新成功'));
+    } catch (e) {
+      if (e instanceof stateMachine.InvalidTransitionError) {
+        return res.status(422).json({ code: 422, message: e.message, data: null });
+      }
+      throw e;
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PRD-2026Q3 T0-2：申请状态变更时间线（admin 复核）。
+ * 路由：GET /api/admin/applications/:id/timeline
+ */
+const getApplicationTimeline = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const application = await TrialApplication.findByPk(id);
+    if (!application) {
+      return res.status(404).json({ code: 404, message: '报名记录不存在', data: null });
+    }
+    const events = await stateMachine.getTimeline(id);
     res.json(success({
-      id: application.id,
-      status: application.status,
-      updatedAt: application.updated_at
-    }, '状态更新成功'));
+      applicationId: id,
+      currentStatus: application.status,
+      events: events.map((e) => ({
+        id: e.id,
+        from: e.from_status,
+        to: e.to_status,
+        actorType: e.actor_type,
+        actorId: e.actor_id,
+        reason: e.reason,
+        createdAt: e.created_at
+      }))
+    }));
   } catch (err) {
     next(err);
   }
@@ -1551,6 +1621,125 @@ const getUserMatches = async (req, res, next) => {
   }
 };
 
+// PRD-2026Q3 T1-4：CPA 月度对账接口
+// 仅 super 角色可访问（路由层 requireRole('super')），输出 SQL 同源结果。
+// format=csv 时直接返回带 BOM 的 CSV 文本，便于财务直接打开 Excel 核对。
+const getBillingSummary = async (req, res, next) => {
+  try {
+    const month = String(req.query.month || '').trim();
+    const format = String(req.query.format || 'json').toLowerCase();
+
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ code: 400, msg: 'month 必填，格式 YYYY-MM' });
+    }
+    if (!['json', 'csv'].includes(format)) {
+      return res.status(400).json({ code: 400, msg: 'format 仅支持 csv|json' });
+    }
+
+    const billing = require('../services/billing');
+    const summary = await billing.computeMonthly(month);
+
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="billing-${month}.csv"`);
+      return res.send(billing.toCsv(summary));
+    }
+
+    return res.json(success(summary));
+  } catch (err) {
+    logger.error('[admin] getBillingSummary failed', { err: err.message });
+    next(err);
+  }
+};
+
+// PRD-2026Q4 T0-1：trialCrawler null 守门复核队列
+// 列表（默认 pending）：
+//   GET /api/admin/trials/field-review?status=pending&limit=50
+const getTrialFieldReviewQueue = async (req, res, next) => {
+  try {
+    const { TrialFieldChangeReview } = require('../models');
+    const allowedStatus = ['pending', 'approved', 'rejected'];
+    const status = allowedStatus.includes(String(req.query.status)) ? req.query.status : 'pending';
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+
+    const rows = await TrialFieldChangeReview.findAll({
+      where: { status },
+      order: [['created_at', 'DESC']],
+      limit
+    });
+    return res.json({ data: rows, total: rows.length });
+  } catch (err) {
+    logger.error('[admin] getTrialFieldReviewQueue failed', { err: err.message });
+    next(err);
+  }
+};
+
+// PRD-2026Q4 T0-1：复核某条 review。
+//   POST /api/admin/trials/field-review/:id/resolve
+//   body: { decision: 'approved' | 'rejected', note?: string }
+//
+// approved 语义：确认上游确实把字段清空了（试验停了 / 名额清零 / 站点撤了），
+//   显式把 trials 表的对应列写为 row.new_value（通常是 null）。
+// rejected 语义：上游抽风，库内值保持。仅打 status='rejected'。
+//
+// 全程在事务里跑，先 lock review 行避免双人同时点。
+const resolveTrialFieldReview = async (req, res, next) => {
+  const { TrialFieldChangeReview, Trial, sequelize } = require('../models');
+  const { id } = req.params;
+  const { decision, note } = req.body || {};
+
+  if (!['approved', 'rejected'].includes(decision)) {
+    return res.status(400).json({ code: 'INVALID_DECISION', message: 'decision 必须是 approved | rejected' });
+  }
+
+  // PRD-2026Q4 T0-1：locations 在 trials 表是 hospitals 列；其余字段一一对应。
+  const FIELD_TRIAL_COL = {
+    status: 'status',
+    phase: 'phase',
+    enrolled_count: 'enrolled_count',
+    locations: 'hospitals'
+  };
+
+  const txn = await sequelize.transaction();
+  try {
+    const row = await TrialFieldChangeReview.findByPk(id, { transaction: txn, lock: txn.LOCK.UPDATE });
+    if (!row) {
+      await txn.rollback();
+      return res.status(404).json({ code: 'NOT_FOUND', message: '复核条目不存在' });
+    }
+    if (row.status !== 'pending') {
+      await txn.rollback();
+      return res.status(409).json({ code: 'ALREADY_RESOLVED', message: '已处理' });
+    }
+
+    if (decision === 'approved') {
+      const col = FIELD_TRIAL_COL[row.field];
+      if (!col) {
+        await txn.rollback();
+        return res.status(400).json({ code: 'UNSUPPORTED_FIELD', message: `不支持的字段: ${row.field}` });
+      }
+      await Trial.update(
+        { [col]: row.new_value },
+        { where: { id: row.trial_id }, transaction: txn }
+      );
+    }
+
+    await row.update({
+      status: decision,
+      reviewer_id: (req.adminUser && req.adminUser.username) || (req.adminUser && req.adminUser.id) || 'unknown',
+      reviewed_at: new Date(),
+      reviewer_note: typeof note === 'string' ? note.slice(0, 512) : null
+    }, { transaction: txn });
+
+    await txn.commit();
+    return res.json({ ok: true });
+  } catch (e) {
+    try { await txn.rollback(); } catch (_) {}
+    logger.error('[admin] resolveTrialFieldReview failed', { err: e.message, id });
+    return res.status(500).json({ error: e.message });
+  }
+};
+
 module.exports = {
   adminLogin,
   getAdminSession,
@@ -1561,6 +1750,7 @@ module.exports = {
   getUserMatches,
   getApplicationList,
   updateApplicationStatus,
+  getApplicationTimeline,
   getSystemLogs,
   exportRecords,
   exportUsers,
@@ -1572,5 +1762,9 @@ module.exports = {
   updateCro,
   listOcrFailures,
   retryOcrFailure,
-  getTrialsHealth
+  getTrialsHealth,
+  getBillingSummary,
+  // PRD-2026Q4 T0-1：trialCrawler null 守门复核
+  getTrialFieldReviewQueue,
+  resolveTrialFieldReview
 };

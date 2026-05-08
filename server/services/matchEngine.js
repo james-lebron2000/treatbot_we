@@ -79,26 +79,9 @@ const DISEASE_PROFILES = [
   }
 ];
 
-// PRD-2026Q2 §3.1：扩充泛瘤种口径词典。来源见 docs/trial-vocabulary.md。
-// 命中任一别名即视为「泛实体瘤/不限癌种」信号。保守原则：仅收录明确表达
-// 「多瘤种 / 全实体瘤 / MSI-H/dMMR/TMB-H/PD-L1 阳性」这类广谱入组口径，
-// 不纳入 NSCLC / 乳腺癌等具体癌种词，避免收窄词被误判为泛瘤种。
-const GENERIC_CANCER_ALIASES = [
-  // 既有中文口径
-  '实体瘤', '实体性肿瘤', '恶性肿瘤', '晚期实体瘤', '进展期实体瘤', '实体肿瘤',
-  // 新增中文泛实体瘤口径（PRD-2026Q2 §3.1）
-  '泛实体瘤', '泛實體瘤', '转移性实体瘤', '多瘤种', '多种实体瘤', '全部实体瘤', '任何实体瘤',
-  // 英文常见 NCT 入组口径
-  'solid tumor', 'solid tumors', 'solid tumour', 'solid tumours',
-  'advanced solid tumor', 'advanced solid tumors',
-  'metastatic solid tumor', 'metastatic solid tumors',
-  'all solid tumors', 'any solid tumor', 'any solid tumors',
-  'advanced malignancies', 'advanced malignancy',
-  // 生物标志物驱动、不限癌种的入组口径（FDA/NMPA 泛瘤种适应症常见表述）
-  'msi-h', 'msih', 'dmmr', 'mmr deficient', 'mismatch repair deficient',
-  'tmb-h', 'tmbh', 'tmb high', 'high tumor mutational burden',
-  'pd-l1 positive', 'pd-l1 高表达', 'pd-l1≥1%', 'pd-l1 ≥ 1%', 'pd-l1≥1', 'pd-l1 ≥1%'
-];
+// PRD-2026Q3 T1-2：泛瘤种 / 不限基因词典抽到 services/cancerSignals.js（多语言）
+// 历史词典内嵌此文件、仅简体中文，导致英文 / 繁体试验漏判。本模块改为透传。
+const { GENERIC_CANCER_ALIASES, GENE_AGNOSTIC_HINTS } = require('./cancerSignals');
 
 // 已知基因列表，用于精确基因名匹配（避免子串假阳性）
 // NOTE: 保留此列表仅为向后兼容；内部使用 geneParser 的 GENE_DEFINITIONS（长度降序、去重）。
@@ -113,24 +96,6 @@ const _KNOWN_GENES = [
 
 const { parsePatientGenes, parseTrialGeneRequirements, matchGenesAgainstTrial } = require('./geneParser');
 const { evaluatePdl1Match } = require('./pdl1Parser');
-
-// 表示试验对基因检测"豁免"的关键词：出现任一即视为无需基因检测
-// PRD-2026Q2 §3.1：扩充泛瘤种/免基因入组口径（来源见 docs/trial-vocabulary.md）
-const GENE_AGNOSTIC_HINTS = [
-  // 既有：显式「不限 / 不要求基因」中文
-  '不限基因', '不限制基因', '不限突变', '无需基因检测', '无需基因检查',
-  '不要求基因', '不要求检测', '基因检测非必需', '基因非必需',
-  'any mutation', 'regardless of mutation', 'biomarker-agnostic',
-  // 新增：泛实体瘤入组口径（与 GENERIC_CANCER_ALIASES 有重叠，
-  // 此处保留是因为 inferGeneRequired 仅查询该数组）
-  'advanced solid tumor', 'advanced solid tumors',
-  'metastatic solid tumor', 'metastatic solid tumors',
-  'solid tumors', 'all solid tumors', 'any solid tumor',
-  '泛实体瘤', '泛實體瘤', '晚期实体瘤', '转移性实体瘤', '多瘤种',
-  // 新增：生物标志物驱动、不限癌种（FDA/NMPA 泛瘤种适应症常见表述）
-  'pd-l1 高表达', 'pd-l1 positive', 'pd-l1≥1%', 'pd-l1 ≥ 1%',
-  'msi-h', 'dmmr', 'tmb-h', 'tmb high'
-];
 
 /**
  * 启发式：推断试验是否要求基因检测结果。

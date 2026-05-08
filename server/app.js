@@ -156,6 +156,13 @@ if (process.env.ENABLE_TRIAL_FRESHNESS_CRON === 'true') {
   require('./jobs/trialFreshnessJob');
 }
 
+// PRD-2026Q4 T0-11：metrics pipeline 自检心跳。
+// 测试环境不启动（jobs/metricsHeartbeat.js 内部已对 NODE_ENV==='test' 短路），
+// 这里 require 一次即可激活模块顶层 setInterval。
+if (process.env.NODE_ENV !== 'test') {
+  require('./jobs/metricsHeartbeat');
+}
+
 // API 路由
 app.use('/api', routes);
 

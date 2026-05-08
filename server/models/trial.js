@@ -119,6 +119,20 @@ const Trial = sequelize.define('Trial', {
     allowNull: true,
     defaultValue: 100,
     comment: '新鲜度 0-100，低于 30 视为过期并自动关闭'
+  },
+  // PRD-2026Q3 T1-1：上游注册号（ClinicalTrials.gov），抓取作业回查依据
+  // PRD-2026Q4 T0-7：NCT ID 格式强校验，避免脏数据流入下游匹配 / 上报
+  nct_id: {
+    type: DataTypes.STRING(32),
+    allowNull: true,
+    comment: 'ClinicalTrials.gov 注册号 NCTxxxxxxxx',
+    validate: {
+      isNctFormat(value) {
+        if (value !== null && value !== undefined && !/^NCT\d{8}$/.test(value)) {
+          throw new Error(`nct_id 格式不正确：${value}`);
+        }
+      }
+    }
   }
 }, {
   tableName: 'trials',

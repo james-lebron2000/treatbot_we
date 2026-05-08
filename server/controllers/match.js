@@ -6,6 +6,27 @@ const { parseArrayField, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, b
 const { buildProfile } = require('../services/patientProfile');
 const { buildCriterionExplanation } = require('../utils/match-explainer');
 const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
+// PRD-2026Q4 T0-10：转化漏斗埋点
+const funnelTracker = require('../services/funnelTracker');
+const logger = require('../utils/logger');
+
+/**
+ * PRD-2026Q4 T0-10：MATCH_SHOWN 埋点封装。
+ * dedupe_key 已经按分钟去重，所以同一用户在同一分钟内多次刷新匹配列表只会落 1 条事件。
+ * entity_id 取首个 trial_id（如果为空则 null），便于后续按"哪些试验最频繁出现在结果列表"复盘。
+ */
+const trackMatchShownSafe = (userId, items, source) => {
+  try {
+    const firstTrialId = (items && items[0] && (items[0].trialId || items[0].id)) || null;
+    funnelTracker.track(funnelTracker.EVENTS.MATCH_SHOWN, {
+      user_id: userId,
+      entity_id: firstTrialId,
+      payload: { count: Array.isArray(items) ? items.length : 0, source }
+    });
+  } catch (trackErr) {
+    logger.warn('[match] 漏斗埋点失败（已吞）:', { error: trackErr.message });
+  }
+};
 
 const toPositiveInt = (value, fallback) => {
   const num = parseInt(value, 10);
@@ -267,6 +288,11 @@ const getMatches = async (req, res, next) => {
 
     const list = allMatches.slice(offset, offset + pageSize);
 
+    // PRD-2026Q4 T0-10：MATCH_SHOWN 埋点（仅首页结果首次返回时触发，后续翻页跳过）
+    if (page === 1) {
+      trackMatchShownSafe(req.userId, list, 'getMatches');
+    }
+
     res.json({
       code: 0,
       message: 'success',
@@ -440,6 +466,9 @@ const findMatches = async (req, res, next) => {
         if (tA !== tB) return tB - tA;
         return `${a.id}`.localeCompare(`${b.id}`);
       });
+
+    // PRD-2026Q4 T0-10：findMatches 路径同样触发 MATCH_SHOWN
+    trackMatchShownSafe(req.userId, list, 'findMatches');
 
     res.json(success(list));
   } catch (err) {

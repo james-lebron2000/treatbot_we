@@ -1,6 +1,6 @@
 const { User } = require('../models');
 const logger = require('../utils/logger');
-const { verifyAdminToken } = require('../utils/adminCredential');
+const { verifyAdminToken, sanitizeRole, DEFAULT_ROLE } = require('../utils/adminCredential');
 
 const parseAllowList = (value) => new Set(
   `${value || ''}`
@@ -37,9 +37,11 @@ const requireAdminToken = async (req, res, next) => {
       req.adminUser = {
         id: admin.id,
         username: admin.username,
+        role: admin.role || DEFAULT_ROLE,
         canReveal: admin.canReveal
       };
       req.adminCredential = admin;
+      req.adminRole = req.adminUser.role;
       req.userId = admin.id;
       return next();
     }
@@ -48,6 +50,37 @@ const requireAdminToken = async (req, res, next) => {
   }
 
   return requireAdmin(req, res, next);
+};
+
+// PRD-2026Q3 T1-6：路由级角色门。requireAdminToken 之后挂，
+// 用法：router.get('/admin/users/:id/reveal', authMiddleware, requireAdminToken,
+//         requireRole('super'), logAdmin('reveal_field'), adminController.revealField);
+//
+// 行为：
+//   - 没解析出 adminRole（旧 user-allowlist 路径）→ 兜底 DEFAULT_ROLE='super'，
+//     这样在 RBAC 全量启用前，旧 admin 账号不会被锁在门外；上线后通过下线 user-allowlist 收口。
+//   - role 不在允许集合 → 403，并写一条 warn 日志（含 username + 目标 action）。
+//   - 允许任意一个匹配即放行（OR 语义）。
+const requireRole = (...allowedRoles) => {
+  const allowed = new Set(allowedRoles.map((r) => sanitizeRole(r)));
+  return (req, res, next) => {
+    const role = sanitizeRole(req.adminRole || (req.adminUser && req.adminUser.role));
+    if (!allowed.has(role)) {
+      logger.warn('[RBAC] 角色不足', {
+        adminUsername: req.adminUser && req.adminUser.username,
+        adminId: req.adminUser && req.adminUser.id,
+        role,
+        required: Array.from(allowed),
+        path: req.path
+      });
+      return res.status(403).json({
+        code: 403,
+        message: '角色权限不足',
+        data: { required: Array.from(allowed), actual: role }
+      });
+    }
+    next();
+  };
 };
 
 const requireAdmin = async (req, res, next) => {
@@ -97,4 +130,4 @@ const requireAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { requireAdmin, requireAdminToken };
+module.exports = { requireAdmin, requireAdminToken, requireRole };

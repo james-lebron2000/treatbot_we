@@ -3,6 +3,10 @@ const User = require('./user');
 const Trial = require('./trial');
 // Q3-红线 §B.2：漏斗埋点事件模型
 const UserFunnelEvent = require('./userFunnelEvent');
+// PRD-2026Q4 T0-1：trialCrawler null 守门复核队列
+const TrialFieldChangeReview = require('./trialFieldChangeReview');
+// PRD-2026Q4 T0-10：业务漏斗事件（与 userFunnelEvent 不同：8-event 异步队列模式）
+const FunnelEvent = require('./funnelEvent');
 
 // 病历模型
 const MedicalRecord = sequelize.define('MedicalRecord', {
@@ -66,6 +70,14 @@ const MedicalRecord = sequelize.define('MedicalRecord', {
     type: require('sequelize').DataTypes.DATE,
     allowNull: true,
     defaultValue: null
+  },
+  // PRD-2026Q3 T1-3：多病历 active 切换
+  // 同一 user 全局唯一为 1（应用层在 activateRecord 事务里保证；MySQL 部分唯一索引
+  // 不直接支持，靠 transaction 串行化）。/api/matches 默认按 is_active=1 选基线。
+  is_active: {
+    type: require('sequelize').DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   }
 }, {
   tableName: 'medical_records',
@@ -93,8 +105,10 @@ const TrialApplication = sequelize.define('TrialApplication', {
     type: require('sequelize').DataTypes.JSON,
     allowNull: false
   },
+  // PRD-2026Q3 T0-2：扩 'screened' (CRO 通过初筛) 与 'withdrawn' (患者撤回)。
+  // 'cancelled' 保留兼容存量数据，语义等同 'withdrawn'。
   status: {
-    type: require('sequelize').DataTypes.ENUM('pending', 'contacted', 'enrolled', 'rejected', 'cancelled'),
+    type: require('sequelize').DataTypes.ENUM('pending', 'contacted', 'screened', 'enrolled', 'rejected', 'cancelled', 'withdrawn'),
     defaultValue: 'pending'
   },
   remark: {
@@ -165,6 +179,20 @@ const CroCompany = sequelize.define('CroCompany', {
   status: {
     type: require('sequelize').DataTypes.ENUM('active', 'disabled'),
     defaultValue: 'active'
+  },
+  // PRD-2026Q3 T1-4：CPA 计费单价（单位：元 / 合格线索）
+  cpa_price: {
+    type: require('sequelize').DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: '每条合格线索单价（元）'
+  },
+  // 哪个 status 算"合格"：通常 screened（CRO 已沟通确认）或 enrolled（已入组）
+  cpa_qualified_status: {
+    type: require('sequelize').DataTypes.ENUM('screened', 'enrolled'),
+    allowNull: false,
+    defaultValue: 'screened',
+    comment: 'CPA 计费触发的合格状态'
   }
 }, {
   tableName: 'cro_companies',
@@ -186,6 +214,12 @@ const AdminAuditLog = sequelize.define('AdminAuditLog', {
     type: require('sequelize').DataTypes.STRING(64),
     allowNull: false,
     comment: '执行操作的管理员 user id'
+  },
+  // PRD-2026Q3 T1-6：写入时的角色快照，便于离职后 username 复用 / RBAC 变更后的回溯审计
+  role: {
+    type: require('sequelize').DataTypes.STRING(32),
+    allowNull: true,
+    comment: '操作时的角色：super / ops / cro_liaison'
   },
   action: {
     type: require('sequelize').DataTypes.STRING(64),
@@ -318,6 +352,147 @@ const UserConsent = sequelize.define('UserConsent', {
   ]
 });
 
+// PRD-2026Q3 T0-2：申请状态变更事件流
+// 每次状态机 transition() 写一行；T1-4 CPA 计费按 (cro_id, trial_id, to_status, month) 聚合。
+// 与 trial_applications.status 字段并存：status 是当前态，本表是历史变更轨迹。
+const ApplicationStatusEvent = sequelize.define('ApplicationStatusEvent', {
+  id: {
+    type: require('sequelize').DataTypes.BIGINT.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  application_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  from_status: {
+    type: require('sequelize').DataTypes.STRING(32),
+    allowNull: false
+  },
+  to_status: {
+    type: require('sequelize').DataTypes.STRING(32),
+    allowNull: false
+  },
+  actor_type: {
+    type: require('sequelize').DataTypes.ENUM('user', 'cro', 'admin', 'system'),
+    allowNull: false
+  },
+  actor_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
+  },
+  reason: {
+    type: require('sequelize').DataTypes.TEXT,
+    allowNull: true
+  }
+}, {
+  tableName: 'application_status_event',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_app_created', fields: ['application_id', 'created_at'] },
+    { name: 'idx_to_status_created', fields: ['to_status', 'created_at'] },
+    { name: 'idx_actor', fields: ['actor_type', 'actor_id'] }
+  ]
+});
+
+// PRD-2026Q3 T0-1：CRO 导出审计日志
+// 与 admin_audit_log 互补 —— admin_audit_log 写 admin 维度的 unmask 留痕，
+// 本表写 cro 维度的"哪家 CRO 哪天导了哪些试验、是否含 phone_full"。
+// 商务对账 + 法务尽调 + CPA 计费证据三合一。
+const CroExportLog = sequelize.define('CroExportLog', {
+  id: {
+    type: require('sequelize').DataTypes.BIGINT.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  cro_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  trial_ids: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false
+  },
+  fields: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false,
+    comment: '本次导出包含的字段集 + phone_full 标记'
+  },
+  format: {
+    type: require('sequelize').DataTypes.STRING(8),
+    allowNull: false,
+    defaultValue: 'csv'
+  },
+  row_count: {
+    type: require('sequelize').DataTypes.INTEGER.UNSIGNED,
+    allowNull: false,
+    defaultValue: 0
+  },
+  unmask: {
+    type: require('sequelize').DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  ip: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
+  },
+  user_agent: {
+    type: require('sequelize').DataTypes.STRING(255),
+    allowNull: true
+  }
+}, {
+  tableName: 'cro_export_log',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_cro_created', fields: ['cro_id', 'created_at'] }
+  ]
+});
+
+// PRD-2026Q3 T1-1：试验抓取变更日志 + DLQ
+const TrialChangeLog = sequelize.define('TrialChangeLog', {
+  id: { type: require('sequelize').DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+  trial_id: { type: require('sequelize').DataTypes.STRING(64), allowNull: false },
+  nct_id: { type: require('sequelize').DataTypes.STRING(32), allowNull: true },
+  field: { type: require('sequelize').DataTypes.STRING(64), allowNull: false },
+  old_value: { type: require('sequelize').DataTypes.STRING(1024), allowNull: true },
+  new_value: { type: require('sequelize').DataTypes.STRING(1024), allowNull: true },
+  source: { type: require('sequelize').DataTypes.STRING(32), allowNull: false, defaultValue: 'clinicaltrials_v2' }
+}, {
+  tableName: 'trial_change_log',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_trial_created', fields: ['trial_id', 'created_at'] },
+    { name: 'idx_created', fields: ['created_at'] }
+  ]
+});
+
+const TrialCrawlFailure = sequelize.define('TrialCrawlFailure', {
+  id: { type: require('sequelize').DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+  trial_id: { type: require('sequelize').DataTypes.STRING(64), allowNull: true },
+  nct_id: { type: require('sequelize').DataTypes.STRING(32), allowNull: true },
+  reason: { type: require('sequelize').DataTypes.STRING(256), allowNull: false },
+  payload: { type: require('sequelize').DataTypes.JSON, allowNull: true },
+  attempt_count: { type: require('sequelize').DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+  last_attempt_at: { type: require('sequelize').DataTypes.DATE, allowNull: false, defaultValue: require('sequelize').DataTypes.NOW },
+  resolved_at: { type: require('sequelize').DataTypes.DATE, allowNull: true }
+}, {
+  tableName: 'trial_crawl_failures',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_resolved', fields: ['resolved_at'] },
+    { name: 'idx_nct', fields: ['nct_id'] }
+  ]
+});
+
 // Q3-红线 §A.2.3：用户操作审计日志（user_action_log）
 // 与 admin_audit_log 分表 —— 不污染 admin 视图，便于按 user 维度做"我对自己账号
 // 做过什么"的回顾。action 取值与文档保持一致（export_my_data /
@@ -372,10 +547,19 @@ module.exports = {
   MedicalRecord,
   TrialApplication,
   CroCompany,
+  CroExportLog,
   AdminAuditLog,
   OcrJobFailure,
   UserConsent,
   UserActionLog,
+  ApplicationStatusEvent,
+  // PRD-2026Q3 T1-1：试验抓取相关
+  TrialChangeLog,
+  TrialCrawlFailure,
+  // PRD-2026Q4 T0-1：trialCrawler null 守门复核队列
+  TrialFieldChangeReview,
   // Q3-红线 §B.2：漏斗埋点事件
-  UserFunnelEvent
+  UserFunnelEvent,
+  // PRD-2026Q4 T0-10：8-event 异步漏斗
+  FunnelEvent
 };

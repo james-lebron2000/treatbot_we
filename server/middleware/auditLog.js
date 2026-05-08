@@ -60,6 +60,8 @@ const logAdmin = (action, targetTypeGetter) => (req, res, next) => {
     Promise.resolve()
       .then(() => AdminAuditLog.create({
         admin_id: adminId,
+        // PRD-2026Q3 T1-6：写入角色快照，方便审计 + 离职后 username 复用场景下追溯。
+        role: req.adminRole || (req.adminUser && req.adminUser.role) || null,
         action,
         target_type: targetType,
         target_id: targetId,

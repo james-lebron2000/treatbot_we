@@ -211,3 +211,52 @@ describe('PRD-2026Q2 §3.1 泛瘤种排序快照 —— 肺癌无基因患者', 
     expect(SCORE_MIN).toBeGreaterThan(0);
   });
 });
+
+// PRD-2026Q3 T1-2：cancerSignals 抽离 + 多语言词典扩充
+// 覆盖 10+ 多语言用例：英文 + 繁体中文，确保盲点（"晚期實體瘤" / "tumor-agnostic" 等）被命中。
+describe('PRD-2026Q3 T1-2 多语言泛瘤种 / 基因豁免词典', () => {
+  const { GENERIC_CANCER_ALIASES, GENE_AGNOSTIC_HINTS } = require('../services/cancerSignals');
+
+  test('字典模块导出非空数组', () => {
+    expect(Array.isArray(GENERIC_CANCER_ALIASES)).toBe(true);
+    expect(Array.isArray(GENE_AGNOSTIC_HINTS)).toBe(true);
+    expect(GENERIC_CANCER_ALIASES.length).toBeGreaterThan(20);
+    expect(GENE_AGNOSTIC_HINTS.length).toBeGreaterThan(15);
+  });
+
+  // 10+ 多语言断言：每行一个独立场景
+  const cases = [
+    // 繁体中文
+    { text: '晚期實體瘤', expectGeneric: true,  desc: '繁体：晚期實體瘤' },
+    { text: '轉移性實體瘤', expectGeneric: true,  desc: '繁体：轉移性實體瘤' },
+    { text: '泛實體瘤', expectGeneric: true,  desc: '繁体：泛實體瘤' },
+    { text: '多瘤種篮子試驗', expectGeneric: true,  desc: '繁体：多瘤種' },
+    { text: '無需基因檢測即可入組', expectAgnostic: true, desc: '繁体：無需基因檢測' },
+    { text: '不限基因突變', expectAgnostic: true, desc: '繁体：不限基因突變' },
+    // 英文
+    { text: 'tumor-agnostic basket study', expectGeneric: true,  desc: '英文：tumor-agnostic' },
+    { text: 'pan-tumor immunotherapy phase II', expectGeneric: true,  desc: '英文：pan-tumor' },
+    { text: 'tissue-agnostic enrollment for MSI-H', expectGeneric: true,  desc: '英文：tissue-agnostic' },
+    { text: 'open-label basket trial in advanced malignancies', expectGeneric: true,  desc: '英文：advanced malignancies' },
+    { text: 'no genetic testing required prior to screening', expectAgnostic: true, desc: '英文：no genetic testing required' },
+    { text: 'irrespective of mutation status', expectAgnostic: true, desc: '英文：irrespective of mutation status' },
+    // 边界：具体癌种不应被误判
+    { text: '非小细胞肺癌 EGFR L858R', expectGeneric: false, expectAgnostic: false, desc: '具体癌种 + 具体基因' }
+  ];
+
+  cases.forEach(({ text, expectGeneric, expectAgnostic, desc }) => {
+    test(`${desc} → generic=${expectGeneric ?? '-'} / agnostic=${expectAgnostic ?? '-'}`, () => {
+      if (expectGeneric !== undefined) {
+        expect({ desc, generic: hasGenericCancerSignal(text) })
+          .toEqual({ desc, generic: expectGeneric });
+      }
+      if (expectAgnostic !== undefined) {
+        const trial = { inclusion_criteria: [text] };
+        const required = inferGeneRequired(trial);
+        // expectAgnostic=true 意味着 inferGeneRequired 应判 false（无基因要求）
+        expect({ desc, geneRequired: required })
+          .toEqual({ desc, geneRequired: !expectAgnostic && !expectGeneric });
+      }
+    });
+  });
+});

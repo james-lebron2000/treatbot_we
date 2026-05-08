@@ -4,6 +4,8 @@ const { success } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const { STATUS_TEXT_MAP } = require('../services/matchEngine');
+// PRD-2026Q4 T0-10：转化漏斗埋点
+const funnelTracker = require('../services/funnelTracker');
 
 // PRD-2026Q2 §2.5：把"同一用户 × 同一试验"在活跃状态下的唯一性固化到 DB。
 // idempotency_key 列已存在 UNIQUE 约束；create 时写入确定性 key，
@@ -248,6 +250,18 @@ const create = async (req, res, next) => {
       trialId: finalTrialId
     });
 
+    // PRD-2026Q4 T0-10：申请创建成功 → APPLICATION_SUBMITTED。
+    // 仅在 existed=false 路径触发，重复幂等命中不再二次计入漏斗。
+    try {
+      funnelTracker.track(funnelTracker.EVENTS.APPLICATION_SUBMITTED, {
+        user_id: req.userId,
+        entity_id: created.application.id,
+        payload: { trial_id: finalTrialId, source: created.application.client_source || 'weapp' }
+      });
+    } catch (trackErr) {
+      logger.warn('[application] 漏斗埋点失败（已吞）:', { error: trackErr.message });
+    }
+
     res.json(success({
       applicationId: created.application.id,
       trialId: trialForResponse.id,
@@ -333,19 +347,49 @@ const cancel = async (req, res, next) => {
       return res.status(404).json({ code: 404, message: '报名记录不存在', data: null });
     }
 
-    if (application.status === 'cancelled') {
-      return res.status(400).json({ code: 400, message: '报名已取消', data: null });
+    // PRD-2026Q3 T0-2：terminal 态不能再 cancel；统一目标态改为 'withdrawn'。
+    const TERMINAL_STATUSES = ['withdrawn', 'cancelled', 'rejected', 'enrolled'];
+    if (TERMINAL_STATUSES.includes(application.status)) {
+      return res.status(400).json({ code: 400, message: '报名已处于终态，不能取消', data: null });
     }
 
-    // PRD-2026Q2 §2.5：取消时把 idempotency_key 释放成非冲突值，
-    // 让用户可以重新报名而不触发 UNIQUE 冲突。
-    await application.update({
-      status: 'cancelled',
-      remark: reason || application.remark,
-      idempotency_key: releasedIdempotencyKey(application.id)
+    // PRD-2026Q3 T0-2：cancel 走状态机 transition()，落 application_status_event 事件。
+    // PRD-2026Q2 §2.5：取消时把 idempotency_key 释放成非冲突值，让用户可以重新报名。
+    const stateMachine = require('../services/applicationStateMachine');
+    const result = await stateMachine.transition(application.id, 'withdrawn', {
+      actor: { type: 'user', id: req.userId },
+      reason: reason || null,
+      extraFields: {
+        idempotency_key: releasedIdempotencyKey(application.id),
+        remark: reason || application.remark
+      }
     });
 
-    res.json(success(null, '取消成功'));
+    res.json(success({
+      id: result.application.id,
+      status: result.application.status,
+      from: result.from
+    }, '取消成功'));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PRD-2026Q3 T0-2：用户查看自己报名的状态变更时间线（applicationStatusEvent 表回放）。
+ * 仅自己 user_id 的 application 才能看；他人请求 → 404（不暴露存在性）。
+ */
+const getTimeline = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { TrialApplication } = require('../models');
+    const stateMachine = require('../services/applicationStateMachine');
+    const app = await TrialApplication.findOne({ where: { id, user_id: req.userId } });
+    if (!app) {
+      return res.status(404).json({ code: 404, message: '报名记录不存在', data: null });
+    }
+    const events = await stateMachine.getTimeline(id);
+    res.json(success({ applicationId: id, events }, 'ok'));
   } catch (err) {
     next(err);
   }
@@ -354,5 +398,6 @@ const cancel = async (req, res, next) => {
 module.exports = {
   create,
   getList,
-  cancel
+  cancel,
+  getTimeline
 };

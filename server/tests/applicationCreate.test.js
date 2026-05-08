@@ -176,18 +176,22 @@ describe('application.create §2.5', () => {
   });
 });
 
-describe('application.cancel §2.5', () => {
-  test('cancel 把 idempotency_key 释放成 released_*', async () => {
-    const updateCalls = [];
+describe('application.cancel §2.5 + Q3 T0-2 状态机', () => {
+  test('cancel 走状态机 → 写 status=withdrawn + 事件 + 释放 idempotency_key', async () => {
+    // PRD-2026Q3 T0-2：cancel 不再直接 update，而是经 stateMachine.transition()
+    // 新流转目标态从 'cancelled' 改为 'withdrawn'。
+    const stateMachine = require('../services/applicationStateMachine');
+    const transitionSpy = jest.spyOn(stateMachine, 'transition').mockResolvedValue({
+      from: 'pending', to: 'withdrawn', noop: false,
+      application: { id: 'app_xyz', status: 'withdrawn', updated_at: new Date() },
+      event: { id: 1 }
+    });
+
     mockAppFindOne.mockReset();
     mockAppFindOne.mockResolvedValueOnce({
       id: 'app_xyz',
       status: 'pending',
-      remark: null,
-      update: (fields) => {
-        updateCalls.push(fields);
-        return Promise.resolve();
-      }
+      remark: null
     });
 
     const req = {
@@ -201,8 +205,40 @@ describe('application.cancel §2.5', () => {
     await controller.cancel(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].status).toBe('cancelled');
-    expect(updateCalls[0].idempotency_key).toMatch(/^released_app_xyz_/);
+    expect(transitionSpy).toHaveBeenCalledTimes(1);
+    const [appId, target, opts] = transitionSpy.mock.calls[0];
+    expect(appId).toBe('app_xyz');
+    expect(target).toBe('withdrawn');
+    expect(opts.actor).toEqual({ type: 'user', id: 'user_123' });
+    expect(opts.reason).toBe('换家医院');
+    expect(opts.extraFields.idempotency_key).toMatch(/^released_app_xyz_/);
+    expect(opts.extraFields.remark).toBe('换家医院');
+
+    transitionSpy.mockRestore();
+  });
+
+  test('cancel 当报名已是 terminal：返回 400，不调状态机', async () => {
+    const stateMachine = require('../services/applicationStateMachine');
+    const transitionSpy = jest.spyOn(stateMachine, 'transition');
+
+    mockAppFindOne.mockReset();
+    mockAppFindOne.mockResolvedValueOnce({
+      id: 'app_xyz',
+      status: 'rejected'
+    });
+
+    const req = {
+      userId: 'user_123',
+      params: { id: 'app_xyz' },
+      body: {}
+    };
+    const res = buildRes();
+    const next = jest.fn();
+
+    await controller.cancel(req, res, next);
+
+    expect(transitionSpy).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    transitionSpy.mockRestore();
   });
 });

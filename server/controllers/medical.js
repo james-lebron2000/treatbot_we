@@ -6,6 +6,8 @@ const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+// PRD-2026Q4 T0-10：转化漏斗埋点
+const funnelTracker = require('../services/funnelTracker');
 
 // 配置 multer 内存存储
 const upload = multer({
@@ -213,6 +215,20 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
     }
   }
   logger.info('病历上传成功:', { recordId: record.id, userId, fileKey, fileSize: file.size, ocrQueued });
+
+  // PRD-2026Q4 T0-10：MEDICAL_UPLOADED 埋点。
+  // 此处只表示"文件已落库 + 入队成功"，OCR 解析完成事件后续如需独立埋点可加 MEDICAL_PARSED。
+  // 失败仅 logger.warn，绝不影响上传响应。
+  try {
+    funnelTracker.track(funnelTracker.EVENTS.MEDICAL_UPLOADED, {
+      user_id: userId,
+      entity_id: record.id,
+      payload: { type: type || '其他', file_size: file.size, ocr_queued: ocrQueued }
+    });
+  } catch (trackErr) {
+    logger.warn('[medical] 漏斗埋点失败（已吞）:', { recordId: record.id, error: trackErr.message });
+  }
+
   return {
     fileId: record.id,
     recordId: record.id,
@@ -808,6 +824,46 @@ const getTimeline = async (req, res, next) => {
   }
 };
 
+/**
+ * PRD-2026Q3 T1-3：多病历 active 切换。
+ * 一个用户全局只有一份 is_active=true。事务里先把当前 active 重置为 0，
+ * 再把目标置 1，避免出现"两份都 active / 切换中竞态"的窗口。
+ */
+const activateRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    const { MedicalRecord, sequelize } = require('../models');
+
+    const result = await sequelize.transaction(async (t) => {
+      const rec = await MedicalRecord.findOne({
+        where: { id, user_id: userId, deleted_at: null },
+        lock: t.LOCK ? t.LOCK.UPDATE : 'UPDATE',
+        transaction: t
+      });
+      if (!rec) return { notFound: true };
+      if (rec.is_active === true) {
+        return { id: rec.id, isActive: true, noop: true };
+      }
+      await MedicalRecord.update(
+        { is_active: false },
+        { where: { user_id: userId, is_active: true }, transaction: t }
+      );
+      await rec.update({ is_active: true }, { transaction: t });
+      return { id: rec.id, isActive: true, noop: false };
+    });
+
+    if (result && result.notFound) {
+      if (typeof res.fail === 'function') return res.fail('记录不存在', 404);
+      return res.status(404).json({ code: 404, message: '记录不存在', data: null });
+    }
+    if (typeof res.ok === 'function') return res.ok(result);
+    return res.json(success(result, '已切换 active 病历'));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadMiddleware,
   uploadMiddlewareBatch,
@@ -821,5 +877,6 @@ module.exports = {
   enrichRecord,
   downloadRecordFile,
   deleteRecord,
-  softDeleteRecord
+  softDeleteRecord,
+  activateRecord
 };

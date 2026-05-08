@@ -71,5 +71,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "jest": {
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setup-jest.js"
+    ]
   }
 }
