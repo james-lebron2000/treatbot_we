@@ -9,9 +9,14 @@ const parseAllowList = (value) => new Set(
     .filter(Boolean)
 );
 
-const ADMIN_USER_IDS = parseAllowList(process.env.ADMIN_USER_IDS);
-const ADMIN_OPENIDS = parseAllowList(process.env.ADMIN_OPENIDS);
-const ADMIN_PHONES = parseAllowList(process.env.ADMIN_PHONES);
+// PRD-2026Q4 T0-7 followup：每次请求重读 process.env，避免「init-time 捕获」
+// 漂移（同 OCR_PROVIDER=kimi 残留生产事故的同一 class of bug）。允许：
+//   1) 容器启动时 env 缺失但运行后通过 secret 注入恢复
+//   2) 测试覆盖 process.env 后无需重新 require
+// 几条数据量都很小，按请求重新解析无可观测开销。
+const getAdminUserIds = () => parseAllowList(process.env.ADMIN_USER_IDS);
+const getAdminOpenids = () => parseAllowList(process.env.ADMIN_OPENIDS);
+const getAdminPhones = () => parseAllowList(process.env.ADMIN_PHONES);
 
 const extractBearerToken = (req) => {
   const authHeader = req.headers.authorization || '';
@@ -105,9 +110,12 @@ const requireAdmin = async (req, res, next) => {
       });
     }
 
-    const allowed = ADMIN_USER_IDS.has(user.id)
-      || ADMIN_OPENIDS.has(user.openid)
-      || (user.phone && ADMIN_PHONES.has(user.phone));
+    const adminUserIds = getAdminUserIds();
+    const adminOpenids = getAdminOpenids();
+    const adminPhones = getAdminPhones();
+    const allowed = adminUserIds.has(user.id)
+      || adminOpenids.has(user.openid)
+      || (user.phone && adminPhones.has(user.phone));
 
     if (!allowed) {
       logger.warn('管理员权限校验失败', {

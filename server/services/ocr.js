@@ -31,56 +31,73 @@ const classifyLlmError = (_llmObs && _llmObs.classifyLlmError)
   ? _llmObs.classifyLlmError
   : () => 'other';
 
-const OCR_PROVIDER = (process.env.OCR_PROVIDER || 'auto').toLowerCase();
+// PRD-2026Q4 T0-7 followup：所有 OCR 相关 env / 凭证 / provider 选择都走 per-call
+// getter，禁止 init-time 捕获——这是 OCR_PROVIDER=kimi 残留生产事故的同 class
+// of bug。只有 base URL / 默认模型名等"运维一次设好就不再改"的常量才直接 const。
+const ocrConfig = require('../utils/ocrConfig');
 
-// Kimi（保留为 fallback，未配置则跳过）
-const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
+const getOcrProvider = () => (process.env.OCR_PROVIDER || 'auto').toLowerCase();
+
+// Kimi 凭证 / 模型名都 per-call 重读
+const getKimiApiKey = () => process.env.KIMI_API_KEY || '';
 const KIMI_BASE_URL = (process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '');
-const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.5';
-const KIMI_VISION_MODEL = process.env.KIMI_VISION_MODEL || 'moonshot-v1-128k-vision-preview';
+const getKimiModel = () => process.env.KIMI_MODEL || 'kimi-k2.5';
+const getKimiVisionModel = () => process.env.KIMI_VISION_MODEL || 'moonshot-v1-128k-vision-preview';
 const _KIMI_TIMEOUT_MS = parseInt(process.env.KIMI_TIMEOUT_MS || '45000', 10);
 
-// 修复方案 Track 2.4：仍保留模块级 boolean 给现有调用点（多处 if (hasKimiCredential)），
-// 但同时 require ocrConfig 用于「入口早抛」场景，避免静默走 4 层降级。
-const hasKimiCredential = !!KIMI_API_KEY;
+// 凭证 boolean → ocrConfig 集中导出的 per-call helper。变量名保留以减少调用点 diff。
+const hasKimiCredential = () => ocrConfig.hasKimiCredential();
 
 // Doubao / 火山方舟 Ark（OpenAI 兼容；生产 OCR 推荐主路径）
-const ARK_API_KEY = process.env.ARK_API_KEY || '';
+// llmClient.js 直接读 process.env.ARK_API_KEY；这里仅保留 getter 给将来需要在
+// 本文件直接发起 ARK HTTP 调用时使用，命名上保持与 getKimiApiKey 一致。
+// eslint-disable-next-line no-unused-vars
+const _getArkApiKey = () => process.env.ARK_API_KEY || '';
 // llmClient.js 自己从 process.env.ARK_BASE_URL 读，这里只保留供日志/调试参考。
-// 用 _ 前缀避免 no-unused-vars 警告。
 const _ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, '');
 // Ark 必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
-// 备选：doubao-1-5-vision-pro-32k-250115
-const ARK_VISION_MODEL = process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
+const getArkVisionModel = () => process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
 // 大型扫描 PDF + 多页 vision 调用需要 90s+，timeout 默认 180s
 const _ARK_TIMEOUT_MS = parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10);
-const hasDoubaoCredential = !!ARK_API_KEY;
-const hasDoubaoVisionCredential = !!ARK_API_KEY;
+const hasDoubaoCredential = () => ocrConfig.hasDoubaoCredential();
+const hasDoubaoVisionCredential = () => ocrConfig.hasDoubaoCredential();
 
-const hasTencentCredential = !!(process.env.OCR_SECRET_ID && process.env.OCR_SECRET_KEY);
-const ocrConfig = require('../utils/ocrConfig');
+const hasTencentCredential = () => ocrConfig.hasTencentCredential();
 
 const OCR_PDF_VISION_MAX_PAGES = Math.max(1, Math.min(5, parseInt(process.env.OCR_PDF_VISION_MAX_PAGES || '3', 10)));
 const OCR_PDF_VISION_DPI = Math.max(96, Math.min(200, parseInt(process.env.OCR_PDF_VISION_DPI || '150', 10)));
 const OCR_PDF_RENDER_TIMEOUT_MS = parseInt(process.env.OCR_PDF_RENDER_TIMEOUT_MS || '25000', 10);
 
 const OcrClient = tencentcloud.ocr.v20181119.Client;
-const tencentClient = hasTencentCredential
-  ? new OcrClient({
-      credential: {
-        secretId: process.env.OCR_SECRET_ID,
-        secretKey: process.env.OCR_SECRET_KEY
-      },
-      region: process.env.OCR_REGION || 'ap-shanghai',
-      profile: {
-        signMethod: 'TC3-HMAC-SHA256',
-        httpProfile: {
-          reqMethod: 'POST',
-          reqTimeout: 30
-        }
+// Tencent SDK 客户端：不在模块顶层缓存（init 时凭证可能还没注入）。
+// 改为 lazy singleton：第一次有凭证调用时构造一次。后续凭证变化（旋转密钥）
+// 需要重启进程——属于运维有意识的动作，不在常态 hot-reload 路径上。
+let _tencentClient = null;
+let _tencentClientCredentialKey = '';
+const getTencentClient = () => {
+  if (!hasTencentCredential()) return null;
+  // 用凭证哈希做 cache-key，凭证轮换时自动重建。
+  const credKey = `${process.env.OCR_SECRET_ID}|${process.env.OCR_REGION || 'ap-shanghai'}`;
+  if (_tencentClient && _tencentClientCredentialKey === credKey) {
+    return _tencentClient;
+  }
+  _tencentClient = new OcrClient({
+    credential: {
+      secretId: process.env.OCR_SECRET_ID,
+      secretKey: process.env.OCR_SECRET_KEY
+    },
+    region: process.env.OCR_REGION || 'ap-shanghai',
+    profile: {
+      signMethod: 'TC3-HMAC-SHA256',
+      httpProfile: {
+        reqMethod: 'POST',
+        reqTimeout: 30
       }
-    })
-  : null;
+    }
+  });
+  _tencentClientCredentialKey = credKey;
+  return _tencentClient;
+};
 
 const MIME_BY_EXT = {
   '.jpg': 'image/jpeg',
@@ -331,7 +348,7 @@ const renderPdfPagesToDataUrls = async ({ sourceUrl, fileKey, maxPages = OCR_PDF
  * 流程：上传 PDF → 引用 file_id 发送消息 → 抽取实体 → 删除文件
  */
 const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
-  if (!hasKimiCredential) {
+  if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
 
@@ -351,7 +368,7 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
       {
         timeout: 60000,
         headers: {
-          Authorization: `Bearer ${KIMI_API_KEY}`,
+          Authorization: `Bearer ${getKimiApiKey()}`,
           ...form.getHeaders()
         }
       }
@@ -372,7 +389,7 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
       `${KIMI_BASE_URL}/files/${fileId}/content`,
       {
         timeout: 30000,
-        headers: { Authorization: `Bearer ${KIMI_API_KEY}` }
+        headers: { Authorization: `Bearer ${getKimiApiKey()}` }
       }
     );
     extractedText = (typeof contentResp.data === 'string'
@@ -417,7 +434,7 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
 
     // Q3-红线 §A.3.2：LLM 调用埋点（PDF File API 模式）
     const parsed = await instrumentLlmCall(
-      { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_pdf' },
+      { provider: 'kimi', model: getKimiModel(), operation: 'ocr_pdf' },
       () => chatJson('kimi', messages, OcrExtractionSchema)
     );
 
@@ -455,7 +472,7 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
     try {
       await axios.delete(`${KIMI_BASE_URL}/files/${fileId}`, {
         timeout: 10000,
-        headers: { Authorization: `Bearer ${KIMI_API_KEY}` }
+        headers: { Authorization: `Bearer ${getKimiApiKey()}` }
       });
       logger.info('Kimi 临时文件已清理', { fileId });
     } catch (delErr) {
@@ -737,8 +754,8 @@ const requestKimi = async (imageRef) => {
 
   // Q3-红线 §A.3.2：LLM 调用埋点（图片/视觉模式）
   const parsed = await instrumentLlmCall(
-    { provider: 'kimi', model: KIMI_VISION_MODEL, operation: 'ocr_image' },
-    () => chatJson('kimi', messages, OcrExtractionSchema, { model: KIMI_VISION_MODEL })
+    { provider: 'kimi', model: getKimiVisionModel(), operation: 'ocr_image' },
+    () => chatJson('kimi', messages, OcrExtractionSchema, { model: getKimiVisionModel() })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -762,7 +779,7 @@ const requestKimi = async (imageRef) => {
  * 不需要图片，直接传文本内容
  */
 const requestKimiText = async (text) => {
-  if (!hasKimiCredential) {
+  if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
 
@@ -808,7 +825,7 @@ const requestKimiText = async (text) => {
 
   // Q3-红线 §A.3.2：LLM 调用埋点（纯文本/Markdown 抽取模式）
   const parsed = await instrumentLlmCall(
-    { provider: 'kimi', model: KIMI_MODEL, operation: 'ocr_text' },
+    { provider: 'kimi', model: getKimiModel(), operation: 'ocr_text' },
     () => chatJson('kimi', messages, OcrExtractionSchema)
   );
 
@@ -844,7 +861,7 @@ const requestKimiText = async (text) => {
 // ============================================================================
 
 const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerName = 'doubao') => {
-  if (!hasDoubaoVisionCredential) {
+  if (!hasDoubaoVisionCredential()) {
     throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
   const refs = Array.isArray(imageRefs) ? imageRefs.filter(Boolean) : [imageRefs].filter(Boolean);
@@ -867,8 +884,8 @@ const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerN
   ];
 
   const parsed = await instrumentLlmCall(
-    { provider: 'doubao', model: ARK_VISION_MODEL, operation },
-    () => chatJson('doubao', messages, OcrExtractionSchema, { model: ARK_VISION_MODEL })
+    { provider: 'doubao', model: getArkVisionModel(), operation },
+    () => chatJson('doubao', messages, OcrExtractionSchema, { model: getArkVisionModel() })
   );
 
   const entities = parseKimiEntities(parsed); // 复用同一套字段抽取
@@ -889,7 +906,7 @@ const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerN
 const requestDoubao = async (imageRef) => requestDoubaoImages(imageRef, 'ocr_image', 'doubao');
 
 const requestDoubaoText = async (text) => {
-  if (!hasDoubaoCredential) {
+  if (!hasDoubaoCredential()) {
     throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
   }
 
@@ -934,8 +951,8 @@ const requestDoubaoText = async (text) => {
   ];
 
   const parsed = await instrumentLlmCall(
-    { provider: 'doubao', model: ARK_VISION_MODEL, operation: 'ocr_text' },
-    () => chatJson('doubao', messages, OcrExtractionSchema, { model: ARK_VISION_MODEL })
+    { provider: 'doubao', model: getArkVisionModel(), operation: 'ocr_text' },
+    () => chatJson('doubao', messages, OcrExtractionSchema, { model: getArkVisionModel() })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -960,7 +977,7 @@ const requestDoubaoText = async (text) => {
  * 扫描件 PDF 没有文本层时返回空文本 → 调用方应改走 vision 路径（pdftoppm 拆页 → requestDoubao）。
  */
 const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
-  if (!hasDoubaoCredential) {
+  if (!hasDoubaoCredential()) {
     throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
   }
 
@@ -994,7 +1011,7 @@ const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }) => {
 };
 
 const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }) => {
-  if (!hasDoubaoVisionCredential) {
+  if (!hasDoubaoVisionCredential()) {
     throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
 
@@ -1013,7 +1030,7 @@ const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }) => {
 };
 
 const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
-  if (!hasKimiCredential) {
+  if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
 
@@ -1032,7 +1049,7 @@ const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
 };
 
 const recognizeByTencent = async (imageUrl) => {
-  if (!tencentClient) {
+  if (!getTencentClient()) {
     throw new Error('Tencent OCR 凭证未配置');
   }
 
@@ -1042,7 +1059,7 @@ const recognizeByTencent = async (imageUrl) => {
     EnableWordPolygon: false
   };
 
-  const result = await tencentClient.GeneralBasicOCR(params);
+  const result = await getTencentClient().GeneralBasicOCR(params);
   const text = result.TextDetections?.map((item) => item.DetectedText).join('\n') || '';
   const entities = extractMedicalEntities(text);
   return {
@@ -1103,22 +1120,22 @@ const recognizeByRule = async ({ imageUrl, fileKey, mimeType: _mimeType }) => {
 };
 
 const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
-  const providerPreference = OCR_PROVIDER;
+  const providerPreference = getOcrProvider();
   const attemptedProviders = new Set();
 
   try {
     // 主路径：Doubao/ARK。生产 OCR 唯一视觉 provider，coding-plan key 已弃用。
-    if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential)) {
+    if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential())) {
       attemptedProviders.add('doubao');
       return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
     }
 
-    if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential)) {
+    if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential())) {
       attemptedProviders.add('kimi');
       return await recognizeByKimi({ imageUrl, fileKey, mimeType });
     }
 
-    if (providerPreference === 'tencent' || (providerPreference === 'auto' && hasTencentCredential)) {
+    if (providerPreference === 'tencent' || (providerPreference === 'auto' && hasTencentCredential())) {
       attemptedProviders.add('tencent');
       return await recognizeByTencent(imageUrl);
     }
@@ -1134,7 +1151,7 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     const fallbackReason = classifyLlmError(error);
 
     // 回退顺序：Doubao → Kimi → Tencent → 规则。
-    if (hasDoubaoVisionCredential && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
+    if (hasDoubaoVisionCredential() && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
       try {
         recordLlmFallback(fromProvider, 'doubao', fallbackReason);
         return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
@@ -1143,7 +1160,7 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
       }
     }
 
-    if (hasKimiCredential && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
+    if (hasKimiCredential() && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
         recordLlmFallback(fromProvider, 'kimi', fallbackReason);
         return await recognizeByKimi({ imageUrl, fileKey, mimeType });
@@ -1152,7 +1169,7 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
       }
     }
 
-    if (hasTencentCredential && providerPreference !== 'tencent' && !attemptedProviders.has('tencent')) {
+    if (hasTencentCredential() && providerPreference !== 'tencent' && !attemptedProviders.has('tencent')) {
       try {
         recordLlmFallback(fromProvider, 'tencent', fallbackReason);
         return await recognizeByTencent(imageUrl);
@@ -1206,7 +1223,7 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   });
 
   // 优先用 Doubao/ARK 进行结构化抽取，缺失则回退 Kimi。
-  if (hasDoubaoCredential) {
+  if (hasDoubaoCredential()) {
     try {
       const doubaoResult = await requestDoubaoText(markdown);
       return {
@@ -1224,7 +1241,7 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   }
 
   // 次选：Kimi 文本抽取（fallback）
-  if (hasKimiCredential) {
+  if (hasKimiCredential()) {
     try {
       const kimiResult = await requestKimiText(markdown);
       return {
@@ -1297,7 +1314,7 @@ const processMedicalImage = async (imageUrl) => {
       fileKey: source.fileKey
     })) {
       // 主路径：Doubao。先尝试 PDF 文本层，抽空时立即转扫描件 vision 路径。
-      if (hasDoubaoCredential) {
+      if (hasDoubaoCredential()) {
         try {
           const doubaoPdfResult = await requestDoubaoPdf({
             sourceUrl,
@@ -1339,7 +1356,7 @@ const processMedicalImage = async (imageUrl) => {
       }
 
       // 次选：Kimi File API（fallback）
-      if (hasKimiCredential) {
+      if (hasKimiCredential()) {
         try {
           const kimiPdfResult = await requestKimiPdf({
             sourceUrl,
@@ -1370,7 +1387,7 @@ const processMedicalImage = async (imageUrl) => {
       }
 
       // 有文本则优先用 Doubao 文本模式结构化
-      if (text && hasDoubaoCredential) {
+      if (text && hasDoubaoCredential()) {
         try {
           const doubaoResult = await requestDoubaoText(text);
           logger.info('PDF 走 Doubao 文本模式结构化完成');
@@ -1388,7 +1405,7 @@ const processMedicalImage = async (imageUrl) => {
       }
 
       // 次选：Kimi 文本模式（fallback）
-      if (text && hasKimiCredential) {
+      if (text && hasKimiCredential()) {
         try {
           const kimiResult = await requestKimiText(text);
           logger.info('PDF 走 Kimi 文本模式结构化完成');
