@@ -24,6 +24,7 @@ const ossService = require('../services/oss');
 const { redisClient } = require('../middleware/rateLimit');
 const { JWT_SECRET } = require('../utils/jwtSecret');
 const logger = require('../utils/logger');
+const { _maskPhone: maskPhone } = require('../utils/piiScrubber');
 
 const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN, 10) || 1800;
 const JWT_REFRESH_EXPIRES_IN = parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 604800;
@@ -295,7 +296,10 @@ const deleteAccount = async (req, res, next) => {
         return res.fail('系统繁忙，请稍后再试', 503);
       }
 
-      logger.info('[me.delete] 注销验证码已生成', { userId, phone: user.phone });
+      // PRD-2026Q4 T0-7 followup（PHI logging）：
+      //   - logger meta 走 maskPhone（docker logs / Sentry 不落明文）；
+      //   - writeActionLog 是 DB 持久化的合规审计，按 PRD-2026Q3 仍落原值（注销链路必需取证）。
+      logger.info('[me.delete] 注销验证码已生成', { userId, phone: maskPhone(user.phone) });
       await writeActionLog(userId, 'delete_account_request', { phone: user.phone }, clientIp(req));
 
       return res.status(202).json({

@@ -12,6 +12,7 @@
  */
 const logger = require('../utils/logger');
 const { redisClient } = require('../middleware/rateLimit');
+const { scrubForLog, _maskPhone: maskPhone } = require('../utils/piiScrubber');
 
 // 模块内持有一个 redis 客户端引用；测试时通过 jest.mock('../middleware/rateLimit') 注入
 const redis = redisClient;
@@ -140,7 +141,8 @@ const sendCode = async (phone, ip) => {
   // PRD-2026Q2 §3.6：风控三重量化
   const abuse = await checkAbuseLimits(phone, ip);
   if (abuse) {
-    logger.warn('[SMS] 反刷命中', { phone, ip, code: abuse.code });
+    // PRD-2026Q4 T0-7 followup（PHI logging）：phone 走 maskPhone(末 4)，IP 不算 PHI 保留。
+    logger.warn('[SMS] 反刷命中', { phone: maskPhone(phone), ip, code: abuse.code });
     return {
       success: false,
       code: abuse.code,
@@ -161,11 +163,19 @@ const sendCode = async (phone, ip) => {
   // 给用户发送的真实短信文本（接入腾讯云时传入模板）
   const smsText = SMS_TEMPLATES.loginCode(code);
 
+  // PRD-2026Q4 T0-7 followup（PHI logging）：
+  //   - phone 全部走 maskPhone(末 4)；
+  //   - smsText 含明文验证码，仅在 NODE_ENV !== 'production' 时打印 code_len 而非内容。
+  //     生产 docker logs / Sentry / 文件备份都不会落明文 OTP。
+  const phoneMasked = maskPhone(phone);
   if (provider === 'tencent') {
     // TODO: 接入腾讯云短信，传入 smsText 或对应模板 ID
-    logger.info(`[SMS] 腾讯云短信暂未配置，验证码已存储: phone=${phone}`);
+    logger.info(`[SMS] 腾讯云短信暂未配置，验证码已存储: phone=${phoneMasked}`);
+  } else if (process.env.NODE_ENV === 'production') {
+    logger.info(`[SMS] 即将发送（模板）: phone=${phoneMasked} code_len=${code.length}`);
   } else {
-    logger.info(`[SMS] 即将发送（模板）: phone=${phone} | ${smsText}`);
+    // 仅 dev / 联调环境打印明文短信，方便人工 debug。
+    logger.info(`[SMS] 即将发送（dev）: phone=${phoneMasked} | ${smsText}`);
   }
 
   return { success: true, message: '验证码已发送给您' };
