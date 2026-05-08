@@ -39,7 +39,10 @@ router.post('/track', funnelController.track);
 router.post('/auth/weapp-login', strictLimiter, normalizePii, authController.weappLogin);
 router.post('/auth/send-code', strictLimiter, normalizePii, authController.sendVerificationCode);
 router.post('/auth/h5-login', strictLimiter, normalizePii, authController.h5Login);
-router.post('/auth/refresh', authController.refreshToken);
+// PRD-2026Q4 T0-7 followup（路由审计）：refreshToken 是凭证再签发路径，
+// 与 weapp-login / send-code / h5-login 同等敏感 → 同等限流。老实现漏了 strictLimiter，
+// 暴露 refresh-token 撞库 / 暴破面（leaked refresh token 在过期前可被重放）。
+router.post('/auth/refresh', strictLimiter, authController.refreshToken);
 router.post('/auth/bind-phone', authMiddleware, strictLimiter, normalizePii, authController.bindPhone);
 router.get('/auth/profile', authMiddleware, userController.getProfile);
 
@@ -112,9 +115,11 @@ router.get('/admin/dashboard', authMiddleware, requireAdminToken, logAdmin('view
 router.get('/admin/users', authMiddleware, requireAdminToken, logAdmin('view_users'), adminController.getUserList);
 router.get('/admin/records', authMiddleware, requireAdminToken, logAdmin('view_records'), adminController.getRecordList);
 router.get('/admin/applications', authMiddleware, requireAdminToken, logAdmin('view_applications'), adminController.getApplicationList);
-router.put('/admin/applications/:id/status', authMiddleware, requireAdminToken, logAdmin('update_application_status', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.updateApplicationStatus);
+// PRD-2026Q4 T0-7 followup（路由审计）：显式 pin 角色，避免一旦废弃 user-allowlist
+// fallback 后 ops 失去访问。三个角色都允许。
+router.put('/admin/applications/:id/status', authMiddleware, requireAdminToken, requireRole('super', 'ops', 'cro_liaison'), logAdmin('update_application_status', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.updateApplicationStatus);
 // PRD-2026Q3 T0-2：admin 查看任一申请的状态时间线（含 actor_id，便于追责）
-router.get('/admin/applications/:id/timeline', authMiddleware, requireAdminToken, logAdmin('view_application_timeline', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.getApplicationTimeline);
+router.get('/admin/applications/:id/timeline', authMiddleware, requireAdminToken, requireRole('super', 'ops', 'cro_liaison'), logAdmin('view_application_timeline', (req) => ({ targetType: 'application', targetId: req.params.id })), adminController.getApplicationTimeline);
 router.get('/admin/logs', authMiddleware, requireAdminToken, logAdmin('view_logs'), adminController.getSystemLogs);
 router.get('/admin/trials', authMiddleware, requireAdminToken, logAdmin('view_trials'), adminController.getAdminTrials);
 // PRD-2026Q2 §2.4：试验新鲜度健康度视图（W4 前端消费）
@@ -123,7 +128,8 @@ router.post('/admin/applications/:id/notes', authMiddleware, requireAdminToken, 
 // PRD-2026Q3 T1-6：含 PII 的全量导出仅 super；脱敏维度的 applications 导出全角色可访问。
 router.get('/admin/exports/users', authMiddleware, requireAdminToken, requireRole('super'), logAdmin('export_users'), adminController.exportUsers);
 router.get('/admin/exports/records', authMiddleware, requireAdminToken, requireRole('super'), logAdmin('export_records'), adminController.exportRecords);
-router.get('/admin/exports/applications', authMiddleware, requireAdminToken, logAdmin('export_applications'), adminController.exportApplications);
+// 全角色可访问（脱敏维度），但显式 pin 三个角色避免 DEFAULT_ROLE='super' fallback 漂移。
+router.get('/admin/exports/applications', authMiddleware, requireAdminToken, requireRole('super', 'ops', 'cro_liaison'), logAdmin('export_applications'), adminController.exportApplications);
 router.get('/admin/cro', authMiddleware, requireAdminToken, logAdmin('view_cro'), adminController.getCroList);
 // PRD-2026Q3 T1-6：CRO 公司维护是 cro_liaison 的核心职责；super 兜底；ops 不参与商务关系。
 router.post('/admin/cro', authMiddleware, requireAdminToken, requireRole('super', 'cro_liaison'), logAdmin('create_cro'), adminController.createCro);
@@ -151,8 +157,11 @@ router.get('/cro/trials', croAuthMiddleware, croController.getCroTrials);
 router.get('/cro/applications', croAuthMiddleware, croController.getCroApplications);
 router.put('/cro/applications/:id/status', croAuthMiddleware, croController.updateCroApplicationStatus);
 // PRD-2026Q3 T0-2：CRO 批量推进状态（最多 200 条），单失败不阻塞其他
-router.post('/cro/applications/bulk-status', croAuthMiddleware, croController.bulkUpdateCroApplicationStatus);
-router.post('/cro/applications/:id/notes', croAuthMiddleware, croController.addCroNote);
-router.get('/cro/exports/applications', croAuthMiddleware, croController.exportCroApplications);
+// PRD-2026Q4 T0-7 followup（路由审计）：批量改状态是高影响写路径，
+// 加 strictLimiter（防被劫持账号刷状态）+ logAdmin 留痕（actor=cro:{id}）。
+router.post('/cro/applications/bulk-status', croAuthMiddleware, strictLimiter, logAdmin('cro_bulk_status_update'), croController.bulkUpdateCroApplicationStatus);
+router.post('/cro/applications/:id/notes', croAuthMiddleware, logAdmin('cro_add_note', (req) => ({ targetType: 'application', targetId: req.params.id })), croController.addCroNote);
+// PRD-2026Q4 T0-7 followup：CRO 端导出是 PII 出口，与 admin /admin/exports/* 同等审计。
+router.get('/cro/exports/applications', croAuthMiddleware, logAdmin('cro_export_applications'), croController.exportCroApplications);
 
 module.exports = router;

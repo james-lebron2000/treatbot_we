@@ -49,10 +49,32 @@ const resolveTarget = (getter, req) => {
   }
 };
 
+// PRD-2026Q4 T0-7 followup（路由审计）：actor 解析支持 CRO 主体。
+// CRO 路由用 croAuthMiddleware → req.croCompany，没有 req.adminUser / req.userId；
+// 直接 fallback 到 'unknown' 会让 cro 批量改状态 / cro 导出 这种 PII 路径失去审计证据链。
+const resolveActor = (req) => {
+  if (req.adminUser && req.adminUser.id) {
+    return {
+      adminId: req.adminUser.id,
+      role: req.adminRole || req.adminUser.role || null
+    };
+  }
+  if (req.croCompany && req.croCompany.id != null) {
+    return {
+      adminId: `cro:${req.croCompany.id}`,
+      role: 'cro'
+    };
+  }
+  if (req.userId) {
+    return { adminId: req.userId, role: req.adminRole || null };
+  }
+  return { adminId: 'unknown', role: null };
+};
+
 const logAdmin = (action, targetTypeGetter) => (req, res, next) => {
   res.on('finish', () => {
     // 失败的请求（4xx/5xx）也记录，用于异常访问排查。
-    const adminId = req.adminUser?.id || req.userId || 'unknown';
+    const { adminId, role } = resolveActor(req);
     const { targetType, targetId } = resolveTarget(targetTypeGetter, req);
     const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim().slice(0, 64);
     const ua = (req.headers['user-agent'] || '').toString().slice(0, 255);
@@ -61,7 +83,7 @@ const logAdmin = (action, targetTypeGetter) => (req, res, next) => {
       .then(() => AdminAuditLog.create({
         admin_id: adminId,
         // PRD-2026Q3 T1-6：写入角色快照，方便审计 + 离职后 username 复用场景下追溯。
-        role: req.adminRole || (req.adminUser && req.adminUser.role) || null,
+        role,
         action,
         target_type: targetType,
         target_id: targetId,
