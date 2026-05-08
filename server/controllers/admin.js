@@ -41,7 +41,7 @@ const { maskPhone, maskName } = require('../utils/mask');
 const { toCsv: csvSafeToCsv } = require('../utils/csvSafe');
 const {
   ADMIN_TOKEN_EXPIRES_IN,
-  getConfiguredAdmin,
+  getConfiguredAccounts,
   issueAdminToken,
   verifyAdminCredential
 } = require('../utils/adminCredential');
@@ -57,7 +57,11 @@ const APPLICATION_STATUS_TEXT = {
 const adminLogin = async (req, res, next) => {
   try {
     const { username, key } = req.body || {};
-    if (!getConfiguredAdmin()) {
+    // PRD-2026Q4 T0-7 followup（admin login config gate）：原代码只看 ADMIN_LOGIN_USERNAME
+    // 这条单账号 ENV，但生产已迁移到 ADMIN_ACCOUNTS_JSON 多账号配置。仅设 JSON 不设 ENV
+    // 的部署会被错误地拒绝（503 管理员登录未配置）。改为看「全集合」，与
+    // verifyAdminCredential 的判定路径保持一致。
+    if (!getConfiguredAccounts().length) {
       return res.status(503).json({
         code: 503,
         message: '管理员登录未配置',
