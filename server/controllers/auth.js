@@ -72,22 +72,25 @@ const persistRefreshJti = async (userId, jti) => {
   }
 };
 
-const revokeRefreshJti = async (userId, jti) => {
+// PRD-2026Q4 T0-7 followup（refresh token rotation）：原实现是 isRefreshJtiValid()
+// + redisClient.del() 两步——典型 TOCTOU。两个并发 refresh 同时通过 GET、再各自
+// 删除、再各自 setex 新 jti，结果是「一个旧 token 派生出两条平行有效链」，把设计
+// 里的「one-time use」打破掉。攻击者拿到旧 refresh + 用户正常用 refresh 同时刷新即可。
+//
+// 修复：claim 用一次原子 DEL —— Redis 返回 1 表示我们抢到了（jti 之前在 → 现在已删），
+// 返回 0 表示别人先删了 / 从来不在白名单 → 拒绝。这是天然的 compare-and-swap，
+// 单 Redis 实例下 DEL 是 O(1) 原子的。
+//
+// Redis 异常 fail-open 保留（PRD-2026Q2 §3.4 决策不变）——返回 'redis_error' 让
+// 调用方按"老 token 兼容"放行。
+const REFRESH_CLAIM_REDIS_ERR = Symbol('refresh_claim_redis_error');
+const claimRefreshJti = async (userId, jti) => {
   try {
-    await redisClient.del(refreshTokenRedisKey(userId, jti));
+    const removed = await redisClient.del(refreshTokenRedisKey(userId, jti));
+    return removed === 1;
   } catch (err) {
-    logger.warn('refresh jti 撤销失败', { userId, error: err.message });
-  }
-};
-
-const isRefreshJtiValid = async (userId, jti) => {
-  try {
-    const hit = await redisClient.get(refreshTokenRedisKey(userId, jti));
-    return Boolean(hit);
-  } catch (err) {
-    // Redis 挂了不应该直接踢下线 —— 记录 warn 并放行（与当前 session_key 策略一致）
-    logger.warn('refresh jti 校验失败，Redis 异常回退到放行', { userId, error: err.message });
-    return true;
+    logger.warn('refresh jti claim 失败，Redis 异常回退到放行', { userId, error: err.message });
+    return REFRESH_CLAIM_REDIS_ERR;
   }
 };
 
@@ -353,13 +356,20 @@ const refreshToken = async (req, res, next) => {
       return res.status(401).json(error('无效的刷新令牌', 401));
     }
 
-    // PRD-2026Q2 §3.4：jti 必须在 Redis 白名单里。老 token（登录时未分配 jti）
-    // 走兼容路径，但会建议客户端下一次必须用新 refresh。
+    // PRD-2026Q2 §3.4 + Q4 T0-7 followup：老实现是 GET-then-DEL 两步，并发刷新时
+    // 两个请求都能 GET 到同一个 jti，于是双双轮换出新 token —— one-time use 失效。
+    // 现在用一次原子 DEL（claimRefreshJti）做 compare-and-swap：
+    //   - DEL 返回 1：我们抢到 → 继续轮换；
+    //   - DEL 返回 0：别人先消耗了 / jti 不在白名单 → 401（可能是被偷的 refresh
+    //                  在合法 refresh 之后再来重放，必须拒绝）；
+    //   - Redis 错误：维持 PRD-2026Q2 fail-open，记 warn 后兼容放行。
+    // 老 token（登录时未分配 jti）走兼容路径不动。
     if (decoded.jti) {
-      const valid = await isRefreshJtiValid(decoded.userId, decoded.jti);
-      if (!valid) {
+      const claim = await claimRefreshJti(decoded.userId, decoded.jti);
+      if (claim === false) {
         return res.status(401).json(error('刷新令牌已失效，请重新登录', 401));
       }
+      // claim === true → 已原子删除；claim === REFRESH_CLAIM_REDIS_ERR → 放行（fail-open）。
     }
 
     const user = await User.findByPk(decoded.userId);
@@ -368,10 +378,7 @@ const refreshToken = async (req, res, next) => {
       return res.status(404).json(error('用户不存在', 404));
     }
 
-    // 旧 jti 一次性消耗 → 立即撤销，写入新 jti。
-    if (decoded.jti) {
-      await revokeRefreshJti(decoded.userId, decoded.jti);
-    }
+    // jti 已经在 claimRefreshJti 里原子删除，不需要再 revoke。
     const fresh = buildTokenPayload(user);
     await persistRefreshJti(user.id, fresh._refreshJti);
 
