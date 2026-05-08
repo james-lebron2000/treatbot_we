@@ -224,21 +224,25 @@
   margin-bottom: 8rpx;
 }
 
+/* PRD-2026Q3 §UI-Audit-R1 §P0-8：Unicode ● 字符 → CSS 实色圆点（避免 Android 字体兼容问题） */
 .evidence-dot {
-  margin-top: 8rpx;
-  font-size: 20rpx;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  margin-top: 14rpx;
+  flex-shrink: 0;
 }
 
 .evidence-dot.hit {
-  color: var(--mint-text);
+  background: var(--mint-text);
 }
 
 .evidence-dot.risk {
-  color: var(--amber-text);
+  background: var(--amber-text);
 }
 
 .evidence-dot.missing {
-  color: var(--brand);
+  background: var(--brand);
 }
 
 .evidence-text {
@@ -296,25 +300,7 @@
   margin-bottom: 8rpx;
 }
 
-.column-icon {
-  width: 26rpx;
-  text-align: center;
-  font-size: 24rpx;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-.column-icon.hit {
-  color: var(--mint-text);
-}
-
-.column-icon.risk {
-  color: var(--amber-text);
-}
-
-.column-icon.missing {
-  color: var(--brand);
-}
+/* PRD-2026Q3 §UI-Audit-R1 §P0-8：column-icon 已迁到 Lucide <icon>，旧 .column-icon 文字版废弃 */
 
 .column-text {
   flex: 1;
@@ -395,31 +381,23 @@
   background: var(--red-soft);
 }
 
-.criteria-icon {
-  width: 32rpx;
-  height: 32rpx;
-  line-height: 32rpx;
-  text-align: center;
-  border-radius: 50%;
-  font-size: 24rpx;
-  font-weight: 700;
-}
-
-.criteria-item.inclusion .criteria-icon {
-  background: var(--mint);
-  color: #fff;
-}
-
-.criteria-item.exclusion .criteria-icon {
-  background: var(--red);
-  color: #fff;
-}
+/* PRD-2026Q3 §UI-Audit-R1 §P0-8：criteria-icon 文字版（+ -）废弃，迁到 Lucide <icon> */
 
 .criteria-text {
   flex: 1;
   font-size: 28rpx;
   color: var(--text);
   line-height: var(--lh-normal);
+}
+
+/* PRD-2026Q3 §UI-Audit-R1 §B7：criteria-section 底部小字 —— 软化"绝对结论" */
+.criteria-clarify {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
 }
 
 .contact-info {
@@ -452,4 +430,29 @@
 
 .btn-block {
   width: 100%;
+}
+
+/* PRD-2026Q3 §UI-Audit-R1 §P0-2：apply-btn 与列表页统一 —— phone-call 图标 + 文字 */
+.bottom-bar .apply-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.bottom-bar .apply-btn-text {
+  color: #fff;
+}
+
+/* PRD-2026Q3 §UI-Audit-R1 §P0-3：decision-banner 改双行布局（与列表页统一） */
+.decision-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.decision-head {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
 }

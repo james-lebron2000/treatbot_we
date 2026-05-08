@@ -95,6 +95,17 @@
 .score-rule-tip {
   background: var(--brand-soft);
   color: var(--brand);
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+/* PRD-2026Q3 §UI-Audit-R1 §P0-6：第二行小字 —— 反误导说明 */
+.score-rule-tip-clarify {
+  font-size: 22rpx;
+  color: var(--text-dim);
+  line-height: 1.5;
+  font-weight: 400;
 }
 
 .score-fallback-tip,
@@ -358,15 +369,21 @@
   border-top: 2rpx solid var(--line);
 }
 
-/* Decision banner —— 用 companion soft/text 配色 */
+/* Decision banner —— 用 companion soft/text 配色
+   PRD-2026Q3 §UI-Audit-R1 §P0-3：左对齐双行布局 —— 第一行 label + inline disclaimer，第二行决策文本 */
 .decision-banner {
   border-radius: 20rpx;
   padding: 16rpx 18rpx;
   margin-bottom: 16rpx;
   display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.decision-head {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
+  gap: 8rpx;
 }
 
 .decision-label {
@@ -379,7 +396,6 @@
 
 .decision-text {
   flex: 1;
-  text-align: right;
   font-size: 26rpx;
   font-weight: 600;
   line-height: var(--lh-normal);
@@ -461,6 +477,16 @@
   font-size: 26rpx;
   color: var(--text-dim);
   line-height: var(--lh-relaxed);
+}
+
+/* PRD-2026Q3 §UI-Audit-R1 §B7：入组 / 排除标准底部小字 —— 软化"绝对结论"印象 */
+.criteria-clarify {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
 }
 
 .match-actions {

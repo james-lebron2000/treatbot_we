@@ -7,6 +7,67 @@
     <view class="trial-meta" wx:if="{{trialLocation}}">研究中心：{{trialLocation}}</view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-2 + §B4：在表单上方先告知"接下来会发生什么"+ 风险预读，
+       用户先理解流程 + 风险，再填表，再勾选确认 —— 替代之前"一键 → API → 成功" 无缓冲流程 -->
+  <view class="card flow-card">
+    <view class="card-title">接下来会发生什么</view>
+    <view class="flow-step">
+      <view class="flow-step-num">1</view>
+      <view class="flow-step-body">
+        <text class="flow-step-title">您填写报名信息</text>
+        <text class="flow-step-desc">姓名 + 联系方式（仅在您主动报名时才填）</text>
+      </view>
+    </view>
+    <view class="flow-step">
+      <view class="flow-step-num">2</view>
+      <view class="flow-step-body">
+        <text class="flow-step-title">研究方在 3 个工作日内联系您</text>
+        <text class="flow-step-desc">由该研究的医生或协调员致电，确认是否安排筛查</text>
+      </view>
+    </view>
+    <view class="flow-step">
+      <view class="flow-step-num">3</view>
+      <view class="flow-step-body">
+        <text class="flow-step-title">到医院做筛查 + 签知情同意书</text>
+        <text class="flow-step-desc">研究医生面对面评估是否符合入组 · 详细告知风险与不良反应可能</text>
+      </view>
+    </view>
+    <view class="flow-step">
+      <view class="flow-step-num">4</view>
+      <view class="flow-step-body">
+        <text class="flow-step-title">入组后免费用药 · 配合随访</text>
+        <text class="flow-step-desc">是否真的入组、用哪个、用多久，由研究医生 + 您和主治医生共同决定</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 风险预读卡 —— 临床研究的本质告知 -->
+  <view class="card risk-card">
+    <view class="risk-card-head">
+      <icon name="alert-circle" color="amber" size="36" />
+      <text class="risk-card-title">关于参与临床研究的提醒</text>
+    </view>
+    <!-- PRD-2026Q3 §UI-Audit-R2 §R2-LLP-2：风险措辞老人化 ——
+         「在研新药意味着安全性与疗效仍在确认中」太学术
+         改 "还在做研究阶段，可能有副作用" 更通俗 -->
+    <view class="risk-line">
+      <text class="risk-bullet">·</text>
+      <text class="risk-text">这种新药还在做研究阶段，可能会有副作用 —— 不是已经上市卖了多年的成熟药。</text>
+    </view>
+    <view class="risk-line">
+      <text class="risk-bullet">·</text>
+      <text class="risk-text">入组之后需要配合研究安排 —— 复查 / 复诊 / 用药时间不能随意改。</text>
+    </view>
+    <view class="risk-line">
+      <text class="risk-bullet">·</text>
+      <text class="risk-text">您可以随时退出 —— 退出不影响您在医院的其他治疗。</text>
+    </view>
+    <view class="risk-line">
+      <text class="risk-bullet">·</text>
+      <text class="risk-text">具体风险研究医生会当面讲清楚，并写在您签字的知情同意书里。</text>
+    </view>
+  </view>
+
   <view class="card form-card">
     <view class="card-title">填写报名信息</view>
 
@@ -45,9 +106,34 @@
     <view class="tips">手机号仅在你主动报名时用于后续联系，不影响病历识别和匹配。</view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-2：申请前必须勾选确认 —— 替代之前"一键提交"。
+       用户主动操作（点击 checkbox）= 已读 + 同意，符合知情同意原则
+       PRD-2026Q3 §UI-Audit-R2 §R2-LLP-3：原 84 字一长句拆为分行，老年用户易读 -->
+  <view class="card consent-card">
+    <view class="consent-row" bindtap="toggleConsent">
+      <view class="consent-checkbox {{consentChecked ? 'checked' : ''}}">
+        <icon wx:if="{{consentChecked}}" name="check" color="white" size="28" strokeWidth="3" />
+      </view>
+      <view class="consent-text-group">
+        <text class="consent-text-head">我已经看完，明白以下几点：</text>
+        <text class="consent-text-line">· 报名只是表达想参加的意向</text>
+        <text class="consent-text-line">· 是否真能入组，由研究医生面对面筛查后定</text>
+        <text class="consent-text-line">· 用药要跟着研究方案，可能有副作用</text>
+        <text class="consent-text-line">· 我可以随时退出，不影响其他治疗</text>
+      </view>
+    </view>
+  </view>
+
+  <medical-disclaimer variant="default" />
+
   <view class="action-bar">
-    <button class="btn btn-primary" bindtap="submitApplication" loading="{{submitting}}">
-      提交报名
+    <button
+      class="btn btn-primary"
+      bindtap="submitApplication"
+      loading="{{submitting}}"
+      disabled="{{!consentChecked}}"
+    >
+      {{ consentChecked ? '提交报名' : '请先勾选确认' }}
     </button>
   </view>
 </view>

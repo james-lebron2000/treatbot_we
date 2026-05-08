@@ -157,6 +157,16 @@
   line-height: var(--lh-normal);
 }
 
+/* PRD-2026Q3 §UI-Audit-R1 §P0-13：「已申请的」第三格加 caption 说明进度查询路径
+   避免 dead-end —— applications 页未上线，stats tap 改 contactSupport */
+.stats-caption {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* Menu sections */
 .menu-section {
   margin-bottom: 32rpx;

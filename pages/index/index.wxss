@@ -43,6 +43,13 @@
   line-height: 1.6;
 }
 
+/* PRD-2026Q3 §UI-Audit-R1 §P0-9：第二行讲承诺，字号小一阶让信息分层清晰 */
+.hero-subtitle-secondary {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
 .hero-image {
   width: 160rpx;
   height: 160rpx;

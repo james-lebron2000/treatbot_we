@@ -16,7 +16,14 @@ Page({
       disease: '',
       phone: ''
     },
-    submitting: false
+    submitting: false,
+    // PRD-2026Q3 §UI-Audit-R1 §P0-2：知情同意勾选 —— 提交前必须勾选
+    consentChecked: false
+  },
+
+  // PRD-2026Q3 §UI-Audit-R1 §P0-2：勾选确认即"已读 + 同意"，符合知情同意原则
+  toggleConsent() {
+    this.setData({ consentChecked: !this.data.consentChecked })
   },
 
   onLoad(options) {
@@ -74,6 +81,15 @@ Page({
 
   async submitApplication() {
     if (this.data.submitting) {
+      return
+    }
+
+    // PRD-2026Q3 §UI-Audit-R1 §P0-2：未勾选知情同意 → 阻断提交
+    if (!this.data.consentChecked) {
+      wx.showToast({
+        title: '请先勾选确认',
+        icon: 'none'
+      })
       return
     }
 

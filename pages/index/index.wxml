@@ -30,26 +30,36 @@
     <view class="hero-content">
       <!-- PRD-2026Q2 §P0-6：用 view 而非 text 承载 pill 样式
            （text 元素在 WeChat 下 padding/inline-flex 表现不稳，导致 pill 高度被压扁） -->
-      <view class="hero-eyebrow"><text>数愈健康 · 用药全程免费</text></view>
+      <!-- PRD-2026Q3 §UI-Audit-R2 §R2-1：eyebrow 措辞回到家属可读 ——
+           「临床研究入组匹配」太 B2B 干硬，「用药全程免费」单开「免费」承诺过强。
+           折中："帮家属找能用的新药" 描述事实功能，正面但不夸大。 -->
+      <view class="hero-eyebrow"><text>数愈健康 · 帮家属找能用的新药</text></view>
       <text class="hero-title">让每一份病历</text>
       <text class="hero-title">都找到<text class="accent">能用的新药</text></text>
-      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、找到能免费用上的新药。数据完全由您掌管。</text>
+      <!-- PRD-2026Q3 §UI-Audit-R1 §P0-9 + R2 §R2-LLP-5：拆为两行 + 进一步缩短 ——
+           原 41 字 → R1 26 字 → R2 18 字。第一行说价值，第二行说承诺。 -->
+      <text class="hero-subtitle">我们帮您看懂病历，找到能免费用上的新药。</text>
+      <text class="hero-subtitle hero-subtitle-secondary">数据只在您自己的账户里，随时可带走。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
 
   <!-- PRD-2026Q2 §P0-1：数字降为中性色（不抢主 CTA），第三格用 lock 图标 +
        caption 出处替代「零」字（避免抽象、增强可信度）。 -->
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-1：stats 措辞口径合规化
+         旧版「10,000+ 已找到免费用药 / 含三甲合作渠道」歧义且无可审计来源
+         新版改成更保守、可追溯的措辞。
+       PRD-2026Q3 §UI-Audit-R1 §P0-10：「在研新药」对老人易误读为"未上市，不安全"，加 caption 说明 -->
   <view class="stats-section">
     <view class="stat-item">
       <text class="stat-number">5,000+</text>
       <text class="stat-label">在研新药</text>
-      <text class="stat-caption">来自 chinadrugtrials.org.cn</text>
+      <text class="stat-caption">国家备案、医院在做的研究</text>
     </view>
     <view class="stat-item">
       <text class="stat-number">10,000+</text>
-      <text class="stat-label">已找到免费用药</text>
-      <text class="stat-caption">含三甲合作渠道</text>
+      <text class="stat-label">已匹配的家属</text>
+      <text class="stat-caption">每周更新</text>
     </view>
     <view class="stat-item">
       <view class="stat-icon-wrap">
@@ -159,9 +169,14 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R2 §R2-3：原 subtitle「几分钟走完全程」误导时间口径 ——
+       上传 → 看到匹配清单确实只要几分钟，但「全程」（从匹配到入组用药）需要数周
+       （研究方联系 → 医院筛查 → 知情同意书 → 入组）。改用更精准的口径。
+       PRD-2026Q3 §UI-Audit-R2 §R2-2：step 3 desc「对接药企/医院」太抽象；改为更具体的
+       「研究方在 3 个工作日内联系您」，让用户对"接下来会发生什么"有真实预期。 -->
   <view class="process-section card">
-    <view class="section-title">三步就能用</view>
-    <view class="section-subtitle">几分钟走完全程，每一步都说人话，不留任何数据。</view>
+    <view class="section-title">看到能用的新药，几分钟就够</view>
+    <view class="section-subtitle">上传到看到匹配清单 1-3 分钟。看完之后，由您决定要不要让研究方联络您。</view>
     <view class="process-steps">
       <view class="process-step">
         <view class="step-number">1</view>
@@ -182,14 +197,16 @@
       <view class="process-step">
         <view class="step-number">3</view>
         <text class="step-title">找到新药</text>
-        <text class="step-desc">对接药企/医院</text>
+        <text class="step-desc">您说要再联络研究方</text>
       </view>
     </view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-12：「隐私零存储」与 records 实际行为矛盾（病历需临时保存
+       才能匹配），与 privacy 页措辞对齐 —— 「数据只在您自己的账户里」 -->
   <view class="safety-tips">
     <icon name="shield-check" color="mint" size="32" />
-    <text class="tips-text">隐私零存储 · 信息只在您账户里 · 随时可带走或删除</text>
+    <text class="tips-text">数据只在您自己的账户里 · 您随时可带走或删除 · 不与药企或医院共享，除非您主动报名</text>
   </view>
 
   <help-fab />

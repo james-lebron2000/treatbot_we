@@ -67,3 +67,156 @@
 .action-bar {
   padding-top: 4rpx;
 }
+
+/* PRD-2026Q3 §UI-Audit-R1 §P0-2：流程预告卡（4 步）+ 风险卡 + 知情同意勾选 */
+.flow-card {
+  margin-bottom: 20rpx;
+}
+
+.flow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 14rpx 0;
+}
+
+.flow-step:not(:last-child) {
+  border-bottom: 2rpx dashed var(--line);
+}
+
+.flow-step-num {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 26rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.flow-step-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.flow-step-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.flow-step-desc {
+  font-size: 24rpx;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.risk-card {
+  margin-bottom: 20rpx;
+  background: var(--amber-soft);
+  border: 2rpx solid var(--line);
+}
+
+.risk-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.risk-card-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--amber-text);
+  letter-spacing: -0.01em;
+}
+
+.risk-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  padding: 4rpx 0;
+}
+
+.risk-bullet {
+  font-size: 24rpx;
+  color: var(--amber-text);
+  line-height: 1.6;
+  flex-shrink: 0;
+  width: 16rpx;
+}
+
+.risk-text {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: 1.6;
+  flex: 1;
+}
+
+.consent-card {
+  margin-bottom: 20rpx;
+  background: var(--bg);
+  border: 2rpx solid var(--brand-soft);
+}
+
+.consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 4rpx 0;
+}
+
+.consent-checkbox {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 8rpx;
+  border: 2rpx solid var(--line);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 4rpx;
+  transition: background 150ms, border-color 150ms;
+}
+
+.consent-checkbox.checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.consent-text {
+  flex: 1;
+  font-size: 26rpx;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* PRD-2026Q3 §UI-Audit-R2 §R2-LLP-3：consent 文本分行，老年用户易读 */
+.consent-text-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.consent-text-head {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 4rpx;
+}
+
+.consent-text-line {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: 1.5;
+}

@@ -20,9 +20,11 @@ module.exports = {
   },
 
   // 卡片底部的辅助文案（已用在 wxml 里的 match-count / gap-hint，集中放这里以便复用）
+  // PRD-2026Q3 §UI-Audit-R1 §P0-7（C1 同源）：empty 措辞改正向 —— 与 records.wxml inline 一致
+  // 防止 wxml 后续切换到从 copy 取值时再次出现失败感。
   matchCount: {
     found: '为家人找到 {n} 种新药',
-    empty: '暂未找到能用的新药'
+    empty: '正在帮您扩大搜索范围'
   },
 
   delete: {

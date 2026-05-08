@@ -4,9 +4,10 @@
     <text>正在为您整理这份病历…</text>
   </view>
 
-  <!-- 上传后跳转的「成功提示」横幅，让用户清楚地从「上传 → 看到病历视图」无缝衔接 -->
+  <!-- 上传后跳转的「成功提示」横幅，让用户清楚地从「上传 → 看到病历视图」无缝衔接
+       PRD-2026Q3 §UI-Audit-R1 §P0-8：Unicode ✓ → Lucide check 图标（Android 兼容） -->
   <view wx:if="{{fromUpload && record}}" class="upload-success-banner">
-    <text class="banner-icon">✓</text>
+    <view class="banner-icon"><icon name="check" color="white" size="32" strokeWidth="3" /></view>
     <view class="banner-body">
       <text class="banner-title">看懂了 —— 这是为您整理好的病历</text>
       <text class="banner-subtitle">下面是所有从这份病历里读出的关键信息。哪里不对可以联系我们改。</text>
@@ -154,6 +155,11 @@
       <text class="matches-cta-text">看完整新药详情 →</text>
     </view>
   </view>
+
+  <!-- PRD-2026Q3 §UI-Audit-R2 §R2-MOP-4：病历详情页也显示 AI 提取的医学信息（一句话病情、
+       missingFields 提示），同样需要 disclaimer 说明这只是从原始病历里读出的信息，
+       不构成医学诊断。compact 变体（单行）足够 —— 病历不像 matches 那样直接做判断。 -->
+  <medical-disclaimer wx:if="{{record}}" variant="compact" />
 
   <!-- 底部操作 -->
   <view wx:if="{{record}}" class="footer-actions">

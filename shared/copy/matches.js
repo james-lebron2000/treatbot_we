@@ -12,8 +12,9 @@ module.exports = {
   _comment: 'PRD-2026Q2 §P0-4：matches 场景共享文案字典。',
 
   empty: {
-    title: '目前没找到完全贴合的新药',
-    subtitle: '这不代表没有 —— 我们每周更新新药库，下面三种方式都行。',
+    // PRD-2026Q3 §UI-Audit-R1 §P0-7：「没找到完全贴合的」失败感强 → 改正向措辞（患者本来在焦虑状态）
+    title: '正在帮您扩大搜索范围',
+    subtitle: '我们每周更新新药库 —— 下面三种方式都能往前走一步。',
 
     // Card 1：订阅通知（被动等）
     notify: {
@@ -27,8 +28,9 @@ module.exports = {
     // Card 2：拨打客服（主动找人）
     contact: {
       icon: 'phone-call',
-      title: '找真人帮看看',
-      desc: '免费咨询顾问，对照病历给您讲讲下一步。',
+      // PRD-2026Q3 §UI-Audit-R1 §P0-5：title 明确「入组顾问」而非泛指「真人」；desc 划医患边界
+      title: '找入组顾问聊聊',
+      desc: '我们的顾问会帮您看看病历适不适合，最终用药请听主治医生。',
       cta: '拨打客服',
       phone: '400-666-8899',
       hours: '工作日 9:00-18:00'

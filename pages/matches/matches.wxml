@@ -30,8 +30,12 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-6：score-rule-tip 加反误导说明 ——
+       患者看到「90% 匹配度」第一反应是「我有 90% 几率能用上」，这是错觉。
+       临床匹配评分 ≠ 治愈概率 ≠ 入组概率。 -->
   <view class="score-rule-tip">
     <text>我们先展示最匹配的几种新药 · 数量少会自动放宽标准让您多几个选择。</text>
+    <text class="score-rule-tip-clarify">匹配度 = 您的病历与入组条件的吻合度，不代表用药效果或入组概率 —— 最终是否入组由研究医生面对面筛查。</text>
   </view>
 
   <view class="score-fallback-tip" wx:if="{{lowScoreMode}}">
@@ -111,8 +115,12 @@
       </view>
 
       <view wx:if="{{item.expanded}}" class="match-card-expanded">
+        <!-- PRD-2026Q3 §UI-Audit-R1 §P0-3：「我们的看法」是带医学倾向的判断，必须加 inline disclaimer -->
         <view class="decision-banner tone-{{item.decisionTone}}">
-          <text class="decision-label">我们的看法</text>
+          <view class="decision-head">
+            <text class="decision-label">我们的看法</text>
+            <medical-disclaimer variant="inline" />
+          </view>
           <text class="decision-text">{{item.decisionHint}}</text>
         </view>
 
@@ -134,20 +142,24 @@
           <text class="match-meta" wx:if="{{item.status}}">招募状态：{{item.status}}</text>
         </view>
 
+        <!-- PRD-2026Q3 §UI-Audit-R1 §B7：标题改 "入组要满足这些条件"（更准确的表述），
+             加底部小字说明「最终由研究医生评估」—— 「能用 / 不能用」字面太果断 -->
         <view class="detail-panel" wx:if="{{item.inclusion.length > 0}}">
-          <text class="detail-panel-title">能用这种新药的条件</text>
+          <text class="detail-panel-title">入组要满足这些条件</text>
           <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="criterion" wx:key="index">
             <icon name="check" color="mint" size="28" strokeWidth="2.5" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
+          <text class="criteria-clarify">满足以上条件 ≠ 一定能入组；最终由研究医生面对面评估</text>
         </view>
 
         <view class="detail-panel" wx:if="{{item.exclusion.length > 0}}">
-          <text class="detail-panel-title">不能用这种新药的情况</text>
+          <text class="detail-panel-title">这些情况会被排除</text>
           <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="criterion" wx:key="index">
             <icon name="x-circle" color="red" size="28" strokeWidth="2" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
+          <text class="criteria-clarify">如有疑问请在筛查时主动告诉研究医生 —— 有些情况可以个案评估</text>
         </view>
 
         <view class="match-actions">
@@ -220,5 +232,9 @@
       </view>
     </view>
   </view>
+
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-3 + §B1：列表底部固定医学免责声明 -->
+  <medical-disclaimer wx:if="{{!loading && matches.length > 0}}" variant="default" />
+
   <help-fab />
 </view>

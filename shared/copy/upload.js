@@ -27,7 +27,8 @@ module.exports = {
   status: {
     pending: '刚开始排队，马上就到您这份…',
     parsing: '正在帮您看懂这份病历…',
-    completed: '好了 ✓',
+    // PRD-2026Q3 §UI-Audit-R1 §P0-8：✓ Unicode 字符 → 文字 "完成"（Android 老旧字体兼容；Lucide 图标已在 wxml 中使用）
+    completed: '好了，完成',
     failed: '这次没能看懂 —— 再试一次或手动录入都行'
   },
   fieldHints: {

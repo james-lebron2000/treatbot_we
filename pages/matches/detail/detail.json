@@ -1,5 +1,8 @@
 {
-  "usingComponents": {},
+  "usingComponents": {
+    "icon": "/components/icon/icon",
+    "medical-disclaimer": "/components/medical-disclaimer/medical-disclaimer"
+  },
   "navigationBarTitleText": "试验详情",
   "enablePullDownRefresh": true
 }

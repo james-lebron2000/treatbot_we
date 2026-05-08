@@ -38,6 +38,9 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q3 §UI-Audit-R1 §P0-13：第三格「正在联络的」menu 已下线（applications 页未上线），
+       但 stats 仍点击会跳转，造成 dead-end。改为「已申请的」+ caption 说明进度查询路径，
+       移除 bindtap 避免空跳。tap 改成 contactSupport 让用户去找顾问问进度。 -->
   <view class="stats-grid">
     <view class="stats-item" bindtap="goToRecords">
       <text class="stats-num">{{stats.records}}</text>
@@ -47,9 +50,10 @@
       <text class="stats-num">{{stats.matches}}</text>
       <text class="stats-label">找到的新药</text>
     </view>
-    <view class="stats-item" bindtap="goToApplications">
+    <view class="stats-item" bindtap="contactSupport">
       <text class="stats-num">{{stats.applications}}</text>
-      <text class="stats-label">正在联络的</text>
+      <text class="stats-label">已申请的</text>
+      <text class="stats-caption">进度请联系顾问</text>
     </view>
   </view>
 

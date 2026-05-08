@@ -37,9 +37,11 @@
         </view>
         <icon name="chevron-right" color="text-muted" size="32" />
       </view>
+      <!-- PRD-2026Q3 §UI-Audit-R1 §C1：「暂未找到能用的新药」失败感强 → 改正向措辞
+           （患者本来在焦虑状态，否定句强化"产品不行 / 我家人没救"的错觉） -->
       <view class="record-footer">
         <text class="match-count" wx:if="{{item.matchCount > 0}}">为家人找到 {{item.matchCount}} 种新药</text>
-        <text class="match-count empty" wx:else>暂未找到能用的新药</text>
+        <text class="match-count empty" wx:else>正在帮您扩大搜索范围</text>
         <text class="gap-hint" wx:if="{{item.missingCount > 0}}">待补 {{item.missingCount}} 项</text>
       </view>
       <!-- PRD-2026Q2 §P1-6：复购钩子 —— 病历过期或缺基因时给一个温和的复诊入口。
