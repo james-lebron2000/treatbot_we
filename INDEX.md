@@ -66,6 +66,16 @@ docker-compose up -d
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 行为准则 |
 | [LICENSE](LICENSE) | MIT 许可证 |
 
+### 迭代规划
+| 文档 | 说明 |
+|------|------|
+| [DASHBOARD.md](DASHBOARD.md) | 全量进度看板（多维度状态） |
+| [ROADMAP_TASKS.md](ROADMAP_TASKS.md) | 历史任务清单（Q1-Q4 全景） |
+| [docs/PRD-2026Q2.md](docs/PRD-2026Q2.md) | Q2 PRD（安全 + 体验，已大部闭环） |
+| [docs/PRD-2026Q3.md](docs/PRD-2026Q3.md) | **Q3 PRD（后端冲刺，当前活跃）** |
+| [docs/TASKS-2026Q3.md](docs/TASKS-2026Q3.md) | **Q3 任务清单（按周排期）** |
+| [docs/MANUAL-OPS-2026Q3.md](docs/MANUAL-OPS-2026Q3.md) | **Q3 全部人工执行步骤（MySQL / 上线 / RBAC / 回滚）** |
+
 ---
 
 ## 📂 项目结构速查

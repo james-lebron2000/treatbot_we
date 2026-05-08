@@ -80,6 +80,12 @@ jobs:
           JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
         run: npm test -- --runInBand --forceExit
 
+      # PRD-2026Q4 T0-11：nightly 跑全套 e2e 集成测试。
+      # 与 deploy.yml 的 slow lane 不同：这里跑在专门的 e2e job 里（下方），不会阻塞
+      # routine 的 commit/PR 链路；当前 step 仅作为 routine 自身门槛，跳过集成 suite。
+      - name: Note about full e2e
+        run: echo "full e2e is run in the dedicated 'e2e' job below (PRD-2026Q4 T0-11)"
+
       # ──────────────────────────────────────────────────────────
       # WRITE: 只有有 diff 且门槛全绿才 commit
       # 受限白名单：只允许 routine 碰这几个路径
@@ -141,3 +147,71 @@ jobs:
             --head "$BRANCH" \
             --title "routine: nightly auto-iterate $DATE" \
             --body "自动迭代产出。变更白名单：fixtures + server/**/*.js (lint --fix)。lint + jest 已全绿。$SHORT_DIFF"
+
+  # PRD-2026Q4 T0-11：每晚跑完整 e2e（service-container MySQL+Redis + tests/api.test.js）。
+  # 与 auto-iterate job 解耦 —— e2e 只是观察，不参与回写 main。
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: treatbot_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASS: rootpw
+      DB_NAME: treatbot_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install deps
+        working-directory: ./server
+        run: npm ci
+
+      - name: Wait for services
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -prootpw >/dev/null 2>&1 && redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+              echo "ready"; exit 0
+            fi
+            sleep 3
+          done
+          exit 1
+
+      - name: Migrate
+        working-directory: ./server
+        run: node scripts/migrate.js
+
+      - name: Run full integration suite
+        working-directory: ./server
+        run: npx jest tests/api.test.js --runInBand --forceExit

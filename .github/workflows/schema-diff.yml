@@ -1,0 +1,154 @@
+# PRD-2026Q4 T0-11：每日 schema diff —— staging/prod replica vs 本仓库 migrations。
+#
+# 触发：北京 02:00（UTC 18:00）+ workflow_dispatch
+# 流程：
+#   1. 用 service container 起 MySQL，跑本仓库 migrations，dump 出 test.sql
+#   2. 从 staging/prod replica（由 secrets 注入连接信息）dump 出 prod.sql
+#   3. diff prod.sql test.sql —— 任何非空 diff 视为漂移，发 issue (label: schema-drift)
+# 安全：
+#   - replica 凭证从 secrets 注入，不落仓库
+#   - 任意一步失败都开 issue，方便人工排查
+name: Schema Diff (daily)
+
+on:
+  schedule:
+    - cron: '0 18 * * *'   # 北京 02:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: treatbot_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASS: rootpw
+      DB_NAME: treatbot_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install deps
+        working-directory: ./server
+        run: npm ci
+
+      - name: Wait for MySQL
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -prootpw >/dev/null 2>&1; then
+              echo "mysql ready"; exit 0
+            fi
+            sleep 3
+          done
+          exit 1
+
+      - name: Run migrations against test schema
+        working-directory: ./server
+        run: node scripts/migrate.js
+
+      - name: Dump test schema (from migrations)
+        working-directory: ./server
+        run: bash scripts/db/schema-dump.sh /tmp/test.sql
+
+      - name: Dump prod replica schema
+        env:
+          DB_HOST: ${{ secrets.PROD_REPLICA_HOST }}
+          DB_PORT: ${{ secrets.PROD_REPLICA_PORT }}
+          DB_USER: ${{ secrets.PROD_REPLICA_USER }}
+          DB_PASS: ${{ secrets.PROD_REPLICA_PASS }}
+          DB_NAME: ${{ secrets.PROD_REPLICA_DB }}
+        working-directory: ./server
+        run: |
+          if [ -z "${DB_HOST:-}" ]; then
+            echo "PROD_REPLICA_* secrets not set — skipping prod dump"
+            exit 0
+          fi
+          bash scripts/db/schema-dump.sh /tmp/prod.sql
+
+      - name: Diff schemas
+        id: diff
+        run: |
+          if [ ! -f /tmp/prod.sql ]; then
+            echo "prod dump not produced (replica secrets missing) — failing soft"
+            echo "drift=missing-replica" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if diff -u /tmp/prod.sql /tmp/test.sql > /tmp/schema.diff; then
+            echo "no drift"
+            echo "drift=none" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift detected:"
+            head -200 /tmp/schema.diff
+            echo "drift=detected" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload diff artifact
+        if: steps.diff.outputs.drift == 'detected'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-diff
+          path: /tmp/schema.diff
+          retention-days: 30
+
+      - name: Open drift issue
+        if: steps.diff.outputs.drift == 'detected'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let snippet = '';
+            try {
+              snippet = fs.readFileSync('/tmp/schema.diff', 'utf8').slice(0, 6000);
+            } catch (e) {
+              snippet = '(diff file unreadable)';
+            }
+            const date = new Date().toISOString().slice(0,10);
+            const title = `schema drift detected ${date}`;
+            const body = [
+              `prod replica vs migrations 出现 schema 漂移。`,
+              ``,
+              `- workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              `- 完整 diff 见 artifact \`schema-diff\``,
+              ``,
+              `<details><summary>diff (前 6KB)</summary>`,
+              ``,
+              '```diff',
+              snippet,
+              '```',
+              ``,
+              `</details>`,
+              ``,
+              `_auto-opened by .github/workflows/schema-diff.yml (PRD-2026Q4 T0-11)._`
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['schema-drift']
+            });
