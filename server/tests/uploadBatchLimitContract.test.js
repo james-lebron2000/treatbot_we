@@ -88,6 +88,35 @@ describe('upload page contract — mini-program', () => {
   });
 });
 
+// 三端数值一致性：服务端 BATCH_UPLOAD_MAX、WeApp MAX_UPLOAD_COUNT、H5 MAX_BATCH_FILES
+// 必须严格相等。任何一边改了，另外两端必须同步改 —— 不然客户端放过去的文件会被
+// 服务端 400 拒掉，或客户端选不到、服务端却能接的怪状态。
+//
+// 之前的契约只校验了 "= 9" 字面量，但 future PR 可能把三处都改 (e.g.) 12，并漏其中一处。
+// 这条测试直接抽出三个数字做 === 比较，零盲区。
+describe('upload limit numeric parity — server / WeApp / H5', () => {
+  const extractNum = (src, pattern) => {
+    const m = src.match(pattern);
+    if (!m) {
+      throw new Error(`Pattern not matched: ${pattern}`);
+    }
+    return Number(m[1]);
+  };
+
+  test('server BATCH_UPLOAD_MAX === WeApp MAX_UPLOAD_COUNT === H5 MAX_BATCH_FILES', () => {
+    const serverSrc = fs.readFileSync(MEDICAL_CTRL, 'utf8');
+    const weappSrc = fs.readFileSync(UPLOAD_PAGE, 'utf8');
+    const h5Src = fs.readFileSync(H5_UPLOAD_VIEW, 'utf8');
+
+    const serverNum = extractNum(serverSrc, /BATCH_UPLOAD_MAX\s*\|\|\s*['"](\d+)['"]/);
+    const weappNum = extractNum(weappSrc, /const\s+MAX_UPLOAD_COUNT\s*=\s*(\d+)\b/);
+    const h5Num = extractNum(h5Src, /const\s+MAX_BATCH_FILES\s*=\s*(\d+)\b/);
+
+    expect(serverNum).toBe(weappNum);
+    expect(weappNum).toBe(h5Num);
+  });
+});
+
 // PRD-2026Q4 followup：H5 必须有客户端 count cap，与小程序 / 服务端同号。
 // 历史 H5 直接 `files.value = Array.from(target.files || [])` 不做任何 cap —— 用户选 12 份
 // 整批上传完才被 server 400 拒掉，浪费带宽 + 看到「请分批上传」误以为是网络问题。
