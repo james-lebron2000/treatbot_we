@@ -224,18 +224,19 @@ import { POLICY_VERSION } from '../constants/privacy'
 // 已从 .json 迁到 .js（WeApp `require()` 不识 .json）；详见 shared/copy/upload.js 顶部。
 // @ts-ignore — plain CJS module
 import uploadCopy from '@shared/copy/upload.js'
+// PRD-2026Q4 followup：上传批次上限单一来源（与 server/miniprogram 同源）
+// @ts-ignore — plain CJS module
+import { BATCH_UPLOAD_MAX as SHARED_BATCH_UPLOAD_MAX } from '@shared/schemas/upload.js'
 // Q3-红线 §B.2：业务漏斗埋点
 import { track } from '../utils/track'
 
 const router = useRouter()
 const patientStore = usePatientStore()
 
-// PRD-2026Q4 followup（与小程序 MAX_UPLOAD_COUNT 同号 + server BATCH_UPLOAD_MAX 同号）：
-// H5 历史上没有客户端 count cap —— 用户在 <input multiple> 里选 12 张，
-// 整批上传完成后才被服务端 400 拒掉，浪费几十秒带宽 + 看到「请分批上传」误以为是网络问题。
-// 这里加一道客户端硬上限，多余的同步切掉并 toast 提示，与小程序"选满即止"UX 对齐。
-// 数字必须与 server/controllers/medical.js BATCH_UPLOAD_MAX 默认值一致（9）。
-const MAX_BATCH_FILES = 9
+// PRD-2026Q4 followup：客户端硬上限，与小程序 / 服务端共享同一个常量
+// （shared/schemas/upload.js BATCH_UPLOAD_MAX）—— 单一来源后任何一边改了 N，
+// 三端同步生效，杜绝"H5 还停留在旧值整批上传完才被 400"的事故。
+const MAX_BATCH_FILES = SHARED_BATCH_UPLOAD_MAX
 
 const file = ref<File | null>(null)
 const files = ref<File[]>([])

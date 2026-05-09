@@ -6,6 +6,10 @@ const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+// PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/H5 各自
+// 硬编码不同步"反复事故。env BATCH_UPLOAD_MAX 仍可覆盖默认（仅服务端，便于压测/灰度）。
+const sharedUploadSchema = require('../../shared/schemas/upload.js');
+const SHARED_BATCH_UPLOAD_MAX = sharedUploadSchema.BATCH_UPLOAD_MAX;
 
 // 配置 multer 内存存储
 const upload = multer({
@@ -40,7 +44,7 @@ const uploadMiddleware = upload.single('file');
 // multer hard cap 与 BATCH_UPLOAD_MAX 一致：multer 在 array() 阶段就拒掉超额，
 // handleUploadBatch 里再做一次软校验作为兜底。
 // 速率上限保护：用户 30/h × 9 = 270 份/小时，单份 OCR ~$0.05，~$13.5/h/user 上限可控。
-const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || '9', 10));
+const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10));
 
 const mapParseStatus = (status) => {
   if (status === 'completed') {
@@ -259,7 +263,7 @@ const handleUpload = async (req, res, next) => {
 // PRD-2026Q4 followup（用户反馈 5 张限额过紧）：默认 5 → 9。
 // 与 wx.chooseMedia 单次上限 + 朋友圈 9 张图心智模型对齐。每份 OCR ~$0.05，
 // 用户 30/h × 9 ≈ 270 份/h 的上限仍受 uploadLimiter 总速率门控；要再大请显式调 ENV。
-const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || '9', 10);
+const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10);
 
 const handleUploadBatch = async (req, res, next) => {
   try {
