@@ -14,6 +14,8 @@ const { inferFileHint, buildPlaceholderHints } = require('../../utils/placeholde
 // 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
 // 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
 const copy = require('../../shared/copy/upload.js')
+// PRD-2026Q4 followup：上传批次上限单一来源（与 server/controllers/medical.js 同源）
+const { BATCH_UPLOAD_MAX: SHARED_BATCH_UPLOAD_MAX } = require('../../shared/schemas/upload.js')
 
 // PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
 // 增量：DevTools 里 `wx.login` 自身会话过期 → utils/auth.js 抛 code='wx_login_session_expired'，
@@ -140,6 +142,12 @@ const formatEtaText = (secondsRemaining, isOverdue) => {
 const MAX_UPLOAD_BYTES = 9 * 1024 * 1024
 const IMAGE_COMPRESS_THRESHOLD = 1.5 * 1024 * 1024
 const IMAGE_COMPRESS_LONG_EDGE = 2400
+
+// PRD-2026Q4 followup（用户反馈 5 张限额过紧）：
+// 一次上传上限。与 server/controllers/medical.js 共享同一个常量
+// （shared/schemas/upload.js BATCH_UPLOAD_MAX），避免历史的"三端各自硬编码漂移"事故。
+// wxml 的 `<9` 判断、wx.chooseMedia 系统硬上限 9、朋友圈 9 张图心智模型同步。
+const MAX_UPLOAD_COUNT = SHARED_BATCH_UPLOAD_MAX
 
 const compressImageAsync = (src) =>
   new Promise((resolve) => {
@@ -379,7 +387,7 @@ Page({
 
   takePhoto() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['camera'],
       success: (res) => {
@@ -390,7 +398,7 @@ Page({
 
   selectFromAlbum() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['album'],
       success: (res) => {
@@ -401,7 +409,7 @@ Page({
 
   selectPdfFile() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'file',
       extension: ['pdf'],
       success: (res) => {
@@ -412,7 +420,7 @@ Page({
 
   selectFromMessage() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'all',
       success: (res) => {
         this.handleFiles(res.tempFiles || [])
@@ -551,10 +559,13 @@ Page({
         .catch(() => {})
     }
 
-    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
+    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（来自 shared/schemas/upload.js）。
+    // PRD-2026Q4 followup（用户反馈"无法上传"）：原值硬编码 5 与 MAX_UPLOAD_COUNT=9
+    // 不一致 —— 用户选 6+ 张图，handleFiles 静默丢弃前 5 张之后的全部，UI 看起来"上传不上去"。
+    // 必须用同一个常量，不能再写裸数字。
     // Plan §Phase 3.3：每份文件挂一个 hint 字段，step 2 占位卡读这个字段。
     const withHints = processed.map((f) => ({ ...f, hint: inferFileHint(f) }))
-    const nextTempFiles = [...currentFiles, ...withHints].slice(0, 5)
+    const nextTempFiles = [...currentFiles, ...withHints].slice(0, MAX_UPLOAD_COUNT)
     this.setData({
       tempFiles: nextTempFiles,
       placeholderHints: buildPlaceholderHints(nextTempFiles)
@@ -942,7 +953,16 @@ Page({
               continue
             }
             console.error(`第 ${i + 1} 份文件上传失败:`, err)
-            uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
+            // PRD-2026Q4 followup（用户反馈"网络卡顿"误报）：保留原 err（含 statusCode）。
+            // 老实现只 push { name, message }，下面 throw 时 new Error(last.message)
+            // 把 statusCode 丢成 0 → classifyUploadError 看到 status===0 一律归类
+            // 'network' → "网络有点卡" 文案。真正原因（429 限流 / 400 超限 / 415 格式）
+            // 都被掩盖。修复：把 err 一起带上，throw 时 re-throw 原 err。
+            uploadErrors.push({
+              name: file.name,
+              message: err && err.message ? err.message : '上传失败',
+              error: err
+            })
             break
           }
         }
@@ -952,8 +972,14 @@ Page({
       }
 
       if (!fileIds.length) {
-        // 全部失败 → 抛出最后一个错误（保留 statusCode 以便 classifyUploadError 分流）
+        // 全部失败 → 抛出最后一份的原始 error（含 statusCode），
+        // 让上层 catch → classifyUploadError 能把 429 / 4xx / 网络层 fail 分流到正确文案。
+        // 老实现是 throw new Error(last.message)，statusCode 全丢失，所有失败都被
+        // 错分类成 "network" → "网络有点卡"。
         const last = uploadErrors[uploadErrors.length - 1] || { message: '上传成功但未获取文件ID' }
+        if (last.error) {
+          throw last.error
+        }
         throw new Error(last.message)
       }
 

@@ -6,6 +6,10 @@ const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+// PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/H5 各自
+// 硬编码不同步"反复事故。env BATCH_UPLOAD_MAX 仍可覆盖默认（仅服务端，便于压测/灰度）。
+const sharedUploadSchema = require('../../shared/schemas/upload.js');
+const SHARED_BATCH_UPLOAD_MAX = sharedUploadSchema.BATCH_UPLOAD_MAX;
 
 // 配置 multer 内存存储
 const upload = multer({
@@ -35,9 +39,12 @@ const uploadMiddleware = upload.single('file');
  * Phase E.2：批量上传中间件 —— 同一次请求最多 10 份文件。
  * field name 同时接受 `files` 和 `file`，方便客户端从单文件迁移过来。
  */
-// Phase E.6 / Review #5：multer hard cap 与 BATCH_UPLOAD_MAX 一致（默认 5）。
-// multer 在 array() 阶段就拒掉超额，handleUploadBatch 里再做一次软校验作为兜底。
-const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || '5', 10));
+// PRD-2026Q4 followup（用户反馈 5 张限额过紧）：默认 5 → 9。
+// 选 9：与 wx.chooseMedia 单次上限一致 + 朋友圈 9 张图心智模型 + 客户端 wxml 历史 `<9` 判断。
+// multer hard cap 与 BATCH_UPLOAD_MAX 一致：multer 在 array() 阶段就拒掉超额，
+// handleUploadBatch 里再做一次软校验作为兜底。
+// 速率上限保护：用户 30/h × 9 = 270 份/小时，单份 OCR ~$0.05，~$13.5/h/user 上限可控。
+const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10));
 
 /**
  * Plan §Phase 1.3：把 (status, status_phase) 折成客户端能挑文案 + 渲染进度条的 (status, progress)。
@@ -307,10 +314,10 @@ const handleUpload = async (req, res, next) => {
  *   - 任何文件成功即返回 200；全部失败时仍返回 200 但 records 里都带 status='error'，
  *     由客户端负责显示模态（与 handleUpload 的失败语义一致）
  */
-// Phase E.6 / Review #5：批量上传上限。每份文件都消耗 OCR 配额（~$0.05/份），
-// 同一用户 30/h 上限下每小时最多消化 30 × 10 = 300 份是 10x 放大攻击面，因此降到 5/批。
-// 真要传 6+ 份，让客户端拆两批（间隔 ≥ 60 秒）即可。
-const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || '5', 10);
+// PRD-2026Q4 followup（用户反馈 5 张限额过紧）：默认 5 → 9。
+// 与 wx.chooseMedia 单次上限 + 朋友圈 9 张图心智模型对齐。每份 OCR ~$0.05，
+// 用户 30/h × 9 ≈ 270 份/h 的上限仍受 uploadLimiter 总速率门控；要再大请显式调 ENV。
+const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10);
 
 const handleUploadBatch = async (req, res, next) => {
   try {
@@ -318,7 +325,7 @@ const handleUploadBatch = async (req, res, next) => {
     if (!files.length) {
       throw new BusinessError('请选择要上传的文件', 400);
     }
-    // Phase E.6 / Review #5：硬上限收紧到 BATCH_UPLOAD_MAX（默认 5）。
+    // Phase E.6 / Review #5：硬上限收紧到 BATCH_UPLOAD_MAX（默认 9，与 wx 朋友圈口径对齐）。
     if (files.length > BATCH_UPLOAD_MAX) {
       throw new BusinessError(`一次最多上传 ${BATCH_UPLOAD_MAX} 份文件，请分批上传`, 400);
     }

@@ -12,6 +12,19 @@
 // UploadView 进度条、records 列表 missingCount、matches 评分降权三处逻辑）。
 // 完整的 FIELD_SCHEMAS 含别名 / 分组 / 类型，体量大、变动少，下一轮再迁。
 
+// PRD-2026Q4 followup（统一三端上传批次上限）：
+// 一次上传最多 N 份文件，三端必须同号：
+//   - server/controllers/medical.js  multer.array('files', N) + 业务层 BATCH_UPLOAD_MAX 校验
+//   - pages/upload/upload.js          MAX_UPLOAD_COUNT（chooseMedia count + slice cap）
+//   - web/src/pages/UploadView.vue    MAX_BATCH_FILES（onFileChange 客户端 cap）
+// 历史上三处各自硬编码，发生过两次"一边改了另两边漏改"事故，所以收编到这里
+// 作为单一来源。env BATCH_UPLOAD_MAX（仅服务端）仍然可以覆盖默认值，client
+// 不读 env，保持纯静态常量，便于打包构建。
+//
+// 选 9：与 wx.chooseMedia 单次上限一致 + 朋友圈 9 张图心智模型 + WXML 历史 `<9` 判断。
+// 速率：用户 30/h × 9 = 270 份/小时，单份 OCR ~$0.05，~$13.5/h/user 上限可控。
+const BATCH_UPLOAD_MAX = 9
+
 // 与 H5 web/src/utils/track.ts 的 6-event whitelist 思路一致：单一来源 + 校验。
 const REQUIRED_FIELDS = [
   'diagnosis',       // 临床诊断
@@ -69,6 +82,7 @@ const validate = (record) => {
 }
 
 module.exports = {
+  BATCH_UPLOAD_MAX,
   REQUIRED_FIELDS,
   SEX_VALUES,
   ECOG_VALUES,

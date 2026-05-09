@@ -224,11 +224,19 @@ import { POLICY_VERSION } from '../constants/privacy'
 // 已从 .json 迁到 .js（WeApp `require()` 不识 .json）；详见 shared/copy/upload.js 顶部。
 // @ts-ignore — plain CJS module
 import uploadCopy from '@shared/copy/upload.js'
+// PRD-2026Q4 followup：上传批次上限单一来源（与 server/miniprogram 同源）
+// @ts-ignore — plain CJS module
+import { BATCH_UPLOAD_MAX as SHARED_BATCH_UPLOAD_MAX } from '@shared/schemas/upload.js'
 // Q3-红线 §B.2：业务漏斗埋点
 import { track } from '../utils/track'
 
 const router = useRouter()
 const patientStore = usePatientStore()
+
+// PRD-2026Q4 followup：客户端硬上限，与小程序 / 服务端共享同一个常量
+// （shared/schemas/upload.js BATCH_UPLOAD_MAX）—— 单一来源后任何一边改了 N，
+// 三端同步生效，杜绝"H5 还停留在旧值整批上传完才被 400"的事故。
+const MAX_BATCH_FILES = SHARED_BATCH_UPLOAD_MAX
 
 const file = ref<File | null>(null)
 const files = ref<File[]>([])
@@ -415,8 +423,15 @@ const resetUpload = () => {
 const onFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   const selected = Array.from(target.files || [])
-  files.value = selected
-  file.value = selected[0] || null
+  // PRD-2026Q4 followup：客户端硬上限 MAX_BATCH_FILES（与服务端 BATCH_UPLOAD_MAX 同号 = 9）。
+  // 超出部分同步切掉 + toast 友好提示，避免整批上传完才被 400 拒掉。
+  let accepted = selected
+  if (selected.length > MAX_BATCH_FILES) {
+    accepted = selected.slice(0, MAX_BATCH_FILES)
+    showToast(`一次最多上传 ${MAX_BATCH_FILES} 份，已为您保留前 ${MAX_BATCH_FILES} 份`)
+  }
+  files.value = accepted
+  file.value = accepted[0] || null
   clearUploadError()
 }
 
