@@ -14,6 +14,8 @@ const { inferFileHint, buildPlaceholderHints } = require('../../utils/placeholde
 // 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
 // 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
 const copy = require('../../shared/copy/upload.js')
+// PRD-2026Q4 followup：上传批次上限单一来源（与 server/controllers/medical.js 同源）
+const { BATCH_UPLOAD_MAX: SHARED_BATCH_UPLOAD_MAX } = require('../../shared/schemas/upload.js')
 
 // PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
 // 增量：DevTools 里 `wx.login` 自身会话过期 → utils/auth.js 抛 code='wx_login_session_expired'，
@@ -142,12 +144,10 @@ const IMAGE_COMPRESS_THRESHOLD = 1.5 * 1024 * 1024
 const IMAGE_COMPRESS_LONG_EDGE = 2400
 
 // PRD-2026Q4 followup（用户反馈 5 张限额过紧）：
-// 一次上传上限。原值 5 与 wxml 的 `<9` 判断不一致：用户已经选满 5 张时 UI
-// 仍显示 "+" 按钮（because 5 < 9），点了会触发 wx.chooseMedia({count:0}) 报错。
-// 与服务端 BATCH_UPLOAD_MAX 必须保持同号，否则客户端放过去会被服务端 400。
-// 选 9：与 wxml 历史值一致，wx.chooseMedia 单次上限是 9（系统硬约束），与微信
-// 朋友圈 9 张图心智模型一致；超过 9 张走分批上传更合理。
-const MAX_UPLOAD_COUNT = 9
+// 一次上传上限。与 server/controllers/medical.js 共享同一个常量
+// （shared/schemas/upload.js BATCH_UPLOAD_MAX），避免历史的"三端各自硬编码漂移"事故。
+// wxml 的 `<9` 判断、wx.chooseMedia 系统硬上限 9、朋友圈 9 张图心智模型同步。
+const MAX_UPLOAD_COUNT = SHARED_BATCH_UPLOAD_MAX
 
 const compressImageAsync = (src) =>
   new Promise((resolve) => {
