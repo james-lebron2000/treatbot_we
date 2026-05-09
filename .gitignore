@@ -147,6 +147,7 @@ $RECYCLE.BIN/
 
 # Docker
 .dockerignore
+!/.dockerignore
 docker-compose.override.yml
 
 # Database

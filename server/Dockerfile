@@ -22,7 +22,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # 复制 package 清单并安装生产依赖
-COPY package*.json ./
+COPY server/package*.json ./
 RUN npm ci --omit=dev
 
 
@@ -44,7 +44,8 @@ RUN apt-get update \
 COPY --from=deps /app/node_modules ./node_modules
 
 # 复制应用代码
-COPY . .
+COPY server/ ./
+COPY shared /shared
 
 # 创建日志目录
 RUN mkdir -p logs
