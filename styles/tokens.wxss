@@ -1,0 +1,52 @@
+/* AUTO-GENERATED from shared/tokens/tokens.json — do not edit by hand.
+   Run `node shared/tokens/build.mjs` (or `pnpm -C web tokens:build`) to regenerate. */
+page {
+  --brand: #2563eb;
+  --brand-hover: #1d4ed8;
+  --brand-soft: #dbeafe;
+  --mint: #10b981;
+  --mint-soft: #d1fae5;
+  --mint-text: #065f46;
+  --amber: #b45309;
+  --amber-soft: #fef3c7;
+  --amber-text: #92400e;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
+  --red-text: #991b1b;
+  --lilac: #8b5cf6;
+  --lilac-soft: #ede9fe;
+  --lilac-text: #5b21b6;
+  --text: #0f172a;
+  --text-dim: #475569;
+  --text-muted: #94a3b8;
+  --line: #e2e8f0;
+  --bg: #ffffff;
+  --bg-soft: #f0f7ff;
+  --bg-cream: #fff6ec;
+  --bg-mint: #ecfdf5;
+  --bg-lilac: #f5f3ff;
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  --fs-display: 34px;
+  --fs-title: 22px;
+  --fs-subtitle: 17px;
+  --fs-body: 15px;
+  --fs-callout: 14px;
+  --fs-caption: 12px;
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
+  --shadow-2: 0 4px 6px rgba(15,23,42,0.05), 0 10px 20px rgba(15,23,42,0.06);
+  --shadow-focus: 0 0 0 3px rgba(37,99,235,0.18);
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+}

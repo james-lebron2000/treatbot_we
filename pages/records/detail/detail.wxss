@@ -1,4 +1,5 @@
-/* PRD-2026Q3 §U7：详情页样式与 demo 的 record-card 保持视觉一致 */
+/* records/detail —— Plan §G token-swap polish
+ * 「token 化但不重设计」：保留结构，仅替换硬编码颜色为 design tokens */
 
 .container {
   padding: 24rpx 24rpx 160rpx;
@@ -7,8 +8,8 @@
 .loading {
   padding: 80rpx 0;
   text-align: center;
-  color: #374151;
-  font-size: 32rpx;
+  color: var(--text-dim);
+  font-size: 30rpx;
 }
 
 /* 上传后的成功条 */
@@ -16,8 +17,8 @@
   display: flex;
   align-items: stretch;
   gap: 18rpx;
-  background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 2rpx solid #10b981;
+  background: var(--mint-soft);
+  border: 2rpx solid var(--mint);
   border-radius: 24rpx;
   padding: 22rpx;
   margin-bottom: 24rpx;
@@ -30,7 +31,7 @@
   width: 64rpx;
   height: 64rpx;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--mint);
   color: #fff;
   font-size: 36rpx;
   font-weight: 700;
@@ -47,23 +48,29 @@
 .banner-title {
   font-size: 30rpx;
   font-weight: 700;
-  color: #064e3b;
+  color: var(--mint-text);
 }
 
 .banner-subtitle {
   font-size: 26rpx;
-  color: #047857;
-  line-height: 1.55;
+  color: var(--mint-text);
+  line-height: var(--lh-normal);
+  opacity: 0.85;
 }
 
-/* 病情摘要卡（最显眼） */
+/* 病情摘要卡 —— Landing 同款 .hero-shell radial 浅光替代 dark teal gradient */
 .summary-card {
-  background: linear-gradient(145deg, #16344b 0%, #1f4e5f 60%, #2f6f75 100%);
-  color: #fff;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 120% 80% at 20% 10%, var(--brand-soft) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, var(--mint-soft) 0%, transparent 50%),
+    var(--bg);
+  color: var(--text);
   border-radius: 28rpx;
   padding: 28rpx 26rpx;
   margin-bottom: 22rpx;
-  box-shadow: 0 22rpx 42rpx rgba(15, 52, 75, 0.18);
+  border: 2rpx solid var(--line);
 }
 
 .summary-head {
@@ -71,69 +78,82 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 14rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .summary-kicker {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 2rpx;
+  font-size: 24rpx;
+  color: var(--text-muted);
+  letter-spacing: 1rpx;
+  font-weight: 600;
 }
 
 .summary-status {
-  font-size: 24rpx;
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 999rpx;
-  padding: 6rpx 18rpx;
+  font-size: 22rpx;
+  background: var(--bg-soft);
+  color: var(--text-dim);
+  border-radius: var(--r-pill);
+  padding: 4rpx 14rpx;
+  font-weight: 600;
 }
 
 .summary-status.parsed,
 .summary-status.completed {
-  background: rgba(16, 185, 129, 0.4);
+  background: var(--mint-soft);
+  color: var(--mint-text);
 }
 
 .summary-status.parsing,
 .summary-status.uploading {
-  background: rgba(245, 158, 11, 0.4);
+  background: var(--amber-soft);
+  color: var(--amber-text);
 }
 
 .summary-text {
   display: block;
   font-size: 30rpx;
-  line-height: 1.55;
+  line-height: var(--lh-normal);
   font-weight: 600;
+  color: var(--text);
   margin-bottom: 22rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .completeness {
   display: flex;
   align-items: center;
   gap: 14rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .completeness-label {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 24rpx;
+  color: var(--text-dim);
   flex-shrink: 0;
 }
 
 .completeness-bar {
   flex: 1;
-  height: 12rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.18);
+  height: 10rpx;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
   overflow: hidden;
 }
 
 .completeness-fill {
   height: 100%;
-  background: linear-gradient(90deg, #34d399, #10b981);
-  border-radius: 999rpx;
+  background: var(--brand);
+  border-radius: var(--r-pill);
   transition: width 0.4s ease-out;
 }
 
 .completeness-value {
   font-size: 26rpx;
   font-weight: 700;
+  color: var(--brand);
   flex-shrink: 0;
 }
 
@@ -144,40 +164,42 @@
   gap: 14rpx;
   margin-top: 18rpx;
   padding: 14rpx 16rpx;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--amber-soft);
   border-radius: 16rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .missing-text {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.92);
-  line-height: 1.55;
+  color: var(--amber-text);
+  line-height: var(--lh-normal);
   flex: 1;
 }
 
 .missing-link {
-  font-size: 28rpx;
-  color: #fde68a;
-  font-weight: 600;
+  font-size: 26rpx;
+  color: var(--amber-text);
+  font-weight: 700;
   flex-shrink: 0;
 }
 
 /* 通用 record-section */
 .record-section {
-  background: #fff;
-  border-radius: 26rpx;
+  background: var(--bg);
+  border-radius: 24rpx;
   padding: 24rpx;
   margin-bottom: 18rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 14rpx 28rpx rgba(15, 23, 42, 0.04);
+  border: 2rpx solid var(--line);
 }
 
 .record-section-title {
   display: block;
-  font-size: 28rpx;
-  color: #334155;
+  font-size: 26rpx;
+  color: var(--text-dim);
+  font-weight: 600;
   margin-bottom: 14rpx;
-  letter-spacing: 1rpx;
+  letter-spacing: 0.5rpx;
 }
 
 .kv-grid {
@@ -193,28 +215,28 @@
   flex-direction: column;
   gap: 4rpx;
   padding: 12rpx 16rpx;
-  background: #f8fafc;
+  background: var(--bg-soft);
   border-radius: 14rpx;
 }
 
 .kv-label {
-  font-size: 24rpx;
-  color: #334155;
+  font-size: 22rpx;
+  color: var(--text-muted);
 }
 
 .kv-value {
   font-size: 28rpx;
-  color: #0f172a;
+  color: var(--text);
   font-weight: 600;
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 
 .kv-value.highlight {
-  color: #16344b;
+  color: var(--brand);
   font-weight: 700;
 }
 
-/* 基因 chip */
+/* 基因 chip —— mint companion */
 .gene-chips {
   display: flex;
   flex-wrap: wrap;
@@ -222,15 +244,14 @@
 }
 
 .gene-chip {
-  background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1rpx solid #34d399;
-  border-radius: 999rpx;
-  padding: 8rpx 20rpx;
+  background: var(--mint-soft);
+  border-radius: var(--r-pill);
+  padding: 6rpx 18rpx;
 }
 
 .gene-chip-text {
-  font-size: 26rpx;
-  color: #065f46;
+  font-size: 24rpx;
+  color: var(--mint-text);
   font-weight: 600;
 }
 
@@ -249,14 +270,14 @@
 }
 
 .treatment-label {
-  font-size: 24rpx;
-  color: #334155;
+  font-size: 22rpx;
+  color: var(--text-muted);
 }
 
 .treatment-value {
   font-size: 26rpx;
-  color: #0f172a;
-  line-height: 1.55;
+  color: var(--text);
+  line-height: var(--lh-normal);
 }
 
 .treatment-chips {
@@ -266,14 +287,15 @@
 }
 
 .treatment-chip {
-  background: #e0e7ff;
-  border-radius: 999rpx;
+  background: var(--lilac-soft);
+  border-radius: var(--r-pill);
   padding: 6rpx 18rpx;
 }
 
 .treatment-chip text {
-  font-size: 26rpx;
-  color: #3730a3;
+  font-size: 24rpx;
+  color: var(--lilac-text);
+  font-weight: 600;
 }
 
 /* 化验 */
@@ -288,13 +310,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 12rpx 16rpx;
-  background: #f8fafc;
+  background: var(--bg-soft);
   border-radius: 14rpx;
 }
 
 .lab-name {
   font-size: 26rpx;
-  color: #1e293b;
+  color: var(--text-dim);
 }
 
 .lab-value-group {
@@ -305,23 +327,22 @@
 
 .lab-value {
   font-size: 28rpx;
-  color: #0f172a;
+  color: var(--text);
   font-weight: 700;
 }
 
 .lab-unit {
-  font-size: 24rpx;
-  color: #334155;
+  font-size: 22rpx;
+  color: var(--text-muted);
 }
 
 /* 匹配结果 */
 .matches-section {
-  background: #fff;
-  border-radius: 26rpx;
+  background: var(--bg);
+  border-radius: 24rpx;
   padding: 24rpx;
   margin-top: 24rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 14rpx 28rpx rgba(15, 23, 42, 0.04);
+  border: 2rpx solid var(--line);
 }
 
 .matches-section-head {
@@ -334,20 +355,22 @@
 .matches-title {
   font-size: 30rpx;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .matches-count {
-  font-size: 24rpx;
-  color: #16344b;
-  background: #e0e7ff;
-  padding: 4rpx 16rpx;
-  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--brand);
+  background: var(--brand-soft);
+  padding: 4rpx 14rpx;
+  border-radius: var(--r-pill);
+  font-weight: 600;
 }
 
 .matches-count.loading-tag {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--amber-soft);
+  color: var(--amber-text);
 }
 
 .matches-list {
@@ -357,10 +380,10 @@
 }
 
 .match-card {
-  background: #f8fafc;
+  background: var(--bg-soft);
   border-radius: 18rpx;
   padding: 18rpx;
-  border: 1rpx solid #e2e8f0;
+  border: 2rpx solid var(--line);
 }
 
 .match-card-head {
@@ -371,37 +394,53 @@
   margin-bottom: 10rpx;
 }
 
+.match-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
 .match-card-name {
   flex: 1;
   font-size: 28rpx;
   font-weight: 700;
-  color: #0f172a;
-  line-height: 1.45;
+  color: var(--text);
+  line-height: var(--lh-normal);
+}
+
+.match-card-code {
+  font-size: 24rpx;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .match-score-badge {
   border-radius: 14rpx;
-  padding: 6rpx 12rpx;
+  padding: 6rpx 14rpx;
   text-align: center;
-  background: #f1f5f9;
+  background: var(--bg-soft);
   flex-shrink: 0;
 }
 
-.match-score-badge.level-high { background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 100%); }
-.match-score-badge.level-mid { background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%); }
-.match-score-badge.level-low { background: linear-gradient(145deg, #fff7ed 0%, #fed7aa 100%); }
+.match-score-badge.level-high { background: var(--mint-soft); }
+.match-score-badge.level-mid { background: var(--brand-soft); }
+.match-score-badge.level-low { background: var(--amber-soft); }
 
 .match-score-badge .score {
   display: block;
   font-size: 28rpx;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
 }
+
+.match-score-badge.level-high .score { color: var(--mint-text); }
+.match-score-badge.level-mid .score { color: var(--brand); }
+.match-score-badge.level-low .score { color: var(--amber-text); }
 
 .match-score-badge .label {
   display: block;
   font-size: 20rpx;
-  color: #374151;
+  color: var(--text-muted);
 }
 
 .match-tags {
@@ -412,34 +451,35 @@
 }
 
 .tag {
-  font-size: 24rpx;
-  border-radius: 999rpx;
+  font-size: 22rpx;
+  border-radius: var(--r-pill);
   padding: 4rpx 14rpx;
   line-height: 1.5;
+  font-weight: 600;
 }
 
-.tag-level.level-high { background: #d1fae5; color: #065f46; }
-.tag-level.level-mid { background: #dbeafe; color: #1e40af; }
-.tag-level.level-low { background: #fed7aa; color: #9a3412; }
-.tag-primary { background: #e0e7ff; color: #3730a3; }
-.tag-warning { background: #fef3c7; color: #92400e; }
+.tag-level.level-high { background: var(--mint-soft); color: var(--mint-text); }
+.tag-level.level-mid { background: var(--brand-soft); color: var(--brand); }
+.tag-level.level-low { background: var(--amber-soft); color: var(--amber-text); }
+.tag-primary { background: var(--lilac-soft); color: var(--lilac-text); }
+.tag-warning { background: var(--amber-soft); color: var(--amber-text); }
 
 .match-reason {
   display: block;
-  font-size: 28rpx;
-  color: #065f46;
-  background: #ecfdf5;
+  font-size: 26rpx;
+  color: var(--mint-text);
+  background: var(--mint-soft);
   border-radius: 12rpx;
   padding: 10rpx 14rpx;
   margin-bottom: 8rpx;
-  line-height: 1.55;
+  line-height: var(--lh-normal);
 }
 
 .match-meta {
   display: block;
-  font-size: 26rpx;
-  color: #374151;
-  line-height: 1.6;
+  font-size: 24rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
 }
 
 .matches-empty {
@@ -452,28 +492,29 @@
 
 .matches-empty-text {
   font-size: 28rpx;
-  color: #374151;
+  color: var(--text-dim);
 }
 
 .matches-empty-link {
   font-size: 28rpx;
-  color: #2563eb;
-  text-decoration: underline;
+  color: var(--brand);
+  font-weight: 600;
 }
 
 .matches-cta {
   margin-top: 18rpx;
   padding: 18rpx 0;
-  background: #16344b;
+  background: var(--brand);
   border-radius: 18rpx;
   text-align: center;
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.25);
 }
 
 .matches-cta-text {
   font-size: 26rpx;
   color: #fff;
   font-weight: 600;
-  letter-spacing: 2rpx;
+  letter-spacing: 1rpx;
 }
 
 /* 底部固定操作 */
@@ -485,8 +526,8 @@
   display: flex;
   gap: 14rpx;
   padding: 18rpx 24rpx;
-  background: #fff;
-  box-shadow: 0 -8rpx 20rpx rgba(15, 23, 42, 0.06);
+  background: var(--bg);
+  border-top: 2rpx solid var(--line);
   z-index: 10;
 }
 
@@ -495,24 +536,26 @@
   flex: 1;
   text-align: center;
   padding: 22rpx 0;
-  border-radius: 18rpx;
+  border-radius: var(--r-pill);
   font-size: 28rpx;
   font-weight: 600;
 }
 
 .footer-secondary {
-  background: #f1f5f9;
-  color: #1e293b;
+  background: var(--bg);
+  color: var(--brand);
+  border: 2rpx solid var(--brand-soft);
 }
 
 .footer-primary {
-  background: linear-gradient(145deg, #16344b 0%, #2f6f75 100%);
+  background: var(--brand);
   color: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.25);
 }
 
 .empty-state {
   text-align: center;
   padding: 80rpx 0;
-  color: #334155;
-  font-size: 30rpx;
+  color: var(--text-dim);
+  font-size: 28rpx;
 }

@@ -1,5 +1,7 @@
 {
-  "usingComponents": {},
+  "usingComponents": {
+    "icon": "/components/icon/icon"
+  },
   "enablePullDownRefresh": true,
-  "backgroundColor": "#f5f5f5"
+  "backgroundColor": "#ffffff"
 }

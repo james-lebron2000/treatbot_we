@@ -1,7 +1,9 @@
 {
-  "usingComponents": {},
+  "usingComponents": {
+    "icon": "/components/icon/icon"
+  },
   "navigationBarTitleText": "病历详情",
-  "navigationBarBackgroundColor": "#F7FAFE",
+  "navigationBarBackgroundColor": "#ffffff",
   "navigationBarTextStyle": "black",
   "enablePullDownRefresh": false
 }

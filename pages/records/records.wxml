@@ -5,8 +5,8 @@
       <text class="page-subtitle">我们从病历里看到的信息，哪里不对直接改。您改过的就是对的。</text>
     </view>
     <view class="add-btn" bindtap="goToUpload">
-      <text class="add-icon">+</text>
-      <text>上传新病历</text>
+      <icon name="plus" color="brand" size="32" strokeWidth="2.5" />
+      <text class="add-btn-text">上传新病历</text>
     </view>
   </view>
 
@@ -20,20 +20,33 @@
 
   <view class="records-list" wx:if="{{!loading && !errorMessage && records.length > 0}}">
     <view class="record-card" wx:for="{{records}}" wx:key="id" bindtap="viewRecord" bindlongpress="longPressRecord" data-id="{{item.id}}">
-      <view class="record-header">
-        <view class="record-type">{{item.type}}</view>
-        <view class="record-status {{item.status}}">{{item.statusText}}</view>
-      </view>
-      <view class="record-content">
-        <text class="record-diagnosis">诊断：{{item.diagnosis}}</text>
-        <text class="record-stage">分期：{{item.stage}}</text>
-        <text class="record-date">上传时间：{{item.uploadTime}}</text>
+      <view class="record-card-main">
+        <view class="record-icon">
+          <icon name="clipboard-list" color="brand" size="44" />
+        </view>
+        <view class="record-body">
+          <view class="record-header">
+            <text class="record-type">{{item.type}}</text>
+            <text class="record-status {{item.status}}">{{item.statusText}}</text>
+          </view>
+          <text class="record-diagnosis">{{item.diagnosis}}</text>
+          <view class="record-meta-row">
+            <text class="record-meta">分期 · {{item.stage}}</text>
+            <text class="record-meta">{{item.uploadTime}}</text>
+          </view>
+        </view>
+        <icon name="chevron-right" color="text-muted" size="32" />
       </view>
       <view class="record-footer">
-        <text class="match-count" wx:if="{{item.matchCount > 0}}">找到 {{item.matchCount}} 种新药</text>
-        <text class="match-count" wx:else>暂未找到能用的新药</text>
+        <text class="match-count" wx:if="{{item.matchCount > 0}}">为家人找到 {{item.matchCount}} 种新药</text>
+        <text class="match-count empty" wx:else>暂未找到能用的新药</text>
         <text class="gap-hint" wx:if="{{item.missingCount > 0}}">待补 {{item.missingCount}} 项</text>
-        <text class="arrow">→</text>
+      </view>
+      <!-- PRD-2026Q2 §P1-6：复购钩子 —— 病历过期或缺基因时给一个温和的复诊入口。
+           颜色用 brand，与 CTA 同语义；catchtap 防止冒泡到卡片整体的 viewRecord。 -->
+      <view wx:if="{{item.hookText}}" class="record-hook" catchtap="goToUpload">
+        <icon name="plus" color="brand" size="28" strokeWidth="2.5" />
+        <text class="record-hook-text">{{item.hookText}}</text>
       </view>
     </view>
   </view>

@@ -15,6 +15,9 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+// Plan §Phase 1.1：进程内 LLM 并发闸（token bucket / semaphore）。每次 axios 调用前 acquire，
+// finally release，永远不会让同一 provider 在本进程内超出配额。
+const llmRateLimiter = require('./llmRateLimiter');
 
 class LlmSchemaError extends Error {
   constructor(message, details) {
@@ -97,17 +100,25 @@ const callOnce = async (providerKey, messages, opts = {}) => {
 
   // 所有 provider 走 OpenAI 兼容的 `/chat/completions`（body shape 是 OpenAI 风格）。
   const chatPath = cfg.chatCompletionPath || '/chat/completions';
-  const response = await axios.post(
-    `${cfg.baseUrl}${chatPath}`,
-    body,
-    {
-      timeout: opts.timeoutMs || cfg.timeoutMs,
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-        'Content-Type': 'application/json'
+
+  // Plan §Phase 1.1：进入限流闸；finally 释放即使 axios 抛错。
+  await llmRateLimiter.acquire(providerKey);
+  let response;
+  try {
+    response = await axios.post(
+      `${cfg.baseUrl}${chatPath}`,
+      body,
+      {
+        timeout: opts.timeoutMs || cfg.timeoutMs,
+        headers: {
+          Authorization: `Bearer ${cfg.apiKey}`,
+          'Content-Type': 'application/json'
+        }
       }
-    }
-  );
+    );
+  } finally {
+    llmRateLimiter.release(providerKey);
+  }
 
   const rawContent = response?.data?.choices?.[0]?.message?.content || '';
   const cleaned = cleanJsonContent(rawContent);
@@ -187,13 +198,239 @@ const chatJson = async (provider, messages, schema, opts = {}) => {
   throw new LlmSchemaError('llmClient_unparseable', { provider, promptHash });
 };
 
+/**
+ * Plan §Phase 1.4：流式 OCR 字段抽取。
+ *
+ * 输入：partial JSON buffer（流式累积，可能未闭合）
+ * 输出：已闭合且属于 OCR 白名单的字段 → object；无任何字段 → null
+ *
+ * 实现要点：
+ *   - 只挑"已经闭合"的字段值 —— 字符串必须有结尾 `"`、null 必须完整、数字必须确认结束。
+ *   - 字段白名单与 OcrExtractionSchema 顶层 17+ 富化字段对齐（见 llmSchemas.js）。
+ *   - 字符串值用 JSON.parse 解码（处理 \", \\, \uXXXX 等转义），保证渲染时不出现裸 \"。
+ *   - 函数体内用局部 RegExp，避免共享 lastIndex 污染（多次调用幂等）。
+ *
+ * 边界：buffer 太短（<5）或为空时直接返回 null，避免 regex 跑空。
+ */
+const OCR_FIELD_WHITELIST = new Set([
+  'rawText', 'diagnosis', 'stage', 'geneMutation', 'pdl1',
+  'treatment', 'treatmentLine', 'ecog', 'age', 'weight', 'height',
+  'fertilityStatus', 'confidence',
+  'tnmStage', 'pathologyType', 'sex', 'hospital', 'diagnosisDate'
+]);
+
+const extractPartialOcrFields = (buffer) => {
+  if (!buffer || typeof buffer !== 'string') return null;
+  if (buffer.length < 5) return null;
+
+  // KEY: ASCII 标识符；VALUE: 已闭合字符串 / null / 数字。
+  // 字符串部分用 (?:[^"\\]|\\.)*  支持任意转义字符。
+  const re = /"([a-zA-Z][a-zA-Z0-9_]*)"\s*:\s*("(?:[^"\\]|\\.)*"|null|-?\d+(?:\.\d+)?)/g;
+
+  const result = {};
+  let m;
+  while ((m = re.exec(buffer)) !== null) {
+    const key = m[1];
+    if (!OCR_FIELD_WHITELIST.has(key)) continue;
+    const rawVal = m[2];
+    if (rawVal === 'null') {
+      result[key] = null;
+    } else if (rawVal[0] === '"') {
+      try { result[key] = JSON.parse(rawVal); } catch (_e) { /* skip */ }
+    } else {
+      const n = Number(rawVal);
+      if (!Number.isNaN(n)) result[key] = n;
+    }
+  }
+
+  return Object.keys(result).length ? result : null;
+};
+
+/**
+ * Plan §Phase 1.4：流式 chat completion。
+ *
+ *   await streamingChatJson(provider, messages, schema, {
+ *     onFirstToken(elapsedMs)  → 首段 delta 到达时
+ *     onPartial(partialObj)    → 已抽出的字段集合发生变化时
+ *     operation: 'ocr_image'   → 用作 prom-client 标签
+ *     temperature, model, timeoutMs ...
+ *   })
+ *
+ * 与 chatJson 的差异：
+ *   - 一定走 stream:true；axios responseType:'stream'。
+ *   - 用户感知"30s 看到诊断、分期"在这里实现 —— OCR 主路径调本函数后用
+ *     onPartial 把 partial 写到 record.structured.partial + status_phase='streaming'。
+ *   - 不做"换温度重试一次"—— 流式只走一遍；上层若 schema 失败再决定 fallback。
+ *
+ * 错误：
+ *   - schema 缺失 → throw Error /schema/
+ *   - provider 未配置 → throw Error provider_not_configured:<key>
+ *   - 流式 JSON 不可解析 / schema 校验失败 → throw LlmSchemaError
+ *   - HTTP / 网络错误 → 透传 axios error
+ */
+const streamingChatJson = async (providerKey, messages, schema, opts = {}) => {
+  if (!schema || typeof schema.safeParse !== 'function') {
+    throw new Error('streamingChatJson: schema 必须是 zod schema');
+  }
+  const cfg = PROVIDER_REGISTRY[providerKey] && PROVIDER_REGISTRY[providerKey]();
+  if (!cfg || !cfg.apiKey) {
+    throw new Error(`provider_not_configured:${providerKey}`);
+  }
+
+  const { onPartial, onFirstToken, operation = 'unknown' } = opts || {};
+  const promptHash = computePromptHash(messages);
+
+  const body = {
+    model: opts.model || cfg.model,
+    temperature: typeof opts.temperature === 'number' ? opts.temperature : 1,
+    messages,
+    response_format: { type: 'json_object' },
+    stream: true
+  };
+  const chatPath = cfg.chatCompletionPath || '/chat/completions';
+  const startedAt = Date.now();
+
+  // 限流闸；但是流式持续时间长，acquire 后必须确保 finally 释放。
+  await llmRateLimiter.acquire(providerKey);
+
+  let response;
+  try {
+    response = await axios.post(
+      `${cfg.baseUrl}${chatPath}`,
+      body,
+      {
+        timeout: opts.timeoutMs || cfg.timeoutMs,
+        headers: {
+          Authorization: `Bearer ${cfg.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        responseType: 'stream'
+      }
+    );
+  } catch (httpErr) {
+    llmRateLimiter.release(providerKey);
+    throw httpErr;
+  }
+
+  const stream = response && response.data;
+  if (!stream || typeof stream.on !== 'function') {
+    llmRateLimiter.release(providerKey);
+    throw new Error('streamingChatJson: provider 未返回 stream');
+  }
+
+  // 用户回调一律 try/catch，避免业务回调把流式主路径搞垮。
+  const safeCall = (fn, ...args) => {
+    if (typeof fn !== 'function') return;
+    try { fn(...args); } catch (cbErr) {
+      logger.warn('streamingChatJson 回调抛错（忽略）', { error: cbErr && cbErr.message });
+    }
+  };
+
+  let firstTokenFired = false;
+  let lastKeysFingerprint = '';
+  let pendingFrame = '';
+  let contentBuffer = '';
+
+  const handleSseLine = (line) => {
+    if (!line) return;
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload) return;
+    if (payload === '[DONE]') return;
+
+    let evt;
+    try { evt = JSON.parse(payload); } catch (_e) { return; }
+    const delta = evt && evt.choices && evt.choices[0] && evt.choices[0].delta;
+    if (!delta) return;
+    const piece = typeof delta.content === 'string' ? delta.content : '';
+    if (!piece) return;
+
+    if (!firstTokenFired) {
+      firstTokenFired = true;
+      const firstTokenMs = Date.now() - startedAt;
+      try {
+        const metrics = require('../middleware/metrics');
+        if (metrics && metrics.llmFirstTokenDuration && metrics.llmFirstTokenDuration.labels) {
+          metrics.llmFirstTokenDuration
+            .labels(providerKey, cfg.model, operation)
+            .observe(firstTokenMs / 1000);
+        }
+      } catch (_e) { /* metrics 不可用就忽略 */ }
+      safeCall(onFirstToken, firstTokenMs);
+    }
+
+    contentBuffer += piece;
+    const partial = extractPartialOcrFields(contentBuffer);
+    if (partial) {
+      const fingerprint = Object.keys(partial).sort().join('|');
+      if (fingerprint !== lastKeysFingerprint) {
+        lastKeysFingerprint = fingerprint;
+        safeCall(onPartial, partial);
+      }
+    }
+  };
+
+  try {
+    await new Promise((resolve, reject) => {
+      stream.on('data', (chunk) => {
+        const text = pendingFrame + chunk.toString('utf8');
+        // SSE frames are separated by \n\n. Last element may be partial → 留到下个 chunk。
+        const frames = text.split('\n\n');
+        pendingFrame = frames.pop() || '';
+        for (const frame of frames) {
+          if (!frame) continue;
+          for (const line of frame.split('\n')) {
+            if (line) handleSseLine(line);
+          }
+        }
+      });
+      stream.on('end', () => resolve());
+      stream.on('error', (err) => reject(err));
+    });
+
+    // 最后一个 pending（流结束但没有终结 \n\n 的情况）
+    if (pendingFrame.trim()) {
+      for (const line of pendingFrame.split('\n')) {
+        if (line) handleSseLine(line);
+      }
+    }
+  } finally {
+    llmRateLimiter.release(providerKey);
+  }
+
+  // 终态：合并 buffer → JSON.parse → schema validate
+  const cleaned = cleanJsonContent(contentBuffer);
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (_e) {
+    throw new LlmSchemaError('streamingChatJson_unparseable', {
+      provider: providerKey,
+      promptHash,
+      bufferLength: contentBuffer.length
+    });
+  }
+  const valid = schema.safeParse(parsed);
+  if (!valid.success) {
+    throw new LlmSchemaError('streamingChatJson_schema_invalid', {
+      provider: providerKey,
+      promptHash,
+      issues: valid.error.issues
+    });
+  }
+  return valid.data;
+};
+
 module.exports = {
   chatJson,
+  // Plan §Phase 1.4：流式调用 + 首 token 指标 + onPartial / onFirstToken 回调
+  streamingChatJson,
   LlmSchemaError,
   // exposed for unit tests
   __internals: {
     callOnce,
     computePromptHash,
-    cleanJsonContent
+    cleanJsonContent,
+    extractPartialOcrFields
   }
 };

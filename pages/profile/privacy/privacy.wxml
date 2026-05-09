@@ -1,16 +1,84 @@
+<!-- PRD-2026Q2 §P0-2：隐私承诺独立页
+     旧版：profile 点击 → 一句模糊 modal「我们仅在您授权范围内…」
+     新版：5 张卡，每条具体承诺 + 客服可拨打。
+     这是兑现首页 hero「数据完全由您掌管」的具体动作。 -->
 <view class="container">
-  <view class="card">
-    <view class="title">隐私保护说明</view>
-    <view class="desc">
-      我们仅在提供病历解析与临床试验匹配服务所必需的范围内收集和使用您的信息，所有敏感数据均采用加密传输与分级访问控制。
+  <view class="hero-shell privacy-hero">
+    <view class="privacy-hero-icon">
+      <icon name="shield-check" color="brand" size="120" strokeWidth="1.6" />
     </view>
-    <view class="desc">
-      未经您的明确授权，不会将病历原文、影像资料或可识别身份信息用于营销或对外披露。
+    <view class="privacy-hero-title">您的数据由您掌控</view>
+    <view class="privacy-hero-subtitle">下面 5 件事，是我们对您的承诺。每一条都可在 30 秒内自助验证。</view>
+  </view>
+
+  <!-- 1. 存什么 -->
+  <view class="privacy-card">
+    <view class="privacy-card-head">
+      <icon name="check-circle" color="mint" size="36" />
+      <view class="privacy-card-title">存什么</view>
+    </view>
+    <view class="privacy-card-body">
+      <view class="privacy-card-desc">仅病历影像 + 解析后的结构化字段（诊断 / 用药 / 检查值）。</view>
+      <view class="privacy-card-desc privacy-card-desc-muted">不存：身份证号、银行卡、社保号、家人姓名。</view>
     </view>
   </view>
 
-  <view class="card">
-    <view class="title">数据存储与删除</view>
-    <view class="desc">病历数据默认按最小化原则存储，可在联系客服后申请删除个人数据。</view>
+  <!-- 2. 存多久 -->
+  <view class="privacy-card">
+    <view class="privacy-card-head">
+      <icon name="check-circle" color="mint" size="36" />
+      <view class="privacy-card-title">存多久</view>
+    </view>
+    <view class="privacy-card-body">
+      <view class="privacy-card-desc">默认保留 30 天，匹配完成后自动转入「已删除」队列。</view>
+      <view class="privacy-card-desc privacy-card-desc-muted">如需立刻删除，请前往「我的 → 注销账户」，30 秒生效。</view>
+    </view>
+  </view>
+
+  <!-- 3. 谁能看 -->
+  <view class="privacy-card">
+    <view class="privacy-card-head">
+      <icon name="check-circle" color="mint" size="36" />
+      <view class="privacy-card-title">谁能看</view>
+    </view>
+    <view class="privacy-card-body">
+      <view class="privacy-card-desc">仅本账号本人 + AI 解析模型。</view>
+      <view class="privacy-card-desc privacy-card-desc-muted">研究团队仅在您主动「联系我」后才看到您的诊断和联系方式。</view>
+    </view>
+  </view>
+
+  <!-- 4. 怎么删 -->
+  <view class="privacy-card">
+    <view class="privacy-card-head">
+      <icon name="check-circle" color="mint" size="36" />
+      <view class="privacy-card-title">怎么删</view>
+    </view>
+    <view class="privacy-card-body">
+      <view class="privacy-card-desc">点开任意一份病历卡 → 右上角「删除」即可单独删除。</view>
+      <view class="privacy-card-desc privacy-card-desc-muted">注销账户：「我的 → 注销账户」，所有数据 30 秒内从所有备份点清理。</view>
+    </view>
+  </view>
+
+  <!-- 5. 找客服 -->
+  <view class="privacy-card privacy-card-contact">
+    <view class="privacy-card-head">
+      <icon name="phone-call" color="brand" size="36" />
+      <view class="privacy-card-title">找客服</view>
+    </view>
+    <view class="privacy-card-body">
+      <view class="privacy-card-desc">如果上面都不解决您的疑问，可直接电话联系。</view>
+      <view class="privacy-contact-line">
+        <view class="privacy-contact-phone">400-666-8899</view>
+        <view class="privacy-contact-hours">工作日 9:00-18:00</view>
+      </view>
+      <view class="btn btn-primary btn-call" bindtap="callSupport">
+        <icon name="phone-call" color="white" size="32" />
+        <text>拨打客服</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="privacy-legal">
+    依据《个人信息保护法》第 13 条、《医疗机构信息保护办法》第 6 条与「数据最小化」原则。
   </view>
 </view>

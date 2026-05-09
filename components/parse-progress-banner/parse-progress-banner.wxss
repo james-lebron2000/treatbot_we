@@ -1,0 +1,58 @@
+/* PRD-2026Q2 §P1-3：matches + index 共用的解析进度条
+   原则：白底 + 1px 描边 + brand 实色 fill + 3 列文本布局
+   不写 margin-bottom（由宿主决定外间距）。 */
+
+.ppb {
+  background: var(--bg);
+  border: 2rpx solid var(--line);
+  border-radius: 24rpx;
+  padding: 20rpx 24rpx;
+}
+
+.ppb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.ppb-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ppb-progress {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.ppb-text {
+  display: block;
+  font-size: 26rpx;
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
+  margin-bottom: 14rpx;
+}
+
+.ppb-bar {
+  height: 10rpx;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  overflow: hidden;
+}
+
+.ppb-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  transition: width 200ms ease-out;
+}
+
+.ppb-actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 16rpx;
+}

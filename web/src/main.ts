@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import * as Sentry from '@sentry/vue'
 import App from './App.vue'
 import router from './router'
+import './styles/tokens.css'
 import './style.css'
 
 const app = createApp(App)

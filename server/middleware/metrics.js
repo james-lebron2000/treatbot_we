@@ -60,6 +60,18 @@ const llmCallDuration = new client.Histogram({
   registers: [register]
 });
 
+// Plan §Phase 1.4：LLM 流式输出首 token 延迟（秒）。
+// 用户体验关心点：「点上传后，多久看到第一个字段？」
+// streamingChatJson 在第一段非空 delta 时 observe 一次。
+// 可在 Grafana 上画 P50/P90/P99，对比不同 provider/model 的"开口速度"。
+const llmFirstTokenDuration = new client.Histogram({
+  name: 'llm_first_token_seconds',
+  help: 'LLM 流式输出首 token 延迟（秒），按 provider/model/operation 维度',
+  labelNames: ['provider', 'model', 'operation'],
+  buckets: [0.5, 1, 2, 3, 5, 10, 20, 30],
+  registers: [register]
+});
+
 const llmTokensTotal = new client.Counter({
   name: 'llm_tokens_total',
   help: 'LLM token 累计消耗，direction=prompt|completion',
@@ -78,6 +90,27 @@ const llmFallbackTriggered = new client.Counter({
   name: 'llm_fallback_triggered_total',
   help: 'LLM provider 回退链被触发次数（from_provider → to_provider）',
   labelNames: ['from_provider', 'to_provider', 'reason'],
+  registers: [register]
+});
+
+// Plan §Phase 1.1：LLM provider 进程内并发 gauge（token bucket 实时占用）
+//   - llm_provider_concurrent_inflight{provider="doubao"} 4
+//   - 用于观察「OCR worker 并发调高 → provider 是否撞封顶」
+const llmProviderInflightGauge = new client.Gauge({
+  name: 'llm_provider_concurrent_inflight',
+  help: 'LLM provider 进程内当前并发占用（in-process token bucket inflight）',
+  labelNames: ['provider'],
+  registers: [register]
+});
+
+// Plan §Phase 1.2：OCR 结果缓存 hit/miss 计数器
+// - result="hit"   缓存命中，跳过整段 LLM OCR 调用
+// - result="miss"  未命中（含 fileHash 缺失）
+// - result="error" Redis 不可用或反序列化失败 → fallback 走完整 OCR
+const ocrCacheTotal = new client.Counter({
+  name: 'ocr_cache_total',
+  help: 'OCR 结果缓存计数（按 result 维度）',
+  labelNames: ['result'],
   registers: [register]
 });
 
@@ -155,6 +188,12 @@ module.exports = {
   llmTokensTotal,
   llmCallTotal,
   llmFallbackTriggered,
+  // Plan §Phase 1.4：流式首 token 延迟
+  llmFirstTokenDuration,
+  // Plan §Phase 1.1：进程内并发限流 gauge
+  llmProviderInflightGauge,
+  // Plan §Phase 1.2：OCR 结果缓存 hit/miss 计数器
+  ocrCacheTotal,
   // Q3-红线 §B.2：漏斗事件计数器
   userFunnelEventTotal
 };

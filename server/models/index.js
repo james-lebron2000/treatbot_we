@@ -34,6 +34,20 @@ const MedicalRecord = sequelize.define('MedicalRecord', {
     type: require('sequelize').DataTypes.ENUM('pending', 'running', 'completed', 'error'),
     defaultValue: 'pending'
   },
+  // Plan §Phase 1.3：6 阶段细分（queued/analyzing/streaming/structuring）。
+  // 不动 status ENUM，纯增量列；migration: 20260508_medical_record_status_phase.sql
+  status_phase: {
+    type: require('sequelize').DataTypes.STRING(24),
+    allowNull: true,
+    defaultValue: null
+  },
+  // Plan §Phase 3.1：用户取消时间戳。OCR worker 在阶段切换前查这个字段决定是否提前退出。
+  // 软删用 deleted_at；cancelled_at 是"用户主动放弃"，可能保留 record 给客户端追溯。
+  cancelled_at: {
+    type: require('sequelize').DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null
+  },
   diagnosis: {
     type: require('sequelize').DataTypes.STRING(256)
   },
@@ -355,6 +369,55 @@ const UserActionLog = sequelize.define('UserActionLog', {
   ]
 });
 
+// Plan §Phase 3.5（deferred）：微信订阅消息预埋
+// 模板未审批前不写入；schema 先建好，等模板下发后只需补 controller + queue
+// consumer + 客户端弹窗即可（详见 docs/notification-subscribe.md）。
+// 对应迁移 scripts/migrations/20260508_subscribe_intents.sql。
+const SubscribeIntent = sequelize.define('SubscribeIntent', {
+  id: {
+    type: require('sequelize').DataTypes.BIGINT.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  record_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  tmpl_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false,
+    comment: '微信订阅消息模板 ID（审批后下发）'
+  },
+  granted_at: {
+    type: require('sequelize').DataTypes.DATE,
+    allowNull: false,
+    comment: '用户在客户端点击"允许"的时间'
+  },
+  sent_at: {
+    type: require('sequelize').DataTypes.DATE,
+    allowNull: true,
+    comment: '实际发送成功时间；NULL 代表未发送'
+  },
+  send_error: {
+    type: require('sequelize').DataTypes.STRING(255),
+    allowNull: true,
+    comment: '发送失败时记录最近一次错误'
+  }
+}, {
+  tableName: 'subscribe_intents',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_record_pending', fields: ['record_id', 'sent_at'] },
+    { name: 'idx_user_granted', fields: ['user_id', 'granted_at'] }
+  ]
+});
+
 // 建立关联
 User.hasMany(MedicalRecord, { foreignKey: 'user_id' });
 MedicalRecord.belongsTo(User, { foreignKey: 'user_id' });
@@ -377,5 +440,7 @@ module.exports = {
   UserConsent,
   UserActionLog,
   // Q3-红线 §B.2：漏斗埋点事件
-  UserFunnelEvent
+  UserFunnelEvent,
+  // Plan §Phase 3.5（deferred）：微信订阅消息预埋
+  SubscribeIntent
 };

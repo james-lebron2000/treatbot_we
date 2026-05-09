@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>数愈健康 · Design Tokens</title>
+  <!-- tokens.css 由 shared/tokens/build.mjs 同步生成；与 landing/tokens.css 内容一致。 -->
+  <link rel="stylesheet" href="./tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: var(--lh-relaxed);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: var(--s-12) var(--s-6); }
+
+    h1 { font-size: var(--fs-display); line-height: var(--lh-tight); letter-spacing: -0.01em; margin: 0 0 var(--s-2); }
+    h2 { font-size: var(--fs-title); line-height: var(--lh-tight); margin: var(--s-12) 0 var(--s-4); }
+    p.lead { font-size: var(--fs-subtitle); color: var(--text-dim); margin: 0 0 var(--s-2); }
+    p.note { font-size: var(--fs-caption); color: var(--text-muted); margin: var(--s-2) 0 0; }
+    code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: var(--fs-caption); background: var(--bg-soft); padding: 2px 6px; border-radius: var(--r-sm); color: var(--text-dim); }
+
+    .grid { display: grid; gap: var(--s-3); }
+    .grid-color { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .grid-fs { grid-template-columns: 1fr; }
+    .grid-r { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .grid-shadow { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .grid-s { grid-template-columns: 1fr; }
+
+    .swatch {
+      display: flex; align-items: center; gap: var(--s-3);
+      padding: var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line); background: var(--bg);
+    }
+    .swatch-chip { width: 40px; height: 40px; border-radius: var(--r-sm); border: 1px solid var(--line); flex-shrink: 0; }
+    .swatch-meta { display: flex; flex-direction: column; min-width: 0; }
+    .swatch-name { font-size: var(--fs-callout); font-weight: 600; }
+    .swatch-value { font-size: var(--fs-caption); color: var(--text-muted); }
+
+    .fs-row {
+      display: grid; grid-template-columns: 120px 1fr 80px; align-items: baseline;
+      gap: var(--s-4); padding: var(--s-3) 0; border-bottom: 1px solid var(--line);
+    }
+    .fs-row:last-child { border-bottom: none; }
+    .fs-label { font-size: var(--fs-caption); color: var(--text-muted); }
+    .fs-value { font-size: var(--fs-caption); color: var(--text-muted); text-align: right; }
+
+    .r-card { padding: var(--s-4); background: var(--brand-soft); color: var(--brand); text-align: center; font-weight: 600; font-size: var(--fs-callout); }
+
+    .shadow-card { padding: var(--s-6); background: var(--bg); border-radius: var(--r-lg); text-align: center; font-size: var(--fs-callout); color: var(--text-dim); }
+
+    .s-row { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; }
+    .s-bar { background: var(--brand); height: 16px; border-radius: var(--r-sm); }
+    .s-label { font-size: var(--fs-caption); color: var(--text-muted); width: 120px; flex-shrink: 0; }
+
+    .btn-row { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+
+    /* Replicate AppButton styles inline (this page is plain HTML, not Vue) */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: var(--s-2); border: 1px solid transparent;
+      border-radius: var(--r-md); padding: var(--s-3) var(--s-4); min-height: 40px;
+      font-family: var(--font-sans); font-size: var(--fs-callout); font-weight: 600;
+      line-height: var(--lh-normal); cursor: pointer;
+      transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-hover); }
+    .btn-secondary { background: var(--brand-soft); color: var(--brand); }
+    .btn-ghost { background: transparent; color: var(--text); border-color: var(--line); }
+    .btn-ghost:hover { background: var(--bg-soft); }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Design Tokens</h1>
+    <p class="lead">三端共享的视觉源。改 <code>shared/tokens/tokens.json</code>，跑 <code>node shared/tokens/build.mjs</code>，本页与 Web/小程序/Admin 同步更新。</p>
+
+    <h2>品牌与语义色</h2>
+    <div class="grid grid-color">
+      <div class="swatch"><div class="swatch-chip" style="background: var(--brand)"></div><div class="swatch-meta"><span class="swatch-name">--brand</span><span class="swatch-value">#2563eb · 主 CTA / 链接</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--brand-hover)"></div><div class="swatch-meta"><span class="swatch-name">--brand-hover</span><span class="swatch-value">#1d4ed8</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--brand-soft)"></div><div class="swatch-meta"><span class="swatch-name">--brand-soft</span><span class="swatch-value">#dbeafe · Tag/Eyebrow</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--mint)"></div><div class="swatch-meta"><span class="swatch-name">--mint</span><span class="swatch-value">#10b981 · success</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--mint-soft)"></div><div class="swatch-meta"><span class="swatch-name">--mint-soft</span><span class="swatch-value">#d1fae5</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--amber)"></div><div class="swatch-meta"><span class="swatch-name">--amber</span><span class="swatch-value">#b45309 · warning</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--amber-soft)"></div><div class="swatch-meta"><span class="swatch-name">--amber-soft</span><span class="swatch-value">#fef3c7</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--red)"></div><div class="swatch-meta"><span class="swatch-name">--red</span><span class="swatch-value">#dc2626 · danger</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--red-soft)"></div><div class="swatch-meta"><span class="swatch-name">--red-soft</span><span class="swatch-value">#fee2e2</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--lilac)"></div><div class="swatch-meta"><span class="swatch-name">--lilac</span><span class="swatch-value">#8b5cf6 · info</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--lilac-soft)"></div><div class="swatch-meta"><span class="swatch-name">--lilac-soft</span><span class="swatch-value">#ede9fe</span></div></div>
+    </div>
+
+    <h2>中性色 · 文字与边</h2>
+    <div class="grid grid-color">
+      <div class="swatch"><div class="swatch-chip" style="background: var(--text)"></div><div class="swatch-meta"><span class="swatch-name">--text</span><span class="swatch-value">#0f172a · 主文 / 标题</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--text-dim)"></div><div class="swatch-meta"><span class="swatch-name">--text-dim</span><span class="swatch-value">#475569 · 次要文</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--text-muted)"></div><div class="swatch-meta"><span class="swatch-name">--text-muted</span><span class="swatch-value">#94a3b8 · 占位 / 辅助</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--line)"></div><div class="swatch-meta"><span class="swatch-name">--line</span><span class="swatch-value">#e2e8f0 · 分隔 / 边框</span></div></div>
+    </div>
+
+    <h2>背景色</h2>
+    <div class="grid grid-color">
+      <div class="swatch"><div class="swatch-chip" style="background: var(--bg)"></div><div class="swatch-meta"><span class="swatch-name">--bg</span><span class="swatch-value">#ffffff · 主底</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--bg-soft)"></div><div class="swatch-meta"><span class="swatch-name">--bg-soft</span><span class="swatch-value">#f0f7ff · section</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--bg-cream)"></div><div class="swatch-meta"><span class="swatch-name">--bg-cream</span><span class="swatch-value">#fff6ec</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--bg-mint)"></div><div class="swatch-meta"><span class="swatch-name">--bg-mint</span><span class="swatch-value">#ecfdf5</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background: var(--bg-lilac)"></div><div class="swatch-meta"><span class="swatch-name">--bg-lilac</span><span class="swatch-value">#f5f3ff</span></div></div>
+    </div>
+
+    <h2>字号 · Type Scale</h2>
+    <div class="grid grid-fs">
+      <div class="fs-row"><span class="fs-label">--fs-display</span><span style="font-size: var(--fs-display); line-height: var(--lh-tight); letter-spacing: -0.01em">让每一份病历，都找到属于它的答案</span><span class="fs-value">34px / 1.25</span></div>
+      <div class="fs-row"><span class="fs-label">--fs-title</span><span style="font-size: var(--fs-title); line-height: var(--lh-tight)">把病历放心交给我们</span><span class="fs-value">22px / 1.25</span></div>
+      <div class="fs-row"><span class="fs-label">--fs-subtitle</span><span style="font-size: var(--fs-subtitle); line-height: var(--lh-normal)">AI 帮您看懂关键指标</span><span class="fs-value">17px / 1.5</span></div>
+      <div class="fs-row"><span class="fs-label">--fs-body</span><span style="font-size: var(--fs-body); line-height: var(--lh-relaxed)">数据不留在我们服务器，完全由您掌管，随时可以删除。</span><span class="fs-value">15px / 1.65</span></div>
+      <div class="fs-row"><span class="fs-label">--fs-callout</span><span style="font-size: var(--fs-callout); line-height: var(--lh-normal); font-weight: 600">开始匹配</span><span class="fs-value">14px / 1.5</span></div>
+      <div class="fs-row"><span class="fs-label">--fs-caption</span><span style="font-size: var(--fs-caption); line-height: var(--lh-normal); color: var(--text-muted)">2026 年 5 月 2 日 · 您的数据您做主</span><span class="fs-value">12px / 1.5</span></div>
+    </div>
+
+    <h2>圆角</h2>
+    <div class="grid grid-r">
+      <div class="r-card" style="border-radius: var(--r-sm)">--r-sm · 8px</div>
+      <div class="r-card" style="border-radius: var(--r-md)">--r-md · 12px</div>
+      <div class="r-card" style="border-radius: var(--r-lg)">--r-lg · 16px</div>
+      <div class="r-card" style="border-radius: var(--r-pill)">--r-pill · 999px</div>
+    </div>
+
+    <h2>阴影</h2>
+    <div class="grid grid-shadow">
+      <div class="shadow-card" style="box-shadow: var(--shadow-1)">--shadow-1 · 卡片静态</div>
+      <div class="shadow-card" style="box-shadow: var(--shadow-2)">--shadow-2 · hover/Modal</div>
+      <div class="shadow-card" style="box-shadow: var(--shadow-focus)">--shadow-focus · 输入聚焦环</div>
+    </div>
+
+    <h2>间距 · 八阶减一</h2>
+    <div class="grid grid-s">
+      <div class="s-row"><span class="s-label">--s-1 · 4px</span><div class="s-bar" style="width: 4px"></div></div>
+      <div class="s-row"><span class="s-label">--s-2 · 8px</span><div class="s-bar" style="width: 8px"></div></div>
+      <div class="s-row"><span class="s-label">--s-3 · 12px</span><div class="s-bar" style="width: 12px"></div></div>
+      <div class="s-row"><span class="s-label">--s-4 · 16px</span><div class="s-bar" style="width: 16px"></div></div>
+      <div class="s-row"><span class="s-label">--s-6 · 24px</span><div class="s-bar" style="width: 24px"></div></div>
+      <div class="s-row"><span class="s-label">--s-8 · 32px</span><div class="s-bar" style="width: 32px"></div></div>
+      <div class="s-row"><span class="s-label">--s-12 · 48px</span><div class="s-bar" style="width: 48px"></div></div>
+    </div>
+    <p class="note">所有 padding/margin/gap 只能用这 7 个值。禁止再写 6/10/14/18/20/26/28 等中间值。</p>
+
+    <h2>按钮 · AppButton 视觉</h2>
+    <div class="btn-row">
+      <button class="btn btn-primary">Primary</button>
+      <button class="btn btn-secondary">Secondary</button>
+      <button class="btn btn-ghost">Ghost</button>
+      <button class="btn btn-danger">Danger</button>
+      <button class="btn btn-primary btn-disabled" disabled>Disabled</button>
+    </div>
+    <p class="note">Web 端等价组件：<code>web/src/components/AppButton.vue</code></p>
+
+    <h2 style="margin-top: var(--s-12); padding-top: var(--s-6); border-top: 1px solid var(--line)">本页是什么</h2>
+    <p>这是一个静态 token 演示页，<strong>没有 JS 框架依赖</strong>，引用了 <code>/landing/tokens.css</code>。改了 <code>tokens.json</code> 跑 build 之后刷新本页即可看到效果，是设计 review 的标准入口。</p>
+    <p class="note">详见 <code>shared/tokens/README.md</code> · 三端落地路径与命名约定。</p>
+  </main>
+</body>
+</html>
