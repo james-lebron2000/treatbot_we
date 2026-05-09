@@ -55,6 +55,7 @@ jspm_packages/
 .env.development
 .env.test
 .env.production
+.env.bak*
 
 # parcel-bundler cache
 .cache
