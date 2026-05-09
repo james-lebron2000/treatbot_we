@@ -135,6 +135,14 @@ const MAX_UPLOAD_BYTES = 9 * 1024 * 1024
 const IMAGE_COMPRESS_THRESHOLD = 1.5 * 1024 * 1024
 const IMAGE_COMPRESS_LONG_EDGE = 2400
 
+// PRD-2026Q4 followup（用户反馈 5 张限额过紧）：
+// 一次上传上限。原值 5 与 wxml 的 `<9` 判断不一致：用户已经选满 5 张时 UI
+// 仍显示 "+" 按钮（because 5 < 9），点了会触发 wx.chooseMedia({count:0}) 报错。
+// 与服务端 BATCH_UPLOAD_MAX 必须保持同号，否则客户端放过去会被服务端 400。
+// 选 9：与 wxml 历史值一致，wx.chooseMedia 单次上限是 9（系统硬约束），与微信
+// 朋友圈 9 张图心智模型一致；超过 9 张走分批上传更合理。
+const MAX_UPLOAD_COUNT = 9
+
 const compressImageAsync = (src) =>
   new Promise((resolve) => {
     wx.compressImage({
@@ -300,7 +308,7 @@ Page({
 
   takePhoto() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['camera'],
       success: (res) => {
@@ -311,7 +319,7 @@ Page({
 
   selectFromAlbum() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['album'],
       success: (res) => {
@@ -322,7 +330,7 @@ Page({
 
   selectPdfFile() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'file',
       extension: ['pdf'],
       success: (res) => {
@@ -333,7 +341,7 @@ Page({
 
   selectFromMessage() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'all',
       success: (res) => {
         this.handleFiles(res.tempFiles || [])
@@ -753,7 +761,16 @@ Page({
               continue
             }
             console.error(`第 ${i + 1} 份文件上传失败:`, err)
-            uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
+            // PRD-2026Q4 followup（用户反馈"网络卡顿"误报）：保留原 err（含 statusCode）。
+            // 老实现只 push { name, message }，下面 throw 时 new Error(last.message)
+            // 把 statusCode 丢成 0 → classifyUploadError 看到 status===0 一律归类
+            // 'network' → "网络有点卡" 文案。真正原因（429 限流 / 400 超限 / 415 格式）
+            // 都被掩盖。修复：把 err 一起带上，throw 时 re-throw 原 err。
+            uploadErrors.push({
+              name: file.name,
+              message: err && err.message ? err.message : '上传失败',
+              error: err
+            })
             break
           }
         }
@@ -763,8 +780,14 @@ Page({
       }
 
       if (!fileIds.length) {
-        // 全部失败 → 抛出最后一个错误（保留 statusCode 以便 classifyUploadError 分流）
+        // 全部失败 → 抛出最后一份的原始 error（含 statusCode），
+        // 让上层 catch → classifyUploadError 能把 429 / 4xx / 网络层 fail 分流到正确文案。
+        // 老实现是 throw new Error(last.message)，statusCode 全丢失，所有失败都被
+        // 错分类成 "network" → "网络有点卡"。
         const last = uploadErrors[uploadErrors.length - 1] || { message: '上传成功但未获取文件ID' }
+        if (last.error) {
+          throw last.error
+        }
         throw new Error(last.message)
       }
 
