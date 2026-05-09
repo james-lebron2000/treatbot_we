@@ -51,6 +51,27 @@ describe('upload page contract — mini-program', () => {
     expect(hits.length).toBeGreaterThanOrEqual(4);
   });
 
+  test('handleFiles slice cap uses MAX_UPLOAD_COUNT, not hardcoded 5', () => {
+    // PRD-2026Q4 followup（用户反馈"无法上传"二次根因）：
+    //   chooseMedia 把 count 改成 MAX_UPLOAD_COUNT 之后，handleFiles 里 reducer 仍然
+    //   `.slice(0, 5)` 静默把超出 5 张的文件全砍掉 —— UI 看起来就是"上传不上去"。
+    //   这是一个测试盲区（只查了 chooseMedia 那 4 处），所以补一条专门盯 slice cap。
+    expect(src).not.toMatch(/\.slice\(\s*0\s*,\s*5\s*\)/);
+    // 必须显式引用同一个常量（任何其它数字都不接受，避免日后又写一个 6/8/10）
+    expect(src).toMatch(/\.slice\(\s*0\s*,\s*MAX_UPLOAD_COUNT\s*\)/);
+  });
+
+  test('wxml `+` button gating uses same 9 ceiling', () => {
+    // 反向 sanity：wxml `tempFiles.length < 9` 与 MAX_UPLOAD_COUNT=9 必须同号。
+    // 任何把 wxml 改回 < 5 / < 6 的 PR 都会让 + 按钮在 5 张时消失，又把限额事实上回退。
+    const wxml = fs.readFileSync(
+      path.join(REPO_ROOT, 'pages', 'upload', 'upload.wxml'),
+      'utf8'
+    );
+    expect(wxml).toMatch(/tempFiles\.length\s*<\s*9/);
+    expect(wxml).not.toMatch(/tempFiles\.length\s*<\s*5/);
+  });
+
   test('uploadFiles re-throws original error to preserve statusCode (fix "网络卡顿" 误报)', () => {
     // 老 bug：throw new Error(last.message) → statusCode 丢失 → classifyUploadError
     // 看到 statusCode === 0 → 一律归类 'network' → "网络有点卡" 文案。
