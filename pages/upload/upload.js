@@ -287,6 +287,9 @@ Page({
     processSteps: PROCESS_STEPS,
     // PRD-2026Q2 §3.7：把共享文案挂到 data 上，wxml 直接 {{copy.cta.upload}} 等读取。
     copy,
+    // PRD-2026Q4 followup（消除 wxml 字面量 9）：把 MAX_UPLOAD_COUNT 透出到 data，
+    // wxml 用 {{tempFiles.length < maxUploadCount}} 取代裸数字 9，避免再漂。
+    maxUploadCount: MAX_UPLOAD_COUNT,
     tempFiles: [],
     remark: '',
     uploading: false,
@@ -313,6 +316,10 @@ Page({
     },
     summaryProgressStyle: 'width: 0%;',
     missingFields: [],
+    // PRD-2026Q4 followup（"补全字段不保存"修复）：onGapInput 改值后翻 true，
+    // startMatching 看到 dirty=true 就一定 PATCH 后端 + 清匹配缓存，
+    // 避免「missingFields 已被填到 0 → 保存条件失效 → 服务端仍是旧数据」。
+    gapDirty: false,
     // PRD-2026Q2 §P1-7：step 3 主 CTA 文案随 missingFields 数量动态切换
     // 在 applyParsedPresentation 内同步刷新，无 wxs computed 依赖。
     primaryCtaText: '看看为家人找到的新药',
@@ -369,6 +376,19 @@ Page({
   },
 
   chooseImage() {
+    // PRD-2026Q4 followup（满额 guard）：旧版外层 .upload-area 整块 bindtap，
+    // tempFiles 满 MAX_UPLOAD_COUNT 后还能进入 chooseImage，再走到 takePhoto / selectFromAlbum
+    // 时 count = MAX_UPLOAD_COUNT - 9 = 0；wx.chooseMedia({count:0}) 行为不一致 ——
+    // 不同基础库版本要么报错要么静默放行任意张。在入口 hard-guard 一刀切。
+    // 注意：wxml 已把 bindtap 收紧到 placeholder + add-more，这层 JS 是双保险。
+    if (this.data.tempFiles.length >= MAX_UPLOAD_COUNT) {
+      wx.showToast({
+        title: `最多 ${MAX_UPLOAD_COUNT} 份，已满 —— 删一张再加`,
+        icon: 'none',
+        duration: 2400
+      })
+      return
+    }
     wx.showActionSheet({
       itemList: ['拍照', '从相册选择图片', '上传PDF文件', '从聊天记录选择文件'],
       success: (res) => {
@@ -763,6 +783,8 @@ Page({
       structuredSummary: schema.buildStructuredSummary({}),
       summaryProgressStyle: 'width: 0%;',
       missingFields: [],
+      // 新一份病历开始解析 → 重置 dirty，避免上一份残留的 dirty 旗标污染本次保存判断
+      gapDirty: false,
       // Track C-2：清掉上次 session 的 gap 状态，避免新一份病历进来时还看到旧分组
       gapSections: [],
       collapsedGroups: {},
@@ -1511,6 +1533,11 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    // PRD-2026Q4 followup：用户改了字段就翻 dirty —— 让 startMatching 一定走 PATCH。
+    // 单独 setData 一次（applyParsedPresentation 不应该承担 dirty 语义，留给输入入口控制）。
+    if (!this.data.gapDirty) {
+      this.setData({ gapDirty: true })
+    }
   },
 
   editResult() {
@@ -1534,15 +1561,28 @@ Page({
       return
     }
 
-    const { missingFields, fileId, parsedData, recordId } = this.data
+    const { missingFields, fileId, parsedData, recordId, gapDirty } = this.data
 
     this.setData({ submittingGap: true })
     wx.showLoading({ title: '正在进入匹配...' })
 
     try {
-      if (missingFields.length > 0 && fileId) {
+      // PRD-2026Q4 followup（"补全字段后必定 PATCH 后端"小修复）：
+      // 旧条件 `missingFields.length > 0 && fileId` 把"用户把所有 missing 都填齐"这个
+      // 最常见的成功路径漏掉了 —— missing 变 0 反而不再 PATCH，服务端仍是旧解析数据，
+      // 病历列表/详情/匹配评分都基于过期值。修法：只要 fileId 在，并且 (missing 非空 或
+      // gap 被改过)，就保存；保存成功后清这条 recordId 的匹配缓存，让 matches 页重新拉。
+      const shouldPersist = !!fileId && (missingFields.length > 0 || gapDirty)
+      if (shouldPersist) {
         await api.enrichMedicalRecord(fileId, parsedData)
         wx.showToast({ title: '补全信息已保存', icon: 'success' })
+        const cacheKey = recordId || fileId || ''
+        if (cacheKey) {
+          // 用户改了字段 = 旧匹配结果一定过时，让 matches 页重新拉
+          parseTask.clearCachedMatches(cacheKey)
+        }
+        // 一次成功 PATCH 后清掉 dirty，避免用户回退再点又触发一次空保存
+        this.setData({ gapDirty: false })
       }
 
       const currentRecordId = recordId || fileId || ''

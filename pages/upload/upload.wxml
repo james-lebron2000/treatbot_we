@@ -21,8 +21,23 @@
       <view class="upload-title">把病历交给我们</view>
       <view class="upload-desc">拍照、相册、PDF 都行 —— 我们会自动识别类型。您的数据仅在自己的账户里，随时可以删除。</view>
 
-      <view class="upload-area" bindtap="chooseImage">
-        <view wx:if="{{tempFiles.length === 0}}" class="upload-placeholder">
+      <!--
+        PRD-2026Q4 followup（"无法上传"+ tap 冒泡修复）：
+        旧版外层 .upload-area 整块绑 bindtap="chooseImage"，导致：
+          1) 用户点缩略图想预览 → image 的 bindtap="previewFile" 冒泡到外层 → 又开一次选择器
+          2) tempFiles 满 9 时 .add-more 已隐藏，但外层 bindtap 还在 → 仍能进 chooseImage，
+             count 算成 0 进入 wx.chooseMedia，体验上"额满还能再点弹一次"。
+        新版：外层移除 bindtap，由两个明确入口承担选择动作 ——
+          (a) tempFiles 为空时显示的 .upload-placeholder
+          (b) 非空时显示的 .add-more（自带 wx:if 容量门）
+        预览区一律 catchtap，断绝冒泡链路。
+      -->
+      <view class="upload-area">
+        <view
+          wx:if="{{tempFiles.length === 0}}"
+          class="upload-placeholder"
+          bindtap="chooseImage"
+        >
           <view class="upload-icon">
             <icon name="camera" color="brand" size="96" />
           </view>
@@ -36,13 +51,13 @@
               wx:if="{{item.fileType === 'image'}}"
               src="{{item.path}}"
               mode="aspectFill"
-              bindtap="previewFile"
+              catchtap="previewFile"
               data-index="{{index}}"
             ></image>
             <view
               wx:else
               class="file-preview"
-              bindtap="previewFile"
+              catchtap="previewFile"
               data-index="{{index}}"
             >
               <icon name="file-text" color="brand" size="48" />
@@ -51,7 +66,7 @@
             </view>
             <view class="delete-btn" catchtap="deleteImage" data-index="{{index}}">×</view>
           </view>
-          <view class="add-more" bindtap="chooseImage" wx:if="{{tempFiles.length < 9}}">
+          <view class="add-more" catchtap="chooseImage" wx:if="{{tempFiles.length < maxUploadCount}}">
             <icon name="plus" color="text-muted" size="40" />
             <text class="add-text">添加</text>
           </view>

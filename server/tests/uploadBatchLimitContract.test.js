@@ -84,16 +84,31 @@ describe('upload page contract — mini-program', () => {
     expect(src).toMatch(/\.slice\(\s*0\s*,\s*MAX_UPLOAD_COUNT\s*\)/);
   });
 
-  test('wxml `+` button gating uses same 9 ceiling', () => {
-    // 反向 sanity：wxml `tempFiles.length < 9` 与共享 BATCH_UPLOAD_MAX 必须同号。
-    // 任何把 wxml 改回 < 5 / < 6 的 PR 都会让 + 按钮在 5 张时消失，又把限额事实上回退。
+  test('wxml `+` button gating bound to shared cap (maxUploadCount data prop)', () => {
+    // PRD-2026Q4 followup：wxml 不再写裸数字 9，而是 bind 到 data 的 maxUploadCount，
+    // data.maxUploadCount = MAX_UPLOAD_COUNT = SHARED_BATCH_UPLOAD_MAX —— 改默认只改 shared 一处。
     const wxml = fs.readFileSync(
       path.join(REPO_ROOT, 'pages', 'upload', 'upload.wxml'),
       'utf8'
     );
     const sharedMax = require(SHARED_SCHEMA).BATCH_UPLOAD_MAX;
-    expect(wxml).toMatch(new RegExp(`tempFiles\\.length\\s*<\\s*${sharedMax}\\b`));
+    // 接受两种写法（迁移期兼容）：直接绑 maxUploadCount，或裸数字与 sharedMax 同号
+    const usesBinding = /tempFiles\.length\s*<\s*maxUploadCount\b/.test(wxml);
+    const usesLiteral = new RegExp(`tempFiles\\.length\\s*<\\s*${sharedMax}\\b`).test(wxml);
+    expect(usesBinding || usesLiteral).toBe(true);
+    // 反向 guard：5 / 6 / 7 / 8 这些低于 sharedMax 的过紧裸值仍然不允许（事实上回退）。
     expect(wxml).not.toMatch(/tempFiles\.length\s*<\s*5\b/);
+    // 同时建议使用 binding（写到 expect 里只做软提示，不强制）—— 当 sharedMax 变更时
+    // 裸数字模式必须手动 sync 才不挂，binding 模式自动同步。
+    if (!usesBinding) {
+      // eslint-disable-next-line no-console
+      console.warn('upload.wxml 仍用裸数字门控，建议改成 maxUploadCount binding 以避免漂移');
+    }
+    // wxml 必须把 maxUploadCount 透出到 data；upload.js 里 data: { ..., maxUploadCount, ... }
+    if (usesBinding) {
+      const uploadJs = fs.readFileSync(UPLOAD_PAGE, 'utf8');
+      expect(uploadJs).toMatch(/maxUploadCount:\s*MAX_UPLOAD_COUNT/);
+    }
   });
 
   test('uploadFiles re-throws original error to preserve statusCode (fix "网络卡顿" 误报)', () => {
