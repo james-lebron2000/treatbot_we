@@ -19,6 +19,7 @@ const path = require('path');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const MEDICAL_CTRL = path.join(REPO_ROOT, 'server', 'controllers', 'medical.js');
 const UPLOAD_PAGE = path.join(REPO_ROOT, 'pages', 'upload', 'upload.js');
+const H5_UPLOAD_VIEW = path.join(REPO_ROOT, 'web', 'src', 'pages', 'UploadView.vue');
 
 describe('upload batch limit contract — server', () => {
   let src;
@@ -84,5 +85,25 @@ describe('upload page contract — mini-program', () => {
     // 这条是反向 sanity check：确保我们的修复没有顺手把 classify 函数也碰坏。
     expect(src).toMatch(/status\s*===\s*429[\s\S]{0,80}return\s+['"]rate_limit['"]/);
     expect(src).toMatch(/status\s*>=\s*400\s*&&\s*status\s*<\s*600[\s\S]{0,40}return\s+['"]parse['"]/);
+  });
+});
+
+// PRD-2026Q4 followup：H5 必须有客户端 count cap，与小程序 / 服务端同号。
+// 历史 H5 直接 `files.value = Array.from(target.files || [])` 不做任何 cap —— 用户选 12 份
+// 整批上传完才被 server 400 拒掉，浪费带宽 + 看到「请分批上传」误以为是网络问题。
+describe('upload H5 contract — Vue UploadView.vue', () => {
+  let src;
+  beforeAll(() => { src = fs.readFileSync(H5_UPLOAD_VIEW, 'utf8'); });
+
+  test('MAX_BATCH_FILES constant defined = 9', () => {
+    expect(src).toMatch(/const\s+MAX_BATCH_FILES\s*=\s*9\b/);
+  });
+
+  test('onFileChange enforces MAX_BATCH_FILES (no naked assignment of selected)', () => {
+    // 必须出现 slice + MAX_BATCH_FILES 引用；否则等价于没限额。
+    expect(src).toMatch(/\.slice\(\s*0\s*,\s*MAX_BATCH_FILES\s*\)/);
+    // 反向 guard：不允许"裸赋值 files.value = selected"再次回归。
+    // 旧代码：`files.value = selected` —— 没经过 cap。新代码用 `accepted` 中间变量。
+    expect(src).not.toMatch(/files\.value\s*=\s*selected\b/);
   });
 });

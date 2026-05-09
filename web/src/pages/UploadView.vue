@@ -230,6 +230,13 @@ import { track } from '../utils/track'
 const router = useRouter()
 const patientStore = usePatientStore()
 
+// PRD-2026Q4 followup（与小程序 MAX_UPLOAD_COUNT 同号 + server BATCH_UPLOAD_MAX 同号）：
+// H5 历史上没有客户端 count cap —— 用户在 <input multiple> 里选 12 张，
+// 整批上传完成后才被服务端 400 拒掉，浪费几十秒带宽 + 看到「请分批上传」误以为是网络问题。
+// 这里加一道客户端硬上限，多余的同步切掉并 toast 提示，与小程序"选满即止"UX 对齐。
+// 数字必须与 server/controllers/medical.js BATCH_UPLOAD_MAX 默认值一致（9）。
+const MAX_BATCH_FILES = 9
+
 const file = ref<File | null>(null)
 const files = ref<File[]>([])
 const uploadIndex = ref(0)
@@ -415,8 +422,15 @@ const resetUpload = () => {
 const onFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   const selected = Array.from(target.files || [])
-  files.value = selected
-  file.value = selected[0] || null
+  // PRD-2026Q4 followup：客户端硬上限 MAX_BATCH_FILES（与服务端 BATCH_UPLOAD_MAX 同号 = 9）。
+  // 超出部分同步切掉 + toast 友好提示，避免整批上传完才被 400 拒掉。
+  let accepted = selected
+  if (selected.length > MAX_BATCH_FILES) {
+    accepted = selected.slice(0, MAX_BATCH_FILES)
+    showToast(`一次最多上传 ${MAX_BATCH_FILES} 份，已为您保留前 ${MAX_BATCH_FILES} 份`)
+  }
+  files.value = accepted
+  file.value = accepted[0] || null
   clearUploadError()
 }
 
