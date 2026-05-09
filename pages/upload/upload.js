@@ -1519,6 +1519,9 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    if (!this.data.gapDirty) {
+      this.setData({ gapDirty: true })
+    }
   },
 
   onGapInput(e) {
@@ -1562,6 +1565,7 @@ Page({
     }
 
     const { missingFields, fileId, parsedData, recordId, gapDirty } = this.data
+    const currentRecordId = recordId || fileId || ''
 
     this.setData({ submittingGap: true })
     wx.showLoading({ title: '正在进入匹配...' })
@@ -1570,22 +1574,18 @@ Page({
       // PRD-2026Q4 followup（"补全字段后必定 PATCH 后端"小修复）：
       // 旧条件 `missingFields.length > 0 && fileId` 把"用户把所有 missing 都填齐"这个
       // 最常见的成功路径漏掉了 —— missing 变 0 反而不再 PATCH，服务端仍是旧解析数据，
-      // 病历列表/详情/匹配评分都基于过期值。修法：只要 fileId 在，并且 (missing 非空 或
-      // gap 被改过)，就保存；保存成功后清这条 recordId 的匹配缓存，让 matches 页重新拉。
-      const shouldPersist = !!fileId && (missingFields.length > 0 || gapDirty)
+      // 病历列表/详情/匹配评分都基于过期值。修法：只要 recordId/fileId 在，并且
+      // (missing 非空 或 gap 被改过)，就保存；保存成功后清这条 recordId 的匹配缓存。
+      const shouldPersist = !!currentRecordId && (missingFields.length > 0 || gapDirty)
       if (shouldPersist) {
-        await api.enrichMedicalRecord(fileId, parsedData)
+        await api.enrichMedicalRecord(currentRecordId, parsedData)
         wx.showToast({ title: '补全信息已保存', icon: 'success' })
-        const cacheKey = recordId || fileId || ''
-        if (cacheKey) {
-          // 用户改了字段 = 旧匹配结果一定过时，让 matches 页重新拉
-          parseTask.clearCachedMatches(cacheKey)
-        }
+        // 用户改了字段 = 旧匹配结果一定过时，让 matches 页重新拉
+        parseTask.clearCachedMatches(currentRecordId)
         // 一次成功 PATCH 后清掉 dirty，避免用户回退再点又触发一次空保存
         this.setData({ gapDirty: false })
       }
 
-      const currentRecordId = recordId || fileId || ''
       if (currentRecordId) {
         wx.setStorageSync('currentRecordId', currentRecordId)
       }
