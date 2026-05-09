@@ -452,9 +452,12 @@ Page({
       })
     }
 
-    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
+    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 9）。
+    // PRD-2026Q4 followup（用户反馈"无法上传"）：原值硬编码 5 与 MAX_UPLOAD_COUNT=9
+    // 不一致 —— 用户选 6+ 张图，handleFiles 静默丢弃前 5 张之后的全部，UI 看起来"上传不上去"。
+    // 必须用同一个常量，不能再写裸数字。
     this.setData({
-      tempFiles: [...currentFiles, ...processed].slice(0, 5)
+      tempFiles: [...currentFiles, ...processed].slice(0, MAX_UPLOAD_COUNT)
     })
   },
 

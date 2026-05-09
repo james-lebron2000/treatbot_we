@@ -267,7 +267,7 @@ const handleUploadBatch = async (req, res, next) => {
     if (!files.length) {
       throw new BusinessError('请选择要上传的文件', 400);
     }
-    // Phase E.6 / Review #5：硬上限收紧到 BATCH_UPLOAD_MAX（默认 5）。
+    // Phase E.6 / Review #5：硬上限收紧到 BATCH_UPLOAD_MAX（默认 9，与 wx 朋友圈口径对齐）。
     if (files.length > BATCH_UPLOAD_MAX) {
       throw new BusinessError(`一次最多上传 ${BATCH_UPLOAD_MAX} 份文件，请分批上传`, 400);
     }
