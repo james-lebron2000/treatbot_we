@@ -7,10 +7,16 @@
  *      回查并按 isDuplicate=true 返回，不重复入队。
  */
 
+// PRD-2026Q4 followup（legacy multipart 内存安全）：medical.js 从 buffer 路径迁到 stream，
+// 测试 mock 也要跟上 —— calculateMD5Stream(filePath) / uploadStream(filePath, ...) 是新 API。
+// 老 calculateMD5 / uploadFile 保留在 mock 里供其他 buffer-backed 用例（如有）。
 jest.mock('../services/oss', () => ({
   calculateMD5: jest.fn((buf) => `hash-${buf.toString()}`),
+  // 新 stream API：mock 时把 filePath 当成 hash 的 key（tests 里 file.path 我们自己塞）
+  calculateMD5Stream: jest.fn(async (filePath) => `hash-${filePath}`),
   generateKey: jest.fn((userId, name) => `uploads/${userId}/${Date.now()}_${name}`),
   uploadFile: jest.fn(async () => ({ success: true })),
+  uploadStream: jest.fn(async () => ({ success: true })),
   getInternalUrl: jest.fn(async () => 'https://test.example/internal/url'),
   getRequestAwareUrl: jest.fn(async () => 'https://test.example/url'),
   getObjectBuffer: jest.fn(),
@@ -35,9 +41,13 @@ const queueService = require('../services/queue');
 const { MedicalRecord } = require('../models');
 const { handleUploadBatch } = require('../controllers/medical');
 
+// PRD-2026Q4 followup：multer disk-storage 之后 controller 读 file.path。
+// content 同时进 path 字段（让 mock calculateMD5Stream(file.path) 出和老版 buf.toString() 一致的 hash），
+// buffer 保留以兼容任何还没迁移的代码路径（目前 medical.js 已不读，留着不伤）。
 const mkFile = (name, content = name) => ({
   originalname: name,
   buffer: Buffer.from(content),
+  path: `/tmp/treatbot-uploads/test-${content}`, // 让相同 content 产出相同 hash，复刻旧测试语义
   size: content.length,
   mimetype: 'image/jpeg'
 });
@@ -57,18 +67,25 @@ const buildRes = () => {
 beforeEach(() => {
   jest.clearAllMocks();
   ossService.calculateMD5.mockImplementation((buf) => `hash-${buf.toString()}`);
+  // hash 流式 mock：path = /tmp/treatbot-uploads/test-X → hash-X，复刻旧 buf.toString() 语义
+  ossService.calculateMD5Stream.mockImplementation(async (filePath) => {
+    const m = String(filePath || '').match(/test-(.+)$/);
+    return m ? `hash-${m[1]}` : `hash-${filePath}`;
+  });
   ossService.generateKey.mockImplementation((userId, name) => `uploads/${userId}/${name}`);
   ossService.uploadFile.mockResolvedValue({ success: true });
+  ossService.uploadStream.mockResolvedValue({ success: true });
 });
 
 describe('Phase 2.2: handleUploadBatch parallelization', () => {
-  test('3 个 unique 文件并发处理 —— uploadFile 在第一份完成前就被并发调用', async () => {
-    // 让 uploadFile 走"先排队再一起完成"模式，验证并发性
+  test('3 个 unique 文件并发处理 —— uploadStream 在第一份完成前就被并发调用', async () => {
+    // 让 uploadStream 走"先排队再一起完成"模式，验证并发性
     let resolveBarrier;
     const barrier = new Promise((r) => { resolveBarrier = r; });
     let inflight = 0;
     let maxInflight = 0;
-    ossService.uploadFile.mockImplementation(async () => {
+    // medical.js 现在调 uploadStream；mock 这条来观察并发性
+    ossService.uploadStream.mockImplementation(async () => {
       inflight += 1;
       if (inflight > maxInflight) maxInflight = inflight;
       await barrier;
@@ -93,7 +110,7 @@ describe('Phase 2.2: handleUploadBatch parallelization', () => {
     const next = jest.fn();
     const done = handleUploadBatch(req, res, next);
 
-    // 跑两轮 microtask 让所有 uploadFile 都进入 inflight
+    // 跑两轮 microtask 让所有 uploadStream 都进入 inflight
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
     expect(maxInflight).toBeGreaterThanOrEqual(2); // 至少有 2 份在并发跑
@@ -163,9 +180,10 @@ describe('Phase 2.2: handleUploadBatch parallelization', () => {
     expect(queueService.addOCRTask).not.toHaveBeenCalled();
   });
 
-  test('其中一份失败不阻塞其他 —— uploadFile 仅对第二份抛错', async () => {
+  test('其中一份失败不阻塞其他 —— uploadStream 仅对第二份抛错', async () => {
     let calls = 0;
-    ossService.uploadFile.mockImplementation(async () => {
+    // medical.js 现在调 uploadStream；保留旧用例语义（一份失败不阻塞其他）
+    ossService.uploadStream.mockImplementation(async () => {
       calls += 1;
       if (calls === 2) throw new Error('COS down');
       return { success: true };
