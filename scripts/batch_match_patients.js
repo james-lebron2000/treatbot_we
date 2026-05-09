@@ -8,6 +8,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const { matchRecordsToTrials } = require('../server/services/matchEngine');
 const { mapTrial } = require('../server/scripts/importTrials');
@@ -16,6 +18,57 @@ const { pickTrialsForPatient } = require('./lib/trial-picker');
 const OUT_DIR = path.join(__dirname, 'output');
 const PROFILES_PATH = path.join(OUT_DIR, 'patient_profiles.json');
 const TRIALS_PATH = path.join(__dirname, '..', 'server', 'data', 'trials_data.json');
+const MATCH_ENGINE_PATH = path.join(__dirname, '..', 'server', 'services', 'matchEngine.js');
+const TRIAL_PICKER_PATH = path.join(__dirname, 'lib', 'trial-picker.js');
+const SERVER_PACKAGE_PATH = path.join(__dirname, '..', 'server', 'package.json');
+
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const sha256File = (filePath) => crypto
+  .createHash('sha256')
+  .update(fs.readFileSync(filePath))
+  .digest('hex');
+
+const gitValue = (args) => {
+  try {
+    return execFileSync('git', args, {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim();
+  } catch (_) {
+    return null;
+  }
+};
+
+const readPackageVersion = () => {
+  try {
+    return JSON.parse(fs.readFileSync(SERVER_PACKAGE_PATH, 'utf8')).version || 'unknown';
+  } catch (_) {
+    return 'unknown';
+  }
+};
+
+const generatedAt = new Date().toISOString();
+const sourceCommit = gitValue(['rev-parse', '--short=12', 'HEAD']) || 'unknown';
+const metadata = {
+  generatedAt,
+  sourceCommit,
+  engine: {
+    name: 'treatbot-match-engine',
+    version: `${readPackageVersion()}+${sourceCommit}`,
+    matchEngineSha256: sha256File(MATCH_ENGINE_PATH),
+    trialPickerSha256: sha256File(TRIAL_PICKER_PATH)
+  },
+  trialLibrary: {
+    path: path.relative(path.join(__dirname, '..'), TRIALS_PATH),
+    sha256: sha256File(TRIALS_PATH)
+  },
+  inputs: {
+    profilesPath: path.relative(path.join(__dirname, '..'), PROFILES_PATH),
+    profilesSha256: sha256File(PROFILES_PATH)
+  }
+};
 
 console.log('加载试验库...');
 const rawTrials = require(TRIALS_PATH);
@@ -29,10 +82,14 @@ console.log(`归一化后：${trials.length}`);
 
 const profiles = JSON.parse(fs.readFileSync(PROFILES_PATH, 'utf-8'));
 console.log(`患者数：${profiles.length}`);
+metadata.trialLibrary.rawCount = trialsRaw.length;
+metadata.trialLibrary.normalizedCount = trials.length;
+metadata.inputs.profileCount = profiles.length;
 
 const results = [];
 // 引擎阈值放到 30：picker 的 Layer 1 会再用 40 做硬门槛，这里给 picker 更宽的池子
 const MIN_SCORE = 30;
+metadata.thresholds = { minScore: MIN_SCORE };
 
 for (const p of profiles) {
   try {
@@ -92,15 +149,20 @@ for (const p of profiles) {
 
 fs.writeFileSync(path.join(OUT_DIR, 'match_results.json'), JSON.stringify(results, null, 2));
 console.log(`写出 ${path.join(OUT_DIR, 'match_results.json')}`);
+fs.writeFileSync(path.join(OUT_DIR, 'run_metadata.json'), JSON.stringify(metadata, null, 2));
+console.log(`写出 ${path.join(OUT_DIR, 'run_metadata.json')}`);
 
 // ---------- Markdown 报告 ----------
 const lines = [];
-const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+const now = generatedAt.replace('T', ' ').slice(0, 19) + ' UTC';
 lines.push('# 患者批量匹配报告');
 lines.push('');
-lines.push(`运行时间：${now}`);
+lines.push(`生成时间：${now}`);
 lines.push(`病例数：${profiles.length}  试验库规模：${trials.length} 条招募中项目`);
 lines.push(`最低匹配度阈值：${MIN_SCORE}`);
+lines.push(`试验库 SHA-256：${metadata.trialLibrary.sha256}`);
+lines.push(`匹配引擎版本：${metadata.engine.version}`);
+lines.push(`匹配引擎 SHA-256：${metadata.engine.matchEngineSha256}`);
 lines.push('');
 
 lines.push('## 总览');
