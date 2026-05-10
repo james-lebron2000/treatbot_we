@@ -1,5 +1,46 @@
 # Treatbot 更新日志
 
+## v1.2.0 (2026-05-09)
+
+> 大版本聚合 2026 Q2/Q3/Q4 共 150+ commits 的成果。下方按主题分组列出关键变更。
+
+### 安全 & 合规（May 2026 Security Sprint）
+- 管理员登录关闭时序泄露，constant-time 比较走完整路径
+- 启用 `trust proxy` —— 修复 nginx 后所有未认证路由共用一个 rate-limit bucket 的严重缺陷
+- CSV 导出（admin / cro / billing）全部加上 OWASP CSV-Injection 前缀防御（CWE-1236）
+- Sentry 上报扩展 PII 脱敏：breadcrumbs / exception / headers / url / query / cookies
+- 刷新 token 的 jti claim 改为原子操作，关闭 TOCTOU 竞态
+- 热路径日志中的手机号 / OTP / 身份证全脱敏
+- 拆除 H5 fixed-code 后门、`oss.js` / `ocr.js` / `adminAuth` 的 init-time env capture
+- JWT 秘钥强校验（生产 ≥32 字符 + 弱值黑名单 + fail-fast 启动）
+
+### 后端基础设施
+- PRD-2026Q3+Q4 后端基础设施 + 迁移安全网
+- 三供应商 Vision-LLM benchmark；OCR 路由切到 **Doubao → Kimi → Tencent**（下线 MiniMax）
+- 病历 LLM 解析增加 schema 校验 + 重试 + DLQ
+- 多病历时间线 / 跨病历批量上传 / 软删除 / 激活流程
+- CRO 多租户隔离 + RBAC（super / ops / cro_liaison）+ PII 导出审计
+- 申请状态机 + 幂等
+
+### 部署 & CI/CD
+- 完成 nginx → Caddy 迁移，nginx 已归档 / 停止 / 禁用
+- CI 三层降级：GHCR-first → 本地 cache → 源码 build；30/35min 超时 + skip-if-cached
+- hot-fix emergency path 文档（CI 不可用时的应急方案）
+- 脱离 Docker Hub：tarball + scp + `docker load`
+- workflow 自动回写 server dump 到 main（需 `paths-ignore` 防循环）
+
+### 前端 & 设计
+- Cross-end design token foundation（Phase F·W1）
+- 微信小程序 5 页 Apple-cozy UI 重做（V2）+ 第二轮 polish 20 tasks
+- Vue admin 4 页 Apple 视觉重做 + `docs/design-system.md`
+- H5 批量上传 + 时间线面板（Phase E.2/E.3）
+- Demo 演示页"上传→解析→找药"端到端模拟
+
+### 品牌
+- 全站品牌 `Treatbot → 数愈健康`，Landing 明快配色重做
+
+---
+
 ## v1.1.0 (2026-02-25)
 
 ### 新增功能

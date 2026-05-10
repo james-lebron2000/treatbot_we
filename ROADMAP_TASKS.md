@@ -5,6 +5,47 @@
 
 ---
 
+## Phase 0.5 — 2026 Q2/Q3/Q4 已交付（截至 2026-05-09）
+
+> 本节是事后回填，仅记录已上线、已验证的成果。原 Phase 1-5 的部分任务在
+> 这一阶段已经被实质完成，但任务编号未更新——以本节为准。
+
+### 安全 & 合规（May 2026 Security Sprint，9 commits）
+- `c443f05` admin-login 时序泄露 + ADMIN_ACCOUNTS_JSON-only 配置兼容
+- `ae5d751` `trust proxy` 修复（防 nginx 后所有 unauth 路由共享 rate-limit bucket）
+- `2eb927a` 三处 CSV 导出加 OWASP CSV-Injection 前缀防御（CWE-1236）
+- `8a68cb5` Sentry PII scrubber 扩到 breadcrumbs / exception / headers / url / query / cookies
+- `c4506f3` refresh token jti claim 改原子（close TOCTOU race）
+- `ac7463c` 热路径日志中的手机号 / OTP / 身份证脱敏
+- `9ad4229` 路由审计补完（refresh limiter, CRO PII export audit）
+- `85bd06b` H5 fixed-code 后门拆除 + 完成 init-time env capture sweep
+- `ed44aaf, a49dd3b` `oss.js` / `ocr.js` / `adminAuth` init-time env capture 拆除
+
+### 后端基础设施
+- `d0ba57f` PRD-2026Q3+Q4 backend infra + migration safety net
+- `02c1587` Q3+Q4 PRD/TASKS/REVIEW + CI workflow updates
+- `3657a86` 三供应商 Vision-LLM benchmark + Doubao Ark 接入
+- `bdb5980` 下线 MiniMax，OCR 路由切到 Doubao → Kimi → Tencent
+
+### 部署 & CI/CD
+- `85aa079` GHCR-first + 30/35min timeout + skip-if-cached
+- `ca074f3` hot-fix emergency path 文档（CI 不可用时的应急方案）
+- `b586c9d` 脱离 Docker Hub —— CI 打 tarball + scp + docker load
+- `bebacd4` Caddy migration 完成（nginx 已 archived + stopped + disabled）
+
+### 前端 / 设计
+- `97d9ab5` Phase F W1-W4 + 5-page miniprogram UI redesign（V2 合并）
+- `6fd27e1` cross-end design token foundation（Phase F·W1）
+- `e65f6b1` Vue admin 4-page Apple visual + design-system.md（Phase F·W4）
+- `4ed8974` miniprogram UI polish round 2（20 tasks，PRD-2026Q2）
+
+### 已被实质完成的 Phase 1 任务（待原编号 ROADMAP 同步）
+- **Q7**（JWT 硬编码）：✅ 见下方 Q7 "完成证据" 段
+- **A8/Q6**（结构化入排）：⚠️ 部分完成 —— 60/496 已解析；剩余仍待跑全量
+- 部分 P 段（性能）/ G 段（增长）任务也有 partial 进展，本轮不重排，留待下次大版本
+
+---
+
 ## Phase 1：质量护栏 & 数据补全（预计 2-3 周）
 
 ### Q1. 配置 ESLint + Prettier
@@ -187,9 +228,21 @@
 
 ---
 
-### Q7. 移除 JWT 硬编码 fallback
+### Q7. ✅ 移除 JWT 硬编码 fallback（已完成 — 2026-04 cycle）
 
-**现状**：4 个文件包含 `process.env.JWT_SECRET || 'your-secret-key'`：
+**完成证据**：实际由 `server/utils/jwtSecret.js` 集中托管 JWT 秘钥，且**比原方案更严格**：
+- 生产强制 `length ≥ 32` + 弱值黑名单，不满足直接 `throw` fail-fast（`utils/jwtSecret.js:45-90`）
+- `server/middleware/auth.js`、`server/middleware/croAuth.js`、
+  `server/controllers/auth.js`、`server/controllers/cro.js` 4 个文件均已改为
+  `const { JWT_SECRET } = require('../utils/jwtSecret');`，无 fallback
+- `JWT_SECRET` 已在 `server/.env.example` 注明必填；CI 与生产由 GitHub Actions Secrets 注入
+- 守护测试：`server/tests/authEnvLive.test.js` 等
+
+下方"现状/步骤"段保留作历史索引，无需再执行。
+
+---
+
+**现状（历史）**：4 个文件包含 `process.env.JWT_SECRET || 'your-secret-key'`：
 
 | 文件 | 行号 |
 |------|------|
