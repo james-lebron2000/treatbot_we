@@ -71,6 +71,20 @@ const generate = () => {
 };
 
 if (require.main === module) {
+  // PRD-2026Q4 followup（nightly routine 修复）：
+  //   trials_data.json 在 .gitignore 里（"Large data files (use LFS or share separately)"），
+  //   CI checkout 时拿不到，导致 nightly-routine.yml 的 "Regenerate demo fixture" 步直接红。
+  //   行为：本地有文件 → 正常重生成；CI / 缺文件 → 警告 + exit 0，让 routine 走完后续 TASK。
+  //   要在 CI 里跑这一步，需要把 trials_data.json 通过 secret 注入 server/data/。
+  if (!fs.existsSync(TRIALS_DATA_PATH)) {
+    console.warn(
+      `[demo-fixture] 跳过：${TRIALS_DATA_PATH} 不存在。` +
+      `（生产 trials_data.json 因体积大走 LFS / 旁路分发；本地若要重生成 demo fixture，` +
+      `请把试验库 JSON 放到 server/data/trials_data.json 后再跑此脚本。CI 默认安全跳过。）`
+    );
+    process.exit(0);
+  }
+
   try {
     generate();
   } catch (err) {
