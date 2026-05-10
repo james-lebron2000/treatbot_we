@@ -1,0 +1,10 @@
+{
+  "name": "treatbot-we-miniapp",
+  "private": true,
+  "scripts": {
+    "test:miniapp": "jest --config jest.miniapp.config.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
