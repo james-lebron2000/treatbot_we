@@ -1543,8 +1543,20 @@ Page({
     }
   },
 
-  editResult() {
-    const { missingFields, structuredSummary } = this.data
+  // PRD-2026Q4 followup（editResult 短路 + PATCH 同步）：
+  //   旧版 editResult 是「点完只 toast 不落库」，与 startMatching 的 gapDirty 语义不一致。
+  //   现在三段决策树：
+  //     1. missingFields > 0  → 拦截，让用户先补完
+  //     2. gapDirty = false   → 没改动，纯确认 toast，不发 PATCH（避免空请求）
+  //     3. gapDirty = true    → 走 enrich + clearCachedMatches（与 startMatching 同语义）
+  //   保留 currentRecordId = recordId || fileId 的回退，与 startMatching 保持一致。
+  async editResult() {
+    if (this.data.submittingGap) {
+      return
+    }
+
+    const { missingFields, structuredSummary, fileId, parsedData, recordId, gapDirty } = this.data
+
     if (missingFields.length > 0) {
       wx.showToast({
         title: `仍有${missingFields.length}项待补充`,
@@ -1553,10 +1565,46 @@ Page({
       return
     }
 
-    wx.showToast({
-      title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已确认',
-      icon: 'success'
-    })
+    // 没改动 → 纯确认 toast 直接返回（与 startMatching 的 shouldPersist 短路对称）
+    if (!gapDirty) {
+      wx.showToast({
+        title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已确认',
+        icon: 'success'
+      })
+      return
+    }
+
+    // gapDirty = true → 真有改动 → PATCH + 清当条 recordId 的匹配缓存
+    const currentRecordId = recordId || fileId || ''
+
+    this.setData({ submittingGap: true })
+    wx.showLoading({ title: '保存中...' })
+
+    try {
+      if (currentRecordId) {
+        await api.enrichMedicalRecord(currentRecordId, parsedData)
+        parseTask.clearCachedMatches(currentRecordId)
+        this.setData({ gapDirty: false })
+      }
+
+      if (currentRecordId) {
+        wx.setStorageSync('currentRecordId', currentRecordId)
+      }
+      wx.setStorageSync('structuredRecordDraft', parsedData)
+
+      wx.showToast({
+        title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已保存',
+        icon: 'success'
+      })
+    } catch (error) {
+      wx.showToast({
+        title: resolveErrorCopy(error),
+        icon: 'none'
+      })
+    } finally {
+      wx.hideLoading()
+      this.setData({ submittingGap: false })
+    }
   },
 
   async startMatching() {
