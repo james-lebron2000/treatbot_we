@@ -10,6 +10,21 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# PRD-2026Q4 followup（deploy 并发竞态修复）：
+#   2026-05-10 一次性合 5 个 PR 触发 5 次并发 deploy，每次 deploy 都跑
+#   `rm -rf /tmp/treatbot-upload && mkdir -p /tmp/treatbot-upload/deploy`，
+#   导致 A 在 mkdir 后还没 scp 完，B 进来 rm 把 A 的工作目录端了 ——
+#   scp 报 "No such file or directory"，2 个 deploy 因此红灯。
+#
+#   修法：按 ref 分组排队。
+#     - push to main → group = "deploy-refs/heads/main" → 全部串行，不 cancel-in-progress，
+#       每个 commit 都要 deploy，丢一次都不行
+#     - pull_request → group = "deploy-refs/pull/N/merge" → 每个 PR 独立队列，
+#       cancel-in-progress=true 让新 commit 取代正在跑的旧 commit（PR 体验优先）
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
