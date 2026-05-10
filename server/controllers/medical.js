@@ -1,4 +1,6 @@
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const { MedicalRecord, Trial } = require('../models');
 const { success } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
@@ -11,9 +13,27 @@ const { scoreRecordAgainstTrial } = require('../services/matchEngine');
 const sharedUploadSchema = require('../../shared/schemas/upload.js');
 const SHARED_BATCH_UPLOAD_MAX = sharedUploadSchema.BATCH_UPLOAD_MAX;
 
-// 配置 multer 内存存储
+// PRD-2026Q4 followup（legacy multipart 内存安全）：从 memoryStorage 迁到 diskStorage。
+// 默认落到 /app/uploads/tmp-multipart；生产部署已把 /app/uploads 绑定到宿主机磁盘，
+// 避免 9 × 30MB 批量请求驻留在 Node RSS。MULTIPART_TMP_DIR 保留给运维覆盖。
+const MULTIPART_TMP_DIR = process.env.MULTIPART_TMP_DIR || path.join(__dirname, '..', 'uploads', 'tmp-multipart');
+try {
+  fs.mkdirSync(MULTIPART_TMP_DIR, { recursive: true });
+} catch (e) {
+  // 启动期 mkdir 失败不致命：multer 自己也会再尝试一次；记录警告留排查。
+  logger.warn('multipart tmp dir mkdir failed', { dir: MULTIPART_TMP_DIR, err: e && e.message });
+}
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: MULTIPART_TMP_DIR,
+    // 文件名带时间戳 + 随机后缀避免同名碰撞；保留原始扩展名以便后续 mimetype/扩展名复检
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '') || '';
+      const safe = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`;
+      cb(null, safe);
+    }
+  }),
   limits: {
     fileSize: 30 * 1024 * 1024  // 30MB（PDF 扫描件通常较大）
   },
@@ -29,6 +49,24 @@ const upload = multer({
     }
   }
 });
+
+// PRD-2026Q4 followup（legacy multipart 内存安全）：upload handlers finally 用这个清盘。
+const cleanupMultipartTmpFiles = async (filesOrFile) => {
+  const list = Array.isArray(filesOrFile)
+    ? filesOrFile
+    : (filesOrFile ? [filesOrFile] : []);
+  await Promise.all(list.map(async (f) => {
+    if (!f || !f.path) return;
+    try {
+      await fs.promises.unlink(f.path);
+    } catch (err) {
+      if (!err || err.code === 'ENOENT') {
+        return;
+      }
+      logger.warn('multipart tmp unlink failed', { path: f.path, err: err.message });
+    }
+  }));
+};
 
 /**
  * 上传病历文件（单文件入口）
@@ -131,8 +169,10 @@ const normalizeEntities = (value) => {
  * 返回结构与 handleUpload 早期 res.json 完全一致，调用方决定包裹成单条响应还是数组。
  */
 const processSingleUpload = async ({ file, userId, type, remark, forceReparse }) => {
-  // 计算文件哈希（用于去重）
-  const fileHash = ossService.calculateMD5(file.buffer);
+  // PRD-2026Q4 followup（legacy multipart 内存安全）：multer 现在落盘，file.path 才是真身。
+  // calculateMD5Stream(filePath) 在 oss.js 已存在（Plan §Phase 1.5），常量内存消耗。
+  // 老 calculateMD5(file.buffer) 仍保留在 oss.js 供测试/小负载场景，不删。
+  const fileHash = await ossService.calculateMD5Stream(file.path);
 
   // 检查是否已存在相同文件
   // PRD-2026Q2 §3.5：软删除的记录不参与去重，允许用户删了重传。
@@ -204,10 +244,12 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
 
   // 生成存储 Key
   const fileKey = ossService.generateKey(userId, file.originalname);
-  // 上传到 COS
-  await ossService.uploadFile(file.buffer, fileKey, {
+  // PRD-2026Q4 followup（legacy multipart 内存安全）：流式上传到 COS（sliceUploadFile 自动分片）。
+  // etagOverride 透传 fileHash，省一次 COS 端 etag 解析（与之前 calculateMD5(file.buffer) 行为同号）。
+  await ossService.uploadStream(file.path, fileKey, {
     contentType: file.mimetype,
-    metadata: { userId, originalName: file.originalname }
+    metadata: { userId, originalName: file.originalname },
+    etagOverride: fileHash
   });
   // 创建数据库记录
   // Plan §Phase 2.2：跨请求 race 兜底 —— 唯一索引 (user_id, file_hash, deleted_at) 抛
@@ -302,6 +344,10 @@ const handleUpload = async (req, res, next) => {
     res.json(success({ ...payload, queueDepth }, message));
   } catch (err) {
     next(err);
+  } finally {
+    // PRD-2026Q4 followup（legacy multipart 内存安全）：disk-storage 落盘的 multer 临时文件
+    // 必须显式清掉 —— 否则临时目录会被慢慢填满。
+    await cleanupMultipartTmpFiles(req.file);
   }
 };
 
@@ -344,7 +390,11 @@ const handleUploadBatch = async (req, res, next) => {
     const batchHashLeaders = new Map(); // file_md5 → Promise<entry>
 
     const processOne = async (file) => {
-      const hash = ossService.calculateMD5(file.buffer);
+      // PRD-2026Q4 followup（legacy multipart 内存安全）：流式 hash，避免读 30MB×9 入 RAM。
+      // 注意：这里和 processSingleUpload 内会再算一次 hash —— 短期内可接受（同一磁盘文件、
+      // 流式 IO 成本低；同批 dedup 仍是 leader/follower 语义不变）。后续若要去重可在
+      // processSingleUpload 接受 prehash 参数。
+      const hash = await ossService.calculateMD5Stream(file.path);
       const leader = batchHashLeaders.get(hash);
       if (leader) {
         const existing = await leader;
@@ -417,6 +467,10 @@ const handleUploadBatch = async (req, res, next) => {
     }, summary));
   } catch (err) {
     next(err);
+  } finally {
+    // PRD-2026Q4 followup（legacy multipart 内存安全）：批量入口的 disk-storage 临时文件
+    // 也必须清掉 —— 9 份 × 30MB 不清就是每个失败请求往临时目录灌 ~270MB。
+    await cleanupMultipartTmpFiles(req.files);
   }
 };
 
