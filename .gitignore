@@ -171,6 +171,9 @@ dist/
 build/
 out/
 
+# Generated report artifacts
+scripts/output/
+
 # Uploads
 uploads/
 
