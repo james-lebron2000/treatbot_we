@@ -241,6 +241,12 @@ Page({
     collapsedGroups: {},
     gapSummary: { totalMissing: 0, filledNow: 0, percent: 0 },
     submittingGap: false,
+    // v2：标记用户是否在 step 3 的 gap 区编辑过字段。
+    //   - selectGapOption / onGapInput → true
+    //   - handleCompletedResult / resetUploadSessionState / 保存成功 → false
+    // 用于 startMatching 与 editResult 决定是否真的发 enrich PATCH，
+    // 避免「用户改了已填字段但 missingFields=0 → 旧条件不发 PATCH → 编辑丢失」。
+    gapDirty: false,
     parseFallbackNotified: false,
     hasPdfUpload: false,
     pdfQualityHintShown: false
@@ -645,7 +651,8 @@ Page({
       etaText: '',
       processingStatus: copy.status.pending,
       parseFallbackNotified: false,
-      pdfQualityHintShown: false
+      pdfQualityHintShown: false,
+      gapDirty: false
     })
     // Track C-3：模拟器内部状态也一起清掉，避免下次开始时被旧值干扰
     this.simulationStartedAt = 0
@@ -1210,7 +1217,8 @@ Page({
 
     this.setData({
       currentStep: 3,
-      uploading: false
+      uploading: false,
+      gapDirty: false
     })
 
     if (this.data.hasPdfUpload && !this.data.pdfQualityHintShown) {
@@ -1269,6 +1277,7 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    this.setData({ gapDirty: true })
   },
 
   onGapInput(e) {
@@ -1283,6 +1292,7 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    this.setData({ gapDirty: true })
   },
 
   async editResult() {
@@ -1290,12 +1300,19 @@ Page({
       return
     }
 
-    const { missingFields, structuredSummary, fileId, parsedData, recordId } = this.data
+    const { missingFields, structuredSummary, fileId, parsedData, recordId, gapDirty } = this.data
     if (missingFields.length > 0) {
       wx.showToast({
         title: `仍有${missingFields.length}项待补充`,
         icon: 'none'
       })
+      return
+    }
+
+    const currentRecordId = recordId || fileId || ''
+
+    if (!gapDirty) {
+      wx.showToast({ title: '信息已确认', icon: 'success' })
       return
     }
 
@@ -1305,13 +1322,15 @@ Page({
     try {
       if (fileId) {
         await api.enrichMedicalRecord(fileId, parsedData)
+        parseTask.clearCachedMatches(currentRecordId)
       }
 
-      const currentRecordId = recordId || fileId || ''
       if (currentRecordId) {
         wx.setStorageSync('currentRecordId', currentRecordId)
       }
       wx.setStorageSync('structuredRecordDraft', parsedData)
+
+      this.setData({ gapDirty: false })
 
       wx.showToast({
         title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已保存',
@@ -1333,18 +1352,20 @@ Page({
       return
     }
 
-    const { missingFields, fileId, parsedData, recordId } = this.data
+    const { fileId, parsedData, recordId, gapDirty } = this.data
+    const currentRecordId = recordId || fileId || ''
 
     this.setData({ submittingGap: true })
     wx.showLoading({ title: '正在进入匹配...' })
 
     try {
-      if (missingFields.length > 0 && fileId) {
+      if (gapDirty && fileId) {
         await api.enrichMedicalRecord(fileId, parsedData)
+        parseTask.clearCachedMatches(currentRecordId)
+        this.setData({ gapDirty: false })
         wx.showToast({ title: '补全信息已保存', icon: 'success' })
       }
 
-      const currentRecordId = recordId || fileId || ''
       if (currentRecordId) {
         wx.setStorageSync('currentRecordId', currentRecordId)
       }
