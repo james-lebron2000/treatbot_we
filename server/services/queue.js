@@ -1,6 +1,8 @@
 const Queue = require('bull');
 const logger = require('../utils/logger');
-const { processMedicalImage } = require('./ocr');
+const { runStreamingPipeline } = require('./ocrPipeline');
+const { publishRecordEvent, clearSnapshotErrorField } = require('./recordEvents');
+const { STAGE, composeEvent } = require('../../shared/streaming/events');
 const { MedicalRecord, OcrJobFailure } = require('../models');
 // Q3-红线 §A.3：Sentry 软依赖（DSN 未配置时退化为 noop）
 let _sentry = null;
@@ -96,16 +98,29 @@ const runOcrTask = async (data, opts = {}) => {
   const { jobId } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
 
+  // 把 publishRecordEvent 绑定到当前 recordId，传给 ocrPipeline 让它发 preprocess/ocr_text/field_group。
+  // 注入 recordId：ocrPipeline 里用的是 composeEvent(null, ...)，wire 上的 evt.recordId 会是 null —— 批量
+  // SSE 场景下客户端无法把事件归属到正确 record。统一在 emit wrapper 这层覆写一次，
+  // 让进出 publishRecordEvent 的 evt 始终带 recordId（snapshot 写入和 pub/sub 都一致）。
+  const emit = (evt) => publishRecordEvent(recordId, { ...evt, recordId });
+
   try {
+    // 1) RECEIVED：worker 已接管这条任务（让前端阶段指示器立刻亮起来）
+    // Bull 重试场景：先清掉 snapshot 里的 error 字段（上一次 attempt 失败留下的），
+    // 否则 completed 写入后，REPLAY_ORDER 把 error 排在 completed 之后 → 晚到的客户端
+    // 看到「成功→失败」的视觉翻转。这里 await（写不进去就算了，不阻塞主流程）。
+    await clearSnapshotErrorField(recordId);
+    await emit(composeEvent(recordId, STAGE.RECEIVED, {}));
+
     await MedicalRecord.update(
       { status: 'running' },
       { where: { id: recordId } }
     );
 
-    const result = await processMedicalImage({
-      sourceUrl: imageUrl,
-      mimeType,
-      fileKey
+    // 2) 走流式管线：内部会发 preprocess(15) → ocr_text(40) → field_group(50–95)
+    const result = await runStreamingPipeline({
+      source: { sourceUrl: imageUrl, mimeType, fileKey },
+      emit
     });
 
     if (!hasMeaningfulOcrResult(result)) {
@@ -139,6 +154,16 @@ const runOcrTask = async (data, opts = {}) => {
       where: { id: recordId }
     });
 
+    // 3) COMPLETED：把最终对象广播出去，晚到的客户端通过快照回放能直接拿到完整结果
+    await emit(composeEvent(recordId, STAGE.COMPLETED, {
+      result: {
+        entities: result.entities,
+        text: result.text,
+        provider: result.provider || 'unknown',
+        confidence: result.confidence
+      }
+    }));
+
     // 完成通知（best-effort：通知队列也要 Redis，挂掉不影响主流程）
     if (userId) {
       try {
@@ -165,6 +190,13 @@ const runOcrTask = async (data, opts = {}) => {
       tags: { component: 'ocr_queue', stage: 'process' },
       extra: { recordId, jobId: jobId || 'inproc' }
     });
+
+    // ERROR 事件：让前端立刻收终态（即使失败状态回写也挂了，SSE 也已经能告诉客户端"挂了"）
+    try {
+      await emit(composeEvent(recordId, STAGE.ERROR, { errorMsg: error.message }));
+    } catch (emitErr) {
+      logger.warn('OCR error 事件广播失败（忽略）', { recordId, error: emitErr.message });
+    }
 
     // 失败状态回写也用 try/catch，避免再次抛异常吃掉原始错误
     try {

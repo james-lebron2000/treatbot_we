@@ -115,6 +115,41 @@
         </view>
       </view>
 
+      <!--
+        PRD-2026Q4 流式 OCR：分组识别预览
+          - 4 个分组（基本信息/诊断/治疗/病程时间线）随 SSE field_group 事件依次"骨架→实体"
+          - streamRawText 一旦到达就允许用户展开折叠区核对原文
+          - 不影响 step 3 的 parsedSections 渲染（step 3 仍按完成态显示完整摘要）
+      -->
+      <view class="stream-preview" wx:if="{{currentStage}}">
+        <view class="stream-preview-title">
+          <text class="stream-preview-kicker">正在识别</text>
+          <text class="stream-preview-subtitle">每补一块都会立刻出现在这里</text>
+        </view>
+        <view class="stream-groups">
+          <view
+            class="stream-group {{group.filled ? 'is-filled' : 'is-pending'}}"
+            wx:for="{{streamGroups}}"
+            wx:key="key"
+            wx:for-item="group"
+          >
+            <view class="stream-group-dot"></view>
+            <text class="stream-group-label">{{group.label}}</text>
+            <text class="stream-group-state" wx:if="{{group.filled}}">已识别</text>
+            <text class="stream-group-state pending" wx:else>等待中</text>
+          </view>
+        </view>
+        <view wx:if="{{streamRawText}}" class="stream-rawtext">
+          <view class="stream-rawtext-head" bindtap="toggleRawText">
+            <text class="stream-rawtext-title">原文文本</text>
+            <text class="stream-rawtext-toggle">{{showRawText ? '收起' : '展开核对'}}</text>
+          </view>
+          <view wx:if="{{showRawText}}" class="stream-rawtext-body">
+            <text class="stream-rawtext-content">{{streamRawText}}</text>
+          </view>
+        </view>
+      </view>
+
       <view class="parse-steps">
         <view
           class="parse-step-card {{parseStep > index ? 'completed' : ''}} {{parseStep === index ? 'current' : ''}}"

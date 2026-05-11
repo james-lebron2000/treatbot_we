@@ -864,6 +864,202 @@ const activateRecord = async (req, res, next) => {
   }
 };
 
+/**
+ * PRD-2026Q4 流式 OCR：SSE 端点 GET /api/medical/parse-stream?recordIds=a,b,c
+ *   - 鉴权：每个 recordId 必须属于 req.userId（不属于 → 整请求 400，避免泄漏存在性）
+ *   - 头：text/event-stream，关 nginx buffer，关 keep-alive 缓存
+ *   - 订阅：subscribeRecordEvents（先回放快照，再 attach pub/sub）
+ *   - 心跳：每 15s 一行 `: ping\n\n`，防 60s 网关超时切断
+ *   - 终态：当所有 recordId 都到 completed/error → 写 `event: done` 后 res.end()
+ *   - 客户端断开（req.on('close')） → unsubscribe 一次
+ */
+const getParseStream = async (req, res, next) => {
+  try {
+    const raw = (req.query && req.query.recordIds) || '';
+    let recordIds = [];
+    if (Array.isArray(raw)) {
+      recordIds = raw.map((x) => `${x || ''}`.trim()).filter(Boolean);
+    } else if (typeof raw === 'string') {
+      recordIds = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (!recordIds.length) {
+      throw new BusinessError('缺少 recordIds 参数', 400);
+    }
+    if (recordIds.length > 20) {
+      throw new BusinessError('一次最多订阅 20 个 recordId', 400);
+    }
+    if (recordIds.some((id) => id.length > 64)) {
+      throw new BusinessError('recordId 过长（单个 ≤ 64 字符）', 400);
+    }
+
+    // 鉴权：所有 recordId 必须属于当前用户。
+    // 1. 不属于本人的 → 直接 400，避免给攻击者枚举他人 recordId 的反馈面。
+    // 2. 已是终态的 record 同样订阅——客户端可能是页面刷新晚到，依赖快照回放即可拿结果。
+    const { Op } = require('sequelize');
+    const owned = await MedicalRecord.findAll({
+      where: {
+        id: { [Op.in]: recordIds },
+        user_id: req.userId,
+        deleted_at: null
+      },
+      // PRD-2026Q4：把 structured 一并捞出 —— snapshot 过期（>30min TTL）后客户端晚到时，
+      // 我们要从 DB 直接合成一个 completed state 给它，避免「done 但没结果」的死局。
+      attributes: ['id', 'status', 'structured']
+    });
+    if (owned.length !== recordIds.length) {
+      throw new BusinessError('recordId 校验失败', 400);
+    }
+    const ownedById = new Map(owned.map((r) => [String(r.id), r]));
+
+    // SSE headers
+    res.status(200);
+    res.set({
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no'   // nginx：禁用 proxy 缓冲，保证逐行透出
+    });
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    const writeEvent = (eventName, payload) => {
+      try {
+        if (eventName) res.write(`event: ${eventName}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } catch (e) {
+        // 写失败说明 socket 已关，由 close handler 收尾
+      }
+    };
+
+    // 订阅前先把"已是终态"的 record 缓存进 terminalSet：当所有都终态 → 关连接
+    const terminalSet = new Set(
+      owned.filter((r) => r.status === 'completed' || r.status === 'error').map((r) => String(r.id))
+    );
+    const allRecordIdSet = new Set(recordIds.map(String));
+
+    const { subscribeRecordEvents, __internals } = require('../services/recordEvents');
+    const { isTerminalStage } = require('../../shared/streaming/events');
+
+    let closed = false;
+    let unsubscribe = () => {};
+    const closeStream = () => {
+      if (closed) return;
+      closed = true;
+      try { unsubscribe() } catch (_e) {}
+      try { clearInterval(hbTimer) } catch (_e) {}
+      try { res.end() } catch (_e) {}
+    };
+
+    // 去重：snapshot HSET 用 (stage 或 stage:groupName) 作 field key —— 一个 slot 最多一个事件。
+    // 如果 subscribe()→replaySnapshot() 之间 worker 又 publish 了一条，客户端会同时通过
+    // 「Redis pub/sub → localBus」与「replaySnapshot 读 HGETALL」收到，导致同一 slot 的事件被写两次。
+    // 用本地 Set 按 `${recordId}|${snapshotFieldKey(evt)}` 去重 —— 这与 snapshot 的天然语义一致。
+    const seenKeys = new Set();
+    const dedupKey = (evt) => `${evt.recordId || ''}|${__internals.snapshotFieldKey(evt)}`;
+
+    const onEvent = (evt) => {
+      if (closed) return;
+      // ERROR 不参与去重——重试场景下 attempt1 ERROR + attempt2 COMPLETED 必须都到达客户端
+      // （上游 clearSnapshotErrorField 已在 attempt2 RECEIVED 时清 error 字段，REPLAY 路径不会再重发 attempt1 ERROR）。
+      // 但同一连接内：如果 ERROR 已经发过一次（live），不重复发。
+      const k = dedupKey(evt);
+      if (seenKeys.has(k)) return;
+      seenKeys.add(k);
+
+      writeEvent('state', evt);
+      if (evt && evt.recordId && isTerminalStage(evt.stage)) {
+        terminalSet.add(String(evt.recordId));
+        if (terminalSet.size >= allRecordIdSet.size) {
+          writeEvent('done', { reason: 'all_terminal' });
+          closeStream();
+        }
+      }
+    };
+
+    // 关键：close 监听必须在 await subscribeRecordEvents 之前挂上。
+    // 否则在 await 期间客户端 abort（页面跳走 / 网关瞬断），close 事件没人收，
+    // 后面 sub.unsubscribe 永远不会调用 → refcount 泄漏 + hbTimer 直到 15s 后心跳写失败才兜底。
+    req.on('close', closeStream);
+    req.on('error', closeStream);
+
+    const sub = await subscribeRecordEvents(recordIds, onEvent);
+    unsubscribe = sub.unsubscribe;
+    // 兜底：如果 await 期间已经 close，subscribeRecordEvents 仍订阅成功 —— 立刻 unsubscribe。
+    if (closed) {
+      try { sub.unsubscribe() } catch (_e) {}
+      return;
+    }
+
+    // 告诉客户端 "Redis 是否可用"——客户端在 noredis 时可启动并行轮询作为兜底
+    writeEvent('hello', { hasRedis: sub.hasRedis, recordIds });
+    if (!sub.hasRedis) {
+      writeEvent('noredis', { reason: 'redis unavailable, single-process bus only' });
+    }
+
+    // 心跳（注释行，浏览器/小程序都识别为空保活）。
+    // 关键：res.write 失败说明 socket 已断开（nginx idle timeout / 客户端硬断），但 req.on('close') 在
+    // 某些 nginx 配置下不会立刻触发，会留下 zombie listener + subscriber refcount。
+    // 一旦心跳写失败立刻 closeStream —— 在 SSE 上最终一致的 liveness 检测就是「写得过去吗」。
+    const hbTimer = setInterval(() => {
+      if (closed) return;
+      try {
+        res.write(`: ping ${Date.now()}\n\n`)
+      } catch (_e) {
+        closeStream();
+      }
+    }, 15000);
+    if (typeof hbTimer.unref === 'function') hbTimer.unref();
+
+    // 如果连接进来时所有 record 都已经是终态（页面刷新晚到），
+    // replaySnapshot 已经把历史事件丢回去，再补一个 done 让客户端立刻断。
+    if (terminalSet.size >= allRecordIdSet.size) {
+      // 给 replaySnapshot 一点时间走完
+      setImmediate(() => {
+        if (closed) return;
+        // 兜底：snapshot 过期 / Redis down → seenKeys 是空（一条 state 都没发出去）。
+        // 此时直接「done」对客户端是死局（hello 之后没有任何 state 就 done 了，UI 空白）。
+        // 从 DB 的 record.structured 合成一个 completed state，让客户端能恢复显示。
+        const seenAny = seenKeys.size > 0;
+        if (!seenAny) {
+          for (const rid of recordIds) {
+            const rec = ownedById.get(String(rid));
+            if (!rec) continue;
+            const status = rec.status;
+            const structured = rec.structured || {};
+            if (status === 'completed' && structured && structured.entities) {
+              writeEvent('state', {
+                recordId: String(rid),
+                stage: 'completed',
+                progress: 100,
+                ts: Date.now(),
+                result: {
+                  entities: structured.entities,
+                  text: structured.text || '',
+                  provider: (structured.ocrMeta && structured.ocrMeta.provider) || 'unknown',
+                  confidence: typeof structured.confidence === 'number' ? structured.confidence : 0.5
+                }
+              });
+            } else if (status === 'error') {
+              writeEvent('state', {
+                recordId: String(rid),
+                stage: 'error',
+                progress: null,
+                ts: Date.now(),
+                errorMsg: (structured && structured.error) || '解析失败'
+              });
+            }
+          }
+        }
+        writeEvent('done', { reason: 'all_terminal_at_open' });
+        closeStream();
+      });
+    }
+
+    // close/error 监听已在 subscribe 之前挂；此处无需再重复。
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadMiddleware,
   uploadMiddlewareBatch,
@@ -871,6 +1067,7 @@ module.exports = {
   handleUploadBatch,
   getParseStatus,
   getParseStatusBatch,
+  getParseStream,
   getTimeline,
   getRecords,
   getRecordDetail,

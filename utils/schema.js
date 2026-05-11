@@ -149,7 +149,7 @@ const FIELD_SCHEMAS = [
     group: 'treatment',
     type: 'number',
     required: false,
-    aliases: ['lineOfTherapy', 'therapyLine', 'treatmentLines', '治疗线数']
+    aliases: ['lineOfTherapy', 'therapyLine', 'treatmentLine', 'treatmentLines', '治疗线数']
   },
   {
     key: 'previousTreatments',
@@ -158,7 +158,7 @@ const FIELD_SCHEMAS = [
     type: 'text',
     required: false,
     hint: '例如：奥希替尼后进展，后续含铂化疗',
-    aliases: ['previousTreatments', 'treatment', 'treatmentHistory', '既往治疗']
+    aliases: ['previousTreatments', 'treatment', 'priorTherapies', 'treatmentHistory', '既往治疗']
   },
   {
     key: 'surgeryHistory',
@@ -167,7 +167,7 @@ const FIELD_SCHEMAS = [
     type: 'select',
     required: false,
     options: YES_NO_UNKNOWN_OPTIONS,
-    aliases: ['surgeryHistory', 'surgery', '手术史']
+    aliases: ['surgeryHistory', 'surgicalHistory', 'surgery', '手术史']
   },
   {
     key: 'radiotherapyHistory',

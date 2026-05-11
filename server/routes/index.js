@@ -77,6 +77,8 @@ router.get('/medical/parse-status', authMiddleware, medicalController.getParseSt
 // Phase E.2：批量查询解析状态，单次请求最多 20 个 fileId
 router.get('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
 router.post('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
+// PRD-2026Q4 流式 OCR：SSE 端点，客户端边收边渲染（fallback 仍可用 parse-status-batch 轮询）
+router.get('/medical/parse-stream', authMiddleware, medicalController.getParseStream);
 // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（Doubao 优先，规则兜底）。
 // Phase E.6 / Review #3：每次调用都跑 LLM（~$0.05/call），强制走 uploadLimiter (30/h) 防被滥用。
 router.get('/medical/timeline', authMiddleware, uploadLimiter, medicalController.getTimeline);
