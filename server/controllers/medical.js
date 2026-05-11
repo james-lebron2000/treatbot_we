@@ -1017,26 +1017,39 @@ const enrichRecord = async (req, res, next) => {
     const bodyEntities = normalizeEntities(body.entities);
     const bodyStructuredEntities = normalizeEntities(body.structured?.entities);
 
+    // PRD-2026Q4 followup（"补全数据丢失"根因修复）：
+    //   客户端 (pages/upload, pages/manualEntry) 历来传 **扁平** parsedData
+    //   —— 41 个字段全在 body 顶层，没有 body.entities 包装。
+    //   旧版只硬编码读 diagnosis/stage/geneMutation/treatment 4 个 key，
+    //   其余 37 个（age/ecog/pathologyType/targetLesion/pdL1Status/lab values/...）
+    //   全部静默丢弃，导致用户「填了 → toast 已保存 → 病历详情里却没了」。
+    //   修法：除已知 meta key（entities / structured / unknownFields / id 之类）
+    //   外，body 顶层所有 key 都视为 entity 补全；优先级在 nested 之上。
+    const ENRICH_META_KEYS = new Set([
+      'entities',
+      'structured',
+      'unknownFields',
+      'id',
+      'recordId',
+      'fileId'
+    ]);
+    const bodyFlatEntities = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (ENRICH_META_KEYS.has(key) || value === undefined) {
+        continue;
+      }
+      bodyFlatEntities[key] = value;
+    }
+    // gene_mutation → geneMutation alias 保持与旧行为一致（schema 用 geneMutation 而 server 列名是 gene_mutation）。
+    if (bodyFlatEntities.gene_mutation !== undefined && bodyFlatEntities.geneMutation === undefined) {
+      bodyFlatEntities.geneMutation = bodyFlatEntities.gene_mutation;
+    }
+
     const patchEntities = {
       ...bodyStructuredEntities,
-      ...bodyEntities
+      ...bodyEntities,
+      ...bodyFlatEntities
     };
-
-    if (body.diagnosis !== undefined) {
-      patchEntities.diagnosis = body.diagnosis;
-    }
-    if (body.stage !== undefined) {
-      patchEntities.stage = body.stage;
-    }
-    if (body.geneMutation !== undefined) {
-      patchEntities.geneMutation = body.geneMutation;
-    }
-    if (body.gene_mutation !== undefined) {
-      patchEntities.geneMutation = body.gene_mutation;
-    }
-    if (body.treatment !== undefined) {
-      patchEntities.treatment = body.treatment;
-    }
 
     const mergedEntities = {
       ...currentEntities,
