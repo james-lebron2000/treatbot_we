@@ -1,6 +1,7 @@
 {
   "description": "项目配置文件",
-  "_ignore_note": "packOptions.ignore 决定 DevTools『上传』时哪些文件不打包进微信后台。任何含 PII / 密钥 / 服务器逻辑的目录与文件都必须在此屏蔽 —— 一旦上传，就被微信审核团队和后续所有体验版都看得见。",
+  "_ignore_note": "packOptions.ignore 决定 DevTools『上传/预览』时哪些文件不打包进微信后台。任何含 PII / 密钥 / 服务器逻辑的目录与文件都必须在此屏蔽 —— 一旦上传，就被微信审核团队和后续所有体验版都看得见。注：shared/tokens 是 build 时源数据，运行时只引用生成产物 styles/tokens.wxss，所以不打包；shared/copy 与 shared/schemas 在运行时被 utils 引用，必须保留。",
+  "_size_note": "uploadWithSourceMap 必须保持 false：开启后会把 .js.map 一起上传，主包通常翻 2-3 倍，极易超过 2MB 主包限制（曾出现 4294KB 报错）。如确需在线 sourcemap 调试，请先用云开发抽到独立调试包，不要回填到主项目。",
   "packOptions": {
     "ignore": [
       { "value": "server", "type": "folder" },
@@ -41,6 +42,8 @@
       { "value": "snapshots", "type": "folder" },
       { "value": "__snapshots__", "type": "folder" },
       { "value": "__pycache__", "type": "folder" },
+
+      { "value": "shared/tokens", "type": "folder" },
 
       { "value": "md", "type": "suffix" },
       { "value": "sh", "type": "suffix" },
@@ -99,7 +102,7 @@
     "uglifyFileName": false,
     "checkInvalidKey": true,
     "checkSiteMap": true,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "compileHotReLoad": false,
     "lazyloadPlaceholderEnable": false,
     "useMultiFrameRuntime": true,

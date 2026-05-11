@@ -71,73 +71,111 @@ const submit = async () => {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: #f5f7fb;
-  padding: 20px;
+  background: var(--bg-soft);
+  padding: var(--s-6);
+  font-family: var(--font-sans);
 }
 
 .login-panel {
   width: min(420px, 100%);
-  border: 1px solid #dde3ed;
-  border-radius: 8px;
-  background: #fff;
-  padding: 24px;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  padding: var(--s-8) var(--s-6);
+  box-shadow: var(--shadow-2);
 }
 
 .eyebrow {
-  margin: 0 0 6px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
+  margin: 0 0 var(--s-2);
+  color: var(--brand);
+  font-size: var(--fs-caption);
+  font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: var(--fs-display);
+  color: var(--text);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
 
 .hint {
-  margin: 8px 0 20px;
-  color: #6b7280;
-  font-size: 13px;
-  line-height: 1.6;
+  margin: var(--s-2) 0 var(--s-6);
+  color: var(--text-dim);
+  font-size: var(--fs-callout);
+  line-height: var(--lh-relaxed);
 }
 
 form,
 label {
   display: grid;
-  gap: 8px;
+  gap: var(--s-2);
 }
 
 form {
-  gap: 14px;
+  gap: var(--s-4);
 }
 
 label {
-  color: #374151;
-  font-size: 13px;
+  color: var(--text-dim);
+  font-size: var(--fs-callout);
+  font-weight: 500;
+}
+
+label input {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px var(--s-3);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  color: var(--text);
+  background: var(--bg);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+label input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--shadow-focus);
 }
 
 .primary-btn {
   width: 100%;
   border: none;
-  border-radius: 8px;
-  background: #2563eb;
+  border-radius: var(--r-md);
+  background: var(--brand);
   color: #fff;
   cursor: pointer;
-  padding: 11px 16px;
-  font-size: 15px;
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  transition: background 150ms ease, transform 100ms ease;
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.primary-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .primary-btn:disabled {
-  background: #aab7cf;
+  background: var(--text-muted);
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .error-msg {
-  margin: 14px 0 0;
-  color: #b91c1c;
-  font-size: 13px;
+  margin: var(--s-4) 0 0;
+  color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid var(--red);
+  border-radius: var(--r-md);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--fs-caption);
 }
 </style>

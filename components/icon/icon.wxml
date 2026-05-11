@@ -1,0 +1,8 @@
+<!--components/icon/icon.wxml — Q3 视觉对齐：跨端共用 Lucide 图标语言
+  用法：<icon name="pill" color="brand" size="40" />
+  size 单位 rpx，可选 color: brand|brand-hover|mint|red|amber|lilac|text|text-dim|text-muted|white
+  Host 是 inline-flex view，便于父级套 badge box（如 .upload-hero-icon 的圆角背景）。
+-->
+<view wx:if="{{src}}" class="icon-host" style="width:{{size}}rpx;height:{{size}}rpx;">
+  <image class="icon-img" src="{{src}}" mode="aspectFit" />
+</view>

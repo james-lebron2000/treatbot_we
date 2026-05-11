@@ -1,15 +1,17 @@
 <view class="container">
-  <!-- PRD-2026Q3 §U5：首屏期望管理 banner —— 30 秒了解我们；点过「我看过了」就不再展示 -->
-  <view class="onboarding-banner" wx:if="{{!onboardingSeen}}">
+  <!-- PRD-2026Q3 §U5：首屏期望管理 banner —— 30 秒了解我们；点过「我看过了」就不再展示
+       Q3 视觉对齐 §E.1：用 .card baseline + .pill-brand eyebrow + Lucide 图标徽章 -->
+  <view class="onboarding-banner card" wx:if="{{!onboardingSeen}}">
     <view class="onboarding-banner-head">
-      <text class="onboarding-banner-title">{{ onboarding.title }}</text>
+      <text class="pill pill-brand">30 秒了解</text>
       <view class="onboarding-banner-toggle" bindtap="toggleOnboarding">
-        <text>{{ onboardingExpanded ? '收起 ▴' : '展开 ▾' }}</text>
+        <text>{{ onboardingExpanded ? '收起' : '展开' }}</text>
       </view>
     </view>
+    <text class="onboarding-banner-title">{{ onboarding.title }}</text>
     <view class="onboarding-banner-body" wx:if="{{onboardingExpanded}}">
       <view class="onboarding-step" wx:for="{{onboarding.steps}}" wx:key="icon">
-        <view class="onboarding-step-icon">{{item.icon}}</view>
+        <view class="onboarding-step-icon">{{index + 1}}</view>
         <view class="onboarding-step-body">
           <text class="onboarding-step-title">{{item.title}}</text>
           <text class="onboarding-step-text">{{item.body}}</text>
@@ -17,92 +19,102 @@
       </view>
       <view class="onboarding-promise">{{onboarding.promise}}</view>
       <view class="onboarding-actions">
-        <view class="onboarding-cta-primary" bindtap="dismissOnboarding">{{onboarding.ctaPrimary}}</view>
-        <view class="onboarding-cta-secondary" bindtap="dismissOnboarding">{{onboarding.ctaSecondary}}</view>
+        <view class="btn btn-primary onboarding-cta-primary" bindtap="dismissOnboarding">{{onboarding.ctaPrimary}}</view>
+        <view class="btn btn-ghost onboarding-cta-secondary" bindtap="dismissOnboarding">{{onboarding.ctaSecondary}}</view>
       </view>
     </view>
   </view>
 
-  <view class="hero-section">
+  <!-- Q3 视觉对齐 §E.1：Hero 改用 .hero-shell（Landing 同款 radial 浅光） -->
+  <view class="hero-section hero-shell">
     <view class="hero-content">
-      <text class="hero-eyebrow">数愈健康 · 用药全程免费</text>
+      <!-- PRD-2026Q2 §P0-6：用 view 而非 text 承载 pill 样式
+           （text 元素在 WeChat 下 padding/inline-flex 表现不稳，导致 pill 高度被压扁） -->
+      <view class="hero-eyebrow"><text>数愈健康 · 用药全程免费</text></view>
       <text class="hero-title">让每一份病历</text>
-      <text class="hero-title">都找到能用的新药</text>
+      <text class="hero-title">都找到<text class="accent">能用的新药</text></text>
       <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、找到能免费用上的新药。数据完全由您掌管。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
 
+  <!-- PRD-2026Q2 §P0-1：数字降为中性色（不抢主 CTA），第三格用 lock 图标 +
+       caption 出处替代「零」字（避免抽象、增强可信度）。 -->
   <view class="stats-section">
     <view class="stat-item">
       <text class="stat-number">5,000+</text>
       <text class="stat-label">在研新药</text>
+      <text class="stat-caption">来自 chinadrugtrials.org.cn</text>
     </view>
     <view class="stat-item">
       <text class="stat-number">10,000+</text>
       <text class="stat-label">已找到免费用药</text>
+      <text class="stat-caption">含三甲合作渠道</text>
     </view>
     <view class="stat-item">
-      <text class="stat-number">零</text>
-      <text class="stat-label">隐私数据留存</text>
+      <view class="stat-icon-wrap">
+        <icon name="lock" color="brand" size="64" />
+      </view>
+      <text class="stat-label">数据由您掌控</text>
+      <text class="stat-caption">个保法第 13 条第二款（二）项</text>
     </view>
   </view>
 
   <!-- PRD-2026Q3 §U5（迭代）：首页只保留一个明确的上传 CTA。
-       「我的病历」「找到的可能性」原本是 feature-grid 里的两张卡片，
-       但底部 tabBar 已经有同名入口（pages/records/records、pages/matches/matches），
-       重复出现反而让 0 医学基础病人产生「到底点哪个」的认知负担。
-       —— 删掉重复卡片，按钮文字简化为「开始」，描述/承诺信息全部摊到页面上。 -->
+       Q3 视觉对齐 §E.1：emoji 全替为 Lucide 图标；上传按钮走 .btn-primary。 -->
   <view class="feature-section">
     <view class="section-title">从这里开始</view>
     <view class="section-subtitle">一次上传，我们陪您走完「看懂病历 → 找到能用的新药」全程。</view>
 
-    <view class="upload-hero">
+    <view class="upload-hero card">
       <view class="upload-hero-info">
         <view class="upload-hero-line">
-          <text class="upload-hero-icon">📄</text>
+          <icon name="camera" color="brand" size="44" />
           <text class="upload-hero-text">拍照、相册或 PDF 都行 —— 看不清的报告也能认</text>
         </view>
         <view class="upload-hero-line">
-          <text class="upload-hero-icon">💊</text>
+          <icon name="pill" color="brand" size="44" />
           <text class="upload-hero-text">不到 2 分钟，您拿到一份能用的新药清单</text>
         </view>
         <view class="upload-hero-line">
-          <text class="upload-hero-icon">🔒</text>
+          <icon name="lock" color="brand" size="44" />
           <text class="upload-hero-text">数据完全由您掌管，随时可带走或删除</text>
         </view>
       </view>
-      <view class="upload-hero-button" bindtap="goToUpload" hover-class="upload-hero-button-hover">
-        <text class="upload-hero-button-text">开始</text>
+      <view class="btn btn-primary upload-hero-button" bindtap="goToUpload">
+        <text class="upload-hero-button-text">开始上传</text>
+        <icon name="arrow-right" color="white" size="32" />
       </view>
     </view>
 
     <!-- PRD-2026Q3 §U7：先看个例子。0 医学基础家属面对一个空首页常常不敢点
          上传——给一个「无门槛预览」入口，看完一份完整的样例病历 + 新药匹配再决定。 -->
     <view class="demo-entry" bindtap="goToDemo" hover-class="demo-entry-hover">
-      <view class="demo-entry-icon">▶</view>
+      <view class="demo-entry-icon">
+        <icon name="lightbulb" color="brand" size="36" />
+      </view>
       <view class="demo-entry-info">
         <text class="demo-entry-title">先看个例子</text>
         <text class="demo-entry-desc">看一份完整的样例病历 + 找到的新药，了解上传后能拿到什么</text>
       </view>
-      <view class="demo-entry-arrow">›</view>
+      <icon name="chevron-right" color="text-muted" size="32" />
     </view>
   </view>
 
-  <view class="processing-card" wx:if="{{activeParseTask}}">
-    <view class="processing-card-head">
-      <text class="processing-card-title">我们正在看懂这份病历</text>
-      <text class="processing-card-progress">{{activeParseTask.progress}}%</text>
-    </view>
-    <text class="processing-card-text">{{activeParseTask.text}}</text>
-    <view class="processing-card-bar">
-      <view class="processing-card-fill" style="width: {{activeParseTask.progress}}%;"></view>
-    </view>
-    <view class="processing-card-actions">
+  <!-- PRD-2026Q2 §P1-3：抽公共 <parse-progress-banner>，actions slot 注入两个文本链接。 -->
+  <parse-progress-banner
+    wx:if="{{activeParseTask}}"
+    title="我们正在看懂这份病历"
+    progress="{{activeParseTask.progress}}"
+    statusText="{{activeParseTask.text}}"
+    showActions="{{true}}"
+    class="processing-card-wrap"
+  >
+    <view slot="actions" class="processing-card-actions-slot">
       <text class="processing-card-link" bindtap="goToRecords">看病历</text>
       <text class="processing-card-link" bindtap="goToMatches">看新药</text>
     </view>
-  </view>
+  </parse-progress-banner>
 
   <view class="loading" wx:if="{{loading}}">
     <text>马上好…</text>
@@ -119,10 +131,13 @@
     </view>
 
     <view class="match-list">
-      <view class="match-item" wx:for="{{recentMatches}}" wx:key="id" bindtap="viewMatchDetail" data-id="{{item.id}}">
+      <view class="match-item card" wx:for="{{recentMatches}}" wx:key="id" bindtap="viewMatchDetail" data-id="{{item.id}}">
         <view class="match-header">
           <view class="match-title-group">
-            <text class="match-drug-name">💊 {{item.drugName}}<text class="match-drug-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            <view class="match-drug-name">
+              <icon name="pill" color="lilac" size="32" />
+              <text class="match-drug-text">{{item.drugName}}<text class="match-drug-code" wx:if="{{item.drugCode}}"> / {{item.drugCode}}</text></text>
+            </view>
             <text class="match-drug-class" wx:if="{{item.drugClass}}">{{item.drugClass}}</text>
           </view>
           <view class="match-score">
@@ -131,9 +146,9 @@
           </view>
         </view>
         <view class="match-tags">
-          <text class="tag tag-free">免费用药</text>
-          <text class="tag tag-primary">{{item.phase}}</text>
-          <text class="tag tag-success">{{item.location}}</text>
+          <text class="pill pill-mint">免费用药</text>
+          <text class="pill pill-brand">{{item.phase}}</text>
+          <text class="pill pill-amber">{{item.location}}</text>
         </view>
         <view class="match-info">
           <text class="info-item">主治：{{item.indication}}</text>
@@ -144,23 +159,27 @@
     </view>
   </view>
 
-  <view class="process-section">
+  <view class="process-section card">
     <view class="section-title">三步就能用</view>
     <view class="section-subtitle">几分钟走完全程，每一步都说人话，不留任何数据。</view>
     <view class="process-steps">
-      <view class="step">
+      <view class="process-step">
         <view class="step-number">1</view>
         <text class="step-title">交给我们</text>
         <text class="step-desc">拍照或选病历</text>
       </view>
-      <view class="step-arrow">→</view>
-      <view class="step">
+      <view class="step-arrow">
+        <icon name="arrow-right" color="text-muted" size="28" />
+      </view>
+      <view class="process-step">
         <view class="step-number">2</view>
         <text class="step-title">帮您看懂</text>
         <text class="step-desc">找到关键信息</text>
       </view>
-      <view class="step-arrow">→</view>
-      <view class="step">
+      <view class="step-arrow">
+        <icon name="arrow-right" color="text-muted" size="28" />
+      </view>
+      <view class="process-step">
         <view class="step-number">3</view>
         <text class="step-title">找到新药</text>
         <text class="step-desc">对接药企/医院</text>
@@ -169,7 +188,7 @@
   </view>
 
   <view class="safety-tips">
-    <text class="tips-icon">🔒</text>
+    <icon name="shield-check" color="mint" size="32" />
     <text class="tips-text">隐私零存储 · 信息只在您账户里 · 随时可带走或删除</text>
   </view>
 

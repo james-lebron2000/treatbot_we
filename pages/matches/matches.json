@@ -1,6 +1,8 @@
 {
   "usingComponents": {
-    "help-fab": "/components/help-fab/help-fab"
+    "help-fab": "/components/help-fab/help-fab",
+    "icon": "/components/icon/icon",
+    "parse-progress-banner": "/components/parse-progress-banner/parse-progress-banner"
   },
   "enablePullDownRefresh": true,
   "navigationBarTitleText": "试验匹配"

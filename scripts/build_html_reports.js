@@ -28,6 +28,10 @@ const RAW_TEXTS = path.join(OUT_ROOT, 'raw_texts');
 
 const profiles = JSON.parse(fs.readFileSync(path.join(OUT_ROOT, 'patient_profiles.json'), 'utf8'));
 const matchesArr = JSON.parse(fs.readFileSync(path.join(OUT_ROOT, 'match_results.json'), 'utf8'));
+const metadataPath = path.join(OUT_ROOT, 'run_metadata.json');
+const runMetadata = fs.existsSync(metadataPath)
+  ? JSON.parse(fs.readFileSync(metadataPath, 'utf8'))
+  : null;
 
 // ---------- id rename (cancer·line·4-letter-code) ----------
 
@@ -75,8 +79,23 @@ for (const p of profiles) {
 const matchesByOriginal = new Map(matchesArr.map(m => [m.profile.id, m]));
 const matchesById = new Map(profiles.map(p => [p.id, matchesByOriginal.get(p.originalId)]));
 
-const NOW = new Date();
-const GEN_TIME = NOW.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+const generatedAt = runMetadata?.generatedAt || new Date().toISOString();
+const GEN_TIME = generatedAt.replace('T', ' ').slice(0, 16) + ' UTC';
+const TRIAL_LIBRARY_COUNT = runMetadata?.trialLibrary?.normalizedCount || '—';
+
+function shortHash(value) {
+  return value ? String(value).slice(0, 12) : 'unknown';
+}
+
+function metadataLine() {
+  if (!runMetadata) {
+    return '未找到 run_metadata.json';
+  }
+  const trialHash = shortHash(runMetadata.trialLibrary?.sha256);
+  const engineVersion = runMetadata.engine?.version || 'unknown';
+  const engineHash = shortHash(runMetadata.engine?.matchEngineSha256);
+  return `试验库 ${runMetadata.trialLibrary?.normalizedCount ?? '—'} 条 · 库 hash ${trialHash} · 引擎 ${engineVersion} · 引擎 hash ${engineHash}`;
+}
 
 // ---------- helpers ----------
 
@@ -99,12 +118,15 @@ function escRaw(s) {
 }
 
 function safeId(id) {
-  // Keep Chinese characters; replace filesystem-problematic characters with '-'.
-  // Also replace · (middle dot) with - for extra portability.
-  return id
-    .replace(/·/g, '-')
+  // Use ASCII-only patient directory names so CI zip artifacts survive every unzip tool/locale.
+  const parts = String(id || '').split('·');
+  const code = (parts[parts.length - 1] || '').replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
+  if (code) return code;
+  return String(id || 'patient')
+    .replace(/[^\x00-\x7F]/g, '-')
     .replace(/[\s/\\?%*:|"<>]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'patient';
 }
 
 function ensureDir(p) {
@@ -375,7 +397,7 @@ function noticeBar() {
 function buildOverview() {
   // KPIs
   const nPatients = profiles.length;
-  const trialLib = 496;
+  const trialLib = TRIAL_LIBRARY_COUNT;
   const topScores = matchesArr.map(m => m.matches[0]?.score ?? 0);
   const nStrong = topScores.filter(s => s >= 60).length;
   const avgTop1 = Math.round(topScores.reduce((a, b) => a + b, 0) / topScores.length);
@@ -465,8 +487,8 @@ function buildOverview() {
 ${navBar('', '')}
 <section class="hero container">
   <h1>患者批量匹配概览</h1>
-  <div class="sub">16 位病人的病例摘要与可能适合的试验</div>
-  <div class="gen">生成时间 ${esc(GEN_TIME)}</div>
+  <div class="sub">${nPatients} 位病人的病例摘要与可能适合的试验</div>
+  <div class="gen">生成时间 ${esc(GEN_TIME)} · ${esc(metadataLine())}</div>
 </section>
 ${noticeBar()}
 
@@ -626,7 +648,7 @@ ${navBar('../../index.html', '← 返回总览')}
 <section class="hero container">
   <h1>病例档案与匹配试验</h1>
   <div class="sub">${esc(profile.id)}</div>
-  <div class="gen">生成时间 ${esc(GEN_TIME)}</div>
+  <div class="gen">生成时间 ${esc(GEN_TIME)} · ${esc(metadataLine())}</div>
 </section>
 ${noticeBar()}
 
@@ -660,7 +682,42 @@ function findRawText(profileId) {
   return null;
 }
 
+function findChrome() {
+  const explicit = process.env.CHROME_BIN || process.env.GOOGLE_CHROME_BIN;
+  const candidates = [
+    explicit,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser'
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    try {
+      const resolved = execFileSync('which', [name], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim();
+      if (resolved) {
+        return resolved;
+      }
+    } catch (_) {
+      // Try the next candidate.
+    }
+  }
+
+  return null;
+}
+
 function main() {
+  fs.rmSync(HTML_ROOT, { recursive: true, force: true });
   ensureDir(HTML_ROOT);
   ensureDir(ASSETS);
   ensureDir(PATIENTS);
@@ -709,11 +766,17 @@ function main() {
     console.log('  ✓ ' + profile.id + ' → ' + sid + (rawHit ? ` (raw: ${rawHit.file})` : ' (no raw)'));
   }
 
+  if (process.env.REPORT_SKIP_PDF === '1') {
+    console.log('\nSkipping PDF generation because REPORT_SKIP_PDF=1');
+    console.log('\nDone. Output at:', HTML_ROOT);
+    return;
+  }
+
   // generate PDFs via Chrome headless, serially
-  const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  const hasChrome = fs.existsSync(CHROME);
-  if (!hasChrome) {
-    console.error('Chrome not found at', CHROME, '— skipping PDF step. Run weasyprint fallback separately.');
+  const CHROME = findChrome();
+  if (!CHROME) {
+    console.error('Chrome not found — skipping PDF step. Set CHROME_BIN or install Chrome/Chromium.');
+    console.log('\nDone. Output at:', HTML_ROOT);
     return;
   }
 

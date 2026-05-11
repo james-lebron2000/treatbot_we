@@ -9,18 +9,24 @@
     </view>
   </view>
 
+  <!-- PRD-2026Q2 §P1-5：每个 stat 加 8 字内说明。
+       旧版只有数字 + 短标签，「高度匹配 / 值得优先申请」语义重叠，家属看不懂区别。
+       新版 caption 给出具体判定依据。 -->
   <view class="match-stats">
     <view class="stat-item">
       <text class="stat-value">{{matches.length}}</text>
       <text class="stat-label">找到的新药</text>
+      <text class="match-stat-caption">含已申请 {{appliedCount}} 种</text>
     </view>
     <view class="stat-item">
       <text class="stat-value">{{highMatches}}</text>
       <text class="stat-label">高度匹配</text>
+      <text class="match-stat-caption">诊断+基因都对得上</text>
     </view>
     <view class="stat-item">
       <text class="stat-value">{{readyMatches}}</text>
       <text class="stat-label">值得优先申请</text>
+      <text class="match-stat-caption">入组评估通过</text>
     </view>
   </view>
 
@@ -32,16 +38,15 @@
     <text>暂时没有高度匹配的新药 —— 我们放宽了标准，下面是还值得一看的候选。</text>
   </view>
 
-  <view class="processing-banner" wx:if="{{activeParseTask}}">
-    <view class="processing-banner-head">
-      <text class="processing-banner-title">病历还在帮您看懂中</text>
-      <text class="processing-banner-progress">{{activeParseTask.progress}}%</text>
-    </view>
-    <text class="processing-banner-text">{{activeParseTask.text}}</text>
-    <view class="processing-banner-bar">
-      <view class="processing-banner-fill" style="width: {{activeParseTask.progress}}%;"></view>
-    </view>
-  </view>
+  <!-- PRD-2026Q2 §P1-3：从内嵌 markup 改为 <parse-progress-banner> 共用组件，
+       与 index 同位进度条视觉一致；改一处生效两处。 -->
+  <parse-progress-banner
+    wx:if="{{activeParseTask}}"
+    title="病历还在帮您看懂中"
+    progress="{{activeParseTask.progress}}"
+    statusText="{{activeParseTask.text}}"
+    class="processing-banner-wrap"
+  />
 
   <view class="supplement-tip" wx:if="{{!loading && needSupplement > 0}}">
     <text class="supplement-text">再补一点病历信息，{{needSupplement}} 种新药会评得更准。</text>
@@ -63,13 +68,18 @@
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
       <!-- U4：人话理由 —— 置顶一行解释「为什么这种新药适合」，不取代下面的 score / decisionHint。 -->
-      <view class="human-reason">✓ 为什么适合：{{item.humanReason}}</view>
+      <view class="human-reason">
+        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+        <text class="human-reason-text">为什么适合：{{item.humanReason}}</text>
+      </view>
 
-      <!-- 货架卡片 header：药品名 = 主标题；类别/剂型 = 副标题；评分 = 右侧大徽章 -->
+      <!-- 货架卡片 header：药品名 = 主标题；类别/剂型 = 副标题；评分 = 右侧大徽章
+           PRD-2026Q2 §T2-1：「看详情/收起」从 score-badge 下方移到右上角 chevron。
+           score-badge 是核心信息，不该被「看详情」文字打断。 -->
       <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
         <view class="match-content">
           <view class="drug-headline">
-            <text class="drug-icon">💊</text>
+            <icon name="pill" color="lilac" size="36" />
             <text class="drug-name">{{item.drugName}}</text>
             <text class="drug-code" wx:if="{{item.drugCode}}">/ {{item.drugCode}}</text>
           </view>
@@ -80,11 +90,13 @@
           </view>
         </view>
         <view class="match-header-right">
+          <view class="match-expand-indicator {{item.expanded ? 'expanded' : ''}}" aria-label="{{item.expanded ? '收起' : '看详情'}}">
+            <icon name="chevron-right" color="text-dim" size="32" />
+          </view>
           <view class="match-score-badge">
             <text class="score">{{item.score}}%</text>
             <text class="label">匹配度</text>
           </view>
-          <text class="match-expand-indicator">{{item.expanded ? '收起' : '看详情'}}</text>
         </view>
       </view>
 
@@ -125,7 +137,7 @@
         <view class="detail-panel" wx:if="{{item.inclusion.length > 0}}">
           <text class="detail-panel-title">能用这种新药的条件</text>
           <view class="criteria-item inclusion" wx:for="{{item.inclusion}}" wx:for-item="criterion" wx:key="index">
-            <text class="criteria-icon">+</text>
+            <icon name="check" color="mint" size="28" strokeWidth="2.5" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
@@ -133,22 +145,80 @@
         <view class="detail-panel" wx:if="{{item.exclusion.length > 0}}">
           <text class="detail-panel-title">不能用这种新药的情况</text>
           <view class="criteria-item exclusion" wx:for="{{item.exclusion}}" wx:for-item="criterion" wx:key="index">
-            <text class="criteria-icon">-</text>
+            <icon name="x-circle" color="red" size="28" strokeWidth="2" />
             <text class="criteria-text">{{criterion}}</text>
           </view>
         </view>
 
         <view class="match-actions">
           <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看用药详情</button>
-          <button class="btn btn-primary" catchtap="applyTrial" data-id="{{item.id}}">📞 申请免费用药</button>
+          <button class="btn btn-primary apply-btn" catchtap="applyTrial" data-id="{{item.id}}">
+            <icon name="phone-call" color="white" size="32" />
+            <text class="apply-btn-text">申请免费用药</text>
+          </button>
         </view>
       </view>
     </view>
   </view>
 
+  <!-- PRD-2026Q2 §P0-4：0 结果不能死循环「再找一次」。
+       三步兜底：订阅通知（被动等）/ 拨打客服（主动找人）/ 覆盖范围说明（缓解疑虑）。 -->
   <view class="empty-state" wx:if="{{!loading && !errorMessage && matches.length === 0}}">
-    <text>目前没找到完全贴合的新药 —— 这不代表没有，我们每周更新新药库。</text>
-    <button class="btn btn-default mt-30" bindtap="loadMatches">再找一次</button>
+    <view class="empty-hero">
+      <icon name="search" color="text-muted" size="120" strokeWidth="1.5" />
+      <view class="empty-title">{{emptyCopy.title}}</view>
+      <view class="empty-subtitle">{{emptyCopy.subtitle}}</view>
+    </view>
+
+    <view class="empty-cards">
+      <!-- Card 1：订阅通知 -->
+      <view class="empty-card empty-card-notify">
+        <view class="empty-card-head">
+          <view class="empty-card-icon empty-card-icon-brand">
+            <icon name="{{emptyCopy.notify.icon}}" color="brand" size="40" />
+          </view>
+          <view class="empty-card-title">{{emptyCopy.notify.title}}</view>
+        </view>
+        <view class="empty-card-desc">{{emptyCopy.notify.desc}}</view>
+        <button class="btn btn-ghost empty-card-btn" bindtap="notifyOnNewMatch">
+          {{emptyCopy.notify.cta}}
+        </button>
+      </view>
+
+      <!-- Card 2：拨打客服 -->
+      <view class="empty-card empty-card-contact">
+        <view class="empty-card-head">
+          <view class="empty-card-icon empty-card-icon-mint">
+            <icon name="{{emptyCopy.contact.icon}}" color="mint" size="40" />
+          </view>
+          <view class="empty-card-title">{{emptyCopy.contact.title}}</view>
+        </view>
+        <view class="empty-card-desc">{{emptyCopy.contact.desc}}</view>
+        <view class="empty-card-phone">
+          <text class="empty-card-phone-num">{{emptyCopy.contact.phone}}</text>
+          <text class="empty-card-phone-hours">{{emptyCopy.contact.hours}}</text>
+        </view>
+        <button class="btn btn-primary empty-card-btn" bindtap="callSupport">
+          <icon name="phone-call" color="white" size="32" />
+          <text>{{emptyCopy.contact.cta}}</text>
+        </button>
+      </view>
+
+      <!-- Card 3：覆盖范围说明 -->
+      <view class="empty-card empty-card-coverage">
+        <view class="empty-card-head">
+          <view class="empty-card-icon empty-card-icon-lilac">
+            <icon name="{{emptyCopy.coverage.icon}}" color="lilac" size="40" />
+          </view>
+          <view class="empty-card-title">{{coverageTitle}}</view>
+        </view>
+        <view class="empty-card-desc">{{emptyCopy.coverage.desc}}</view>
+        <view class="empty-card-secondary" bindtap="loadMatches">
+          <icon name="search" color="text-dim" size="28" />
+          <text>再找一次</text>
+        </view>
+      </view>
+    </view>
   </view>
   <help-fab />
 </view>

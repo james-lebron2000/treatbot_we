@@ -3,18 +3,18 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 25277177296
-- **Commit**: `e774c4574a43b501a805576ee351b5f2424c70ef`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25277177296
-- **Generated at**: 2026-05-03T11:18:54Z
+- **Run**: 25633557945
+- **Commit**: `30aa874d2d160e0ebbc37019159276b44056a27f`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25633557945
+- **Generated at**: 2026-05-10T16:51:16Z
 
 ---
 
 ```
-===== Deploy 20260503-185735 — SHA=e774c4574a43b501a805576ee351b5f2424c70ef =====
+===== Deploy 20260511-002103 — SHA=30aa874d2d160e0ebbc37019159276b44056a27f =====
 ::group::A) Backend container replace
-  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef
-e774c4574a43b501a805576ee351b5f2424c70ef: Pulling from james-lebron2000/treatbot-api
+  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:30aa874d2d160e0ebbc37019159276b44056a27f
+30aa874d2d160e0ebbc37019159276b44056a27f: Pulling from james-lebron2000/treatbot-api
 61320b01ae5e: Already exists
 b98d3ae1ab80: Already exists
 b1831021e35a: Already exists
@@ -23,330 +23,221 @@ c768ab8cba73: Already exists
 6d2412f3a32b: Already exists
 119af53f9bd1: Already exists
 2ae2f065ee82: Already exists
-430a90b7bf92: Pulling fs layer
-f1a21063dfb3: Pulling fs layer
-502bd8ac40cc: Pulling fs layer
-f1a21063dfb3: Verifying Checksum
-f1a21063dfb3: Download complete
-430a90b7bf92: Verifying Checksum
-430a90b7bf92: Download complete
-430a90b7bf92: Pull complete
-f1a21063dfb3: Pull complete
-502bd8ac40cc: Verifying Checksum
-502bd8ac40cc: Download complete
-502bd8ac40cc: Pull complete
-Digest: sha256:2db57ce7ac65f15e51b4d69061322002059e5816d7b3441e47f9f7cd8dfaa61d
-Status: Downloaded newer image for ghcr.io/james-lebron2000/treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef
-ghcr.io/james-lebron2000/treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef
-  ✓ GHCR image pulled and tagged as treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef
-  ✓ Image treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef ready in local daemon
-  ✓ Old image 'treatbot-api:ca074f374239b889b29a7f8bef0942dcec5365f7' backed up as treatbot-api:rollback-20260503-185735
-  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260503-185735.env (51 vars)
-treatbot-api
-  Cleaning old prev containers:
-treatbot-api-prev-20260502-021941
-  ✓ Old container renamed to treatbot-api-prev-20260503-185735
-  OCR env override:
-    ✓ KIMI_API_KEY (len=51)
-    ✓ KIMI_VISION_MODEL=moonshot-v1-128k-vision-preview
-    ✓ ARK_API_KEY (len=46)
-    ✓ ARK_VISION_MODEL=doubao-seed-1-6-vision-250815
-    ✓ ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-    ✓ ARK_TIMEOUT_MS=180000
-    ✓ OCR_PROVIDER=auto
-    ✓ OCR_QUEUE_CONCURRENCY=2
-    ✓ OCR_PDF_VISION_MAX_PAGES=3
-    ✓ OCR_PDF_VISION_DPI=150
-  Admin login override:
-    ✓ ADMIN_LOGIN_USERNAME=treatbot_admin
-    ✓ ADMIN_LOGIN_KEY_HASH configured (sha256)
-    ✓ ADMIN_LOGIN_TOKEN_TTL=3600
-    ✓ ADMIN_LOGIN_CAN_REVEAL=true
-0fcb5bc820c90b72ff5927c66839af67da4c258c14f673c3232e150506e520b2
-  ✓ Healthy after 3s
-  ✅ Backend deployed. Rollback cmd:
-     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260503-185735 treatbot-api && docker start treatbot-api
-::endgroup::
-::group::A.6) DB migrations (idempotent)
-  ✅ Migrations done
-::endgroup::
-::group::B) Web frontend promote
-  ✓ Tarball extracted (2 entries)
-  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260503-185735
-  ✅ Web promoted to /var/www/treatbot-web (index.html OK, base=/treatbot/)
-::endgroup::
-::group::C) Reverse-proxy discovery (read-only)
-  ===== 1. systemctl status (nginx vs caddy) =====
-    nginx: active=inactive
-unknown, enabled=disabled
-unknown
-    caddy: active=active, enabled=enabled
-  ===== 2. Listening sockets (top relevant ports) =====
-    State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                                  
-    LISTEN 0      4096         0.0.0.0:3000      0.0.0.0:*    users:(("docker-proxy",pid=548260,fd=4))                
-    LISTEN 0      4096       127.0.0.1:2019      0.0.0.0:*    users:(("caddy",pid=303834,fd=6))                       
-    LISTEN 0      4096               *:443             *:*    users:(("caddy",pid=303834,fd=7))                       
-    LISTEN 0      4096               *:80              *:*    users:(("caddy",pid=303834,fd=11))                      
-    LISTEN 0      511                *:5101            *:*    users:(("MainThread",pid=3237127,fd=21))                
-    LISTEN 0      4096            [::]:3000         [::]:*    users:(("docker-proxy",pid=548266,fd=4))                
-  ===== 3. Docker containers + ports =====
-    NAMES            IMAGE                                                   PORTS                                                  STATUS
-    treatbot-api     treatbot-api:e774c4574a43b501a805576ee351b5f2424c70ef   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 6 seconds (healthy)
-    treatbot-redis   redis:7-alpine                                          0.0.0.0:6379->6379/tcp, :::6379->6379/tcp              Up 2 months (healthy)
-    treatbot-mysql   mysql:8.0                                               0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp   Up 2 months (healthy)
-  ===== 4. /etc/caddy/Caddyfile (full) =====
-    # TreatBot Caddy 反代配置（唯一源 — deploy.yml 会把本文件 scp 到 /etc/caddy/Caddyfile）
-    #
-    # 修复：原线上配置中 `/api/demo/*` 缺了 `path` 关键字，导致 Caddy 把它当成未知 matcher 名丢弃，
-    # 请求落到 `handle /api/*` catch-all → :5101（Python 服务）→ 返回 404
-    # {"success":false,"message":"Not found","code":"not_found"}。
-    # 本文件把它补回 `path /api/demo/*` 并保留原 `/api/demo/*` 作为 bare path shorthand 不再使用。
-    #
-    # 路由拓扑（所有请求经 Caddy:443 → 下游）：
-    #   /                         → 127.0.0.1:3000  (Express static landing page)
-    #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
-    #   /h5 → redir /h5/quick-match
-    #   /h5/*                     → 127.0.0.1:3100  (Next.js)
-    #   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
-    #   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
-    #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
-    #   /api/track, /api/me/*     → 127.0.0.1:3000  (Express, treatbot-api)
-    #   /api/*  (所有其他)         → 127.0.0.1:5101  (遗留 Python 服务)
-    #
-    # 历史记录：
-    #   2026-04-29 补 /api/track + /api/me/* —— 此前漏配导致小程序 §B.2 漏斗埋点
-    #   与 §A.2 合规自助接口在生产环境直接 404（落到了 Python :5101 catch-all）。
-    #   /demo-assets/*, /uploads/* → static via Express :3000
-    
-    {
-        # Caddy admin API 只绑 localhost（防止腾讯云告警误判未授权接口暴露）
-        admin 127.0.0.1:2019
-    }
-    
-    inseq.top, www.inseq.top {
-        tls /etc/caddy/ssl/cert.pem /etc/caddy/ssl/key.pem
-    
-        header {
-            Strict-Transport-Security "max-age=31536000; includeSubDomains"
-            X-Frame-Options "DENY"
-            X-Content-Type-Options "nosniff"
-            -Server
-        }
-    
-        # Vue SPA（/treatbot/*）
-        handle_path /treatbot/* {
-            root * /var/www/treatbot-web
-            try_files {path} /index.html
-            file_server
-            header Cache-Control "no-store"
-        }
-    
-        # H5（Next.js @ 3100）
-        redir /h5 /h5/quick-match
-        handle /h5/* {
-            reverse_proxy 127.0.0.1:3100 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    
-        # 所有 treatbot-api（Express @ 3000）的专有 API（在 /api/* catch-all 之前）
-        @treatbot_api {
-            path /api/demo/*
-            path /api/auth/h5-login /api/auth/send-code /api/auth/weapp-login /api/auth/refresh /api/auth/bind-phone /api/auth/profile
-            path /api/medical/* /api/matches /api/matches/* /api/trials /api/trials/*
-            path /api/applications /api/applications/*
-            path /api/admin/* /api/cro/* /api/user/*
-            # Q3-红线 §B.2 漏斗埋点 + §A.2 合规自助：补齐这两组才算端到端可用
-            path /api/track /api/me/*
-        }
-        handle @treatbot_api {
-            reverse_proxy 127.0.0.1:3000 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    
-        # 遗留 Python 服务（其他所有 /api/*）
-        handle /api/* {
-            reverse_proxy 127.0.0.1:5101 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    
-        # Express 静态：上传文件
-        handle_path /uploads/* {
-            root * /opt/treatbot/server/uploads
-            file_server
-        }
-    
-        # 默认兜底（landing page、/demo-assets/、/health 等都由 Express :3000 处理）
-        handle {
-            reverse_proxy 127.0.0.1:3000 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    }
-  ===== 5. /etc/caddy/conf.d/* (if any) =====
-    (no conf.d)
-  ===== 6. /etc/nginx layout =====
-    /etc/nginx/sites-available/treatbot
-    /etc/nginx/sites-available/default
-    /etc/nginx/sites-available/treatbot.bak_20260310_232501
-    /etc/nginx/sites-available/treatbot.bak.20260418-031812
-    /etc/nginx/fastcgi.conf
-    /etc/nginx/nginx.conf
-    /etc/nginx/snippets/fastcgi-php.conf
-    /etc/nginx/snippets/snakeoil.conf
-    /etc/nginx/sites-enabled/treatbot
-    /etc/nginx/sites-enabled/treatbot.bak
-  ===== 7. /etc/nginx/nginx.conf =====
-    user www-data;
-    worker_processes auto;
-    pid /run/nginx.pid;
-    error_log /var/log/nginx/error.log;
-    include /etc/nginx/modules-enabled/*.conf;
-    
-    events {
-    	worker_connections 768;
-    	# multi_accept on;
-    }
-    
-    http {
-    
-    	##
-    	# Basic Settings
-    	##
-    
-    	sendfile on;
-    	tcp_nopush on;
-    	types_hash_max_size 2048;
-    	# server_tokens off;
-    
-    	# server_names_hash_bucket_size 64;
-    	# server_name_in_redirect off;
-    
-    	include /etc/nginx/mime.types;
-    	default_type application/octet-stream;
-    
-    	##
-    	# SSL Settings
-    	##
-    
-    	ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; # Dropping SSLv3, ref: POODLE
-    	ssl_prefer_server_ciphers on;
-    
-    	##
-    	# Logging Settings
-    	##
-    
-    	access_log /var/log/nginx/access.log;
-    
-    	##
-    	# Gzip Settings
-    	##
-    
-    	gzip on;
-    
-    	# gzip_vary on;
-    	# gzip_proxied any;
-    	# gzip_comp_level 6;
-    	# gzip_buffers 16 8k;
-    	# gzip_http_version 1.1;
-    	# gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-    
-    	##
-    	# Virtual Host Configs
-    	##
-    
-    	include /etc/nginx/conf.d/*.conf;
-    	include /etc/nginx/sites-enabled/*;
-    }
-    
-    
-    #mail {
-    #	# See sample authentication script at:
-    #	# http://wiki.nginx.org/ImapAuthenticateWithApachePhpScript
-    #
-    #	# auth_http localhost/auth.php;
-    #	# pop3_capabilities "TOP" "USER";
-    #	# imap_capabilities "IMAP4rev1" "UIDPLUS";
-    #
-    #	server {
-    #		listen     localhost:110;
-    #		protocol   pop3;
-    #		proxy      on;
-    #	}
-    #
-    #	server {
-    #		listen     localhost:143;
-    #		protocol   imap;
-    #		proxy      on;
-    #	}
-    #}
-  ===== 8. /etc/nginx/sites-enabled/* (full content of each) =====
-    --- /etc/nginx/sites-enabled/treatbot (-> /etc/nginx/sites-enabled/treatbot) ---
-      server {
-          listen 443 ssl;
-          server_name inseq.top www.inseq.top;
-      
-          client_max_body_size 30m;
-      
-          ssl_certificate /etc/nginx/ssl/inseq.top/www.inseq.top.pem;
-          ssl_certificate_key /etc/nginx/ssl/inseq.top/www.inseq.top.key;
-          include /etc/letsencrypt/options-ssl-nginx.conf;
-          ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-      
-          # treatbot 前端（Vue SPA）
-          location /treatbot/ {
-              alias /var/www/treatbot-web/;
-              index index.html;
-              try_files $uri $uri/ /treatbot/index.html;
-              add_header Cache-Control "no-store";
-          }
-      
-          # h5 前端（Next.js 3100）
-          location = /h5 {
-              return 302 /h5/quick-match;
-          }
-          location /h5/ {
-              proxy_pass http://127.0.0.1:3100;
-              proxy_http_version 1.1;
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              proxy_connect_timeout 300s;
-              proxy_send_timeout 300s;
-              proxy_read_timeout 300s;
-          }
-      
-          # ===== treatbot API (3000) =====
-          # treatbot 专有接口
-          location /api/auth/h5-login {
-              proxy_pass http://127.0.0.1:3000;
+e1002189350e: Pulling fs layer
+16a43b4094c8: Pulling fs layer
+4174cbaa6524: Pulling fs layer
+238c420461f6: Pulling fs layer
+16a43b4094c8: Waiting
+4174cbaa6524: Waiting
+238c420461f6: Waiting
+16a43b4094c8: Download complete
+4174cbaa6524: Verifying Checksum
+4174cbaa6524: Download complete
+e1002189350e: Verifying Checksum
+e1002189350e: Download complete
+e1002189350e: Pull complete
+16a43b4094c8: Pull complete
+4174cbaa6524: Pull complete
+238c420461f6: Retrying in 5 seconds
+238c420461f6: Retrying in 4 seconds
+238c420461f6: Retrying in 3 seconds
+238c420461f6: Retrying in 2 seconds
+238c420461f6: Retrying in 1 second
+238c420461f6: Retrying in 10 seconds
+238c420461f6: Retrying in 9 seconds
+238c420461f6: Retrying in 8 seconds
+238c420461f6: Retrying in 7 seconds
+238c420461f6: Retrying in 6 seconds
+238c420461f6: Retrying in 5 seconds
+238c420461f6: Retrying in 4 seconds
+238c420461f6: Retrying in 3 seconds
+238c420461f6: Retrying in 2 seconds
+238c420461f6: Retrying in 1 second
+context canceled
+  ⚠ GHCR pull failed or timed out; falling back to local build
+  ⚠ source tarball /tmp/server-src.tar.gz missing; checking tarball fallback
+  ❌ GHCR image unavailable and API tarball /tmp/treatbot-api.tar.gz is missing
+74c: Retrying in 9 seconds
+e2b6560b774c: Retrying in 8 seconds
+e2b6560b774c: Retrying in 7 seconds
+e2b6560b774c: Retrying in 6 seconds
+e2b6560b774c: Retrying in 5 seconds
+e2b6560b774c: Retrying in 4 seconds
+e2b6560b774c: Retrying in 3 seconds
+e2b6560b774c: Retrying in 2 seconds
+e2b6560b774c: Retrying in 1 second
+context canceled
+  ⚠ GHCR pull failed or timed out; falling back to local build
+  Building image locally from source tarball: /tmp/server-src.tar.gz
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.51kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1.6
+#2 DONE 0.8s
+
+#3 docker-image://docker.io/docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/library/node:18-bookworm-slim
+#4 DONE 0.4s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 380B done
+#5 DONE 0.0s
+
+#6 [deps 1/5] FROM docker.io/library/node:18-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e
+#6 DONE 0.0s
+
+#7 [deps 2/5] WORKDIR /app
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 7.36MB 0.3s done
+#8 DONE 0.3s
+
+#9 [runtime 3/8] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 0.997 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#9 2.083 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#9 2.471 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [48.0 kB]
+#9 3.181 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8792 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 0.755 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#10 1.346 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#10 1.757 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [48.0 kB]
+#10 2.109 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8792 kB]
+#10 ...
+
+#9 [runtime 3/8] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 315.4 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#9 316.1 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [303 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 326.2 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#10 326.4 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [303 kB]
+#10 ...
+
+#9 [runtime 3/8] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 330.3 Fetched 9357 kB in 5min 30s (28.4 kB/s)
+#9 330.3 Reading package lists...
+#9 330.8 Reading package lists...
+#9 331.4 Building dependency tree...
+#9 331.6 Reading state information...
+#9 331.8 The following additional packages will be installed:
+#9 331.8   ca-certificates fontconfig-config fonts-dejavu-core libbrotli1 libbsd0
+#9 331.8   libcairo2 libdeflate0 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#9 331.8   libjbig0 libjpeg62-turbo libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0
+#9 331.8   liblcms2-2 liblerc4 libncursesw6 libnsl2 libnspr4 libnss3 libopenjp2-7
+#9 331.8   libpixman-1-0 libpng16-16 libpoppler126 libpython3-stdlib
+#9 331.8   libpython3.11-minimal libpython3.11-stdlib libreadline8 libsqlite3-0 libssl3
+#9 331.8   libtiff6 libtirpc-common libtirpc3 libwebp7 libx11-6 libx11-data libxau6
+#9 331.8   libxcb-render0 libxcb-shm0 libxcb1 libxdmcp6 libxext6 libxrender1
+#9 331.8   media-types openssl python3-distutils python3-lib2to3 python3-minimal
+#9 331.8   python3-pkg-resources python3-setuptools python3-wheel python3.11
+#9 331.8   python3.11-minimal readline-common
+#9 331.8 Suggested packages:
+#9 331.8   krb5-doc krb5-user liblcms2-utils python3-doc python3-tk python3-venv
+#9 331.8   python-setuptools-doc python3.11-venv python3.11-doc binutils binfmt-support
+#9 331.8   readline-doc
+#9 331.8 Recommended packages:
+#9 331.8   krb5-locales libgpm2 poppler-data build-essential python3-dev
+#9 332.1 The following NEW packages will be installed:
+#9 332.1   ca-certificates fontconfig-config fonts-dejavu-core libbrotli1 libbsd0
+#9 332.1   libcairo2 libdeflate0 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#9 332.1   libjbig0 libjpeg62-turbo libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0
+#9 332.1   liblcms2-2 liblerc4 libncursesw6 libnsl2 libnspr4 libnss3 libopenjp2-7
+#9 332.1   libpixman-1-0 libpng16-16 libpoppler126 libpython3-stdlib
+#9 332.1   libpython3.11-minimal libpython3.11-stdlib libreadline8 libsqlite3-0 libssl3
+#9 332.1   libtiff6 libtirpc-common libtirpc3 libwebp7 libx11-6 libx11-data libxau6
+#9 332.1   libxcb-render0 libxcb-shm0 libxcb1 libxdmcp6 libxext6 libxrender1
+#9 332.1   media-types openssl poppler-utils python3 python3-distutils python3-lib2to3
+#9 332.1   python3-minimal python3-pip python3-pkg-resources python3-setuptools
+#9 332.1   python3-wheel python3.11 python3.11-minimal readline-common
+#9 332.6 0 upgraded, 60 newly installed, 0 to remove and 23 not upgraded.
+#9 332.6 Need to get 23.7 MB of archives.
+#9 332.6 After this operation, 74.7 MB of additional disk space will be used.
+#9 332.6 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.19-1~deb12u2 [2032 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 337.6 Fetched 9357 kB in 5min 37s (27.7 kB/s)
+#10 337.6 Reading package lists...
+#10 338.3 Reading package lists...
+#10 338.9 Building dependency tree...
+#10 339.0 Reading state information...
+#10 339.2 The following additional packages will be installed:
+#10 339.2   binutils binutils-common binutils-x86-64-linux-gnu bzip2 cpp cpp-12 dpkg-dev
+#10 339.2   g++ g++-12 gcc gcc-12 libasan8 libatomic1 libbinutils libc-bin libc-dev-bin
+#10 339.2   libc6 libc6-dev libcc1-0 libcrypt-dev libctf-nobfd0 libctf0 libdpkg-perl
+#10 339.2   libexpat1 libgcc-12-dev libgdbm-compat4 libgdbm6 libgomp1 libgprofng0
+#10 339.2   libgssapi-krb5-2 libisl23 libitm1 libjansson4 libk5crypto3 libkeyutils1
+#10 339.2   libkrb5-3 libkrb5support0 liblsan0 libmpc3 libmpfr6 libncursesw6 libnsl-dev
+#10 339.2   libnsl2 libperl5.36 libpython3-stdlib libpython3.11-minimal
+#10 339.2   libpython3.11-stdlib libquadmath0 libreadline8 libsqlite3-0 libssl3
+#10 339.2   libstdc++-12-dev libtirpc-common libtirpc-dev libtirpc3 libtsan2 libubsan1
+#10 339.2   linux-libc-dev make media-types patch perl perl-base perl-modules-5.36
+#10 339.2   python3-minimal python3.11 python3.11-minimal readline-common rpcsvc-proto
+#10 339.2   xz-utils
+#10 339.2 Suggested packages:
+#10 339.2   binutils-doc bzip2-doc cpp-doc gcc-12-locales cpp-12-doc debian-keyring
+#10 339.2   g++-multilib g++-12-multilib gcc-12-doc gcc-multilib manpages-dev autoconf
+#10 339.2   automake libtool flex bison gdb gcc-doc gcc-12-multilib glibc-doc libc-l10n
+#10 339.2   locales libnss-nis libnss-nisplus gnupg | sq | sqop | pgpainless-cli
+#10 339.2   sensible-utils git bzr gdbm-l10n krb5-doc krb5-user libstdc++-12-doc
+#10 339.2   make-doc ed diffutils-doc perl-doc libterm-readline-gnu-perl
+#10 339.2   | libterm-readline-perl-perl libtap-harness-archive-perl python3-doc
+#10 339.2   python3-tk python3-venv python3.11-venv python3.11-doc binfmt-support
+#10 339.2   readline-doc
+#10 339.2 Recommended packages:
+#10 339.2   fakeroot gnupg | sq | sqop | pgpainless-cli libalgorithm-merge-perl manpages
+#10 339.2   manpages-dev libc-devtools libfile-fcntllock-perl liblocale-gettext-perl
+#10 339.2   krb5-locales libgpm2 netbase ca-certificates
+#10 339.5 The following NEW packages will be installed:
+#10 339.5   binutils binutils-common binutils-x86-64-linux-gnu build-essential bzip2 cpp
+#10 339.5   cpp-12 dpkg-dev g++ g++-12 gcc gcc-12 libasan8 libatomic1 libbinutils
+#10 339.5   libc-dev-bin libc6-dev libcc1-0 libcrypt-dev libctf-nobfd0 libctf0
+#10 339.5   libdpkg-perl libexpat1 libgcc-12-dev libgdbm-compat4 libgdbm6 libgomp1
+#10 339.5   libgprofng0 libgssapi-krb5-2 libisl23 libitm1 libjansson4 libk5crypto3
+#10 339.5   libkeyutils1 libkrb5-3 libkrb5support0 liblsan0 libmpc3 libmpfr6
+#10 339.5   libncursesw6 libnsl-dev libnsl2 libperl5.36 libpython3-stdlib
+#10 339.5   libpython3.11-minimal libpython3.11-stdlib libquadmath0 libreadline8
+#10 339.5   libsqlite3-0 libssl3 libstdc++-12-dev libtirpc-common libtirpc-dev libtirpc3
+#10 339.5   libtsan2 libubsan1 linux-libc-dev make media-types patch perl
+#10 339.5   perl-modules-5.36 python3 python3-minimal python3.11 python3.11-minimal
+#10 339.5   readline-common rpcsvc-proto xz-utils
+#10 339.5 The following packages will be upgraded:
+#10 339.5   libc-bin libc6 perl-base
+#10 339.9 3 upgraded, 69 newly installed, 0 to remove and 20 not upgraded.
+#10 339.9 Need to get 88.1 MB of archives.
+#10 339.9 After this operation, 348 MB of additional disk space will be used.
+#10 339.9 Get:1 http://deb.debian.org/debian bookworm/main amd64 perl-base amd64 5.36.0-7+deb12u3 [1608 kB]
+#10 442.5 Get:2 http://deb.debian.org/debian bookworm/main amd64 libc6 amd64 2.36-9+deb12u13 [2758 kB]
+#10 ...
+
+#9 [runtime 3/8] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 463.4 Get:2 http://deb.debian.org/debian bookworm/main amd64 libpython3.11-minimal amd64 3.11.2-6+deb12u6 [817 kB]
+#9 535.2 Get:3 http://deb.debian.org/debian bookworm/main amd64 libexpat1 amd64 2.5.0-1+deb12u2 [99.9 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 540.7 Get:3 http://deb.debian.org/debian bookworm/main amd64 libc-bin amd64 2.36-9+deb12u13 [609 kB]
+#10 ...
+
+#9 [runtime 3/8] RUN apt-get update  && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5'  && apt-get purge -y python3-pip  && apt-get autoremove -y  && rm -rf /var/lib/apt/lists/* /root/.cache
+#9 544.4 Get:4 http://deb.debian.org/debian bookworm/main amd64 python3.11-minimal amd64 3.11.2-6+deb12u6 [2064 kB]
+#9 ...
+
+#10 [deps 3/5] RUN apt-get update  && apt-get install -y --no-install-recommends python3 build-essential  && rm -rf /var/lib/apt/lists/*
+#10 568.9 Get:4 http://deb.debian.org/debian bookworm/main amd64 perl-modules-5.36 all 5.36.0-7+deb12u3 [2815 kB]
+#10 653.9 Get:5 http://deb.debian.org/debian bookworm/main amd64 libgdbm6 amd64 1.23-3 [72.2 kB]
+#10 656.8 Get:6 http://deb.debian.org/debian bookworm/main amd64 libgdbm-compat4 amd64 1.23-3 [48.2 kB]
+#10 661.2 Get:7 http://deb.debian.org/debian bookworm/main amd64 libperl5.36 amd64 5.36.0-7+deb12u3 [4196 kB]
+ttp://127.0.0.1:3000;
               proxy_http_version 1.1;
               proxy_set_header Host $host;
               proxy_set_header X-Real-IP $remote_addr;
@@ -761,33 +652,33 @@ unknown
     drwxr-xr-x 14 root   root   4096 Feb 26 16:26 ..
     drwxr-xr-x  2 root   root   4096 Mar 25 16:46 clinicalmatch-home
     drwxr-xr-x  2 root   root   4096 Feb 26 16:26 html
-    drwxr-xr-x  3 ubuntu ubuntu 4096 May  3 18:54 treatbot-web
+    drwxr-xr-x  3 ubuntu ubuntu 4096 May 11 00:16 treatbot-web
   ===== 11. Backup nginx tree (NOT removing) =====
-    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260503-185735.tar.gz (16K)
+    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260510-235811.tar.gz (16K)
   ===== 12. Backup current Caddyfile =====
-    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260503-185735
+    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260510-235811
 ::group::C.5) Apply new Caddyfile + retire nginx
   ✓ New Caddyfile uploaded (114 lines)
-  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260503-185735
+  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260510-235811
   --- diff (current → new) ---
   --- end diff ---
   --- validate (rc=0) ---
-    {"level":"info","ts":1777807118.5369394,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
-    {"level":"warn","ts":1777807118.5382872,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5383043,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5386248,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.53864,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5387354,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5387466,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5390887,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1777807118.5391042,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"info","ts":1777807118.54164,"msg":"adapted config to JSON","adapter":"caddyfile"}
-    {"level":"warn","ts":1777807118.5416558,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":23}
-    {"level":"info","ts":1777807118.5424125,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc0000f7a80"}
-    {"level":"info","ts":1777807118.5604088,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1777807118.5604467,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1777807118.5604537,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
-    {"level":"info","ts":1777807118.561743,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc0000f7a80"}
+    {"level":"info","ts":1778430113.7910204,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
+    {"level":"warn","ts":1778430113.7939367,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.793968,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.794348,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.7959015,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.796017,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.7960346,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.7962232,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778430113.7962418,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"info","ts":1778430113.7973433,"msg":"adapted config to JSON","adapter":"caddyfile"}
+    {"level":"warn","ts":1778430113.7981849,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":23}
+    {"level":"info","ts":1778430113.799927,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc00056a880"}
+    {"level":"info","ts":1778430113.8029819,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1778430113.8030083,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1778430113.8030221,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+    {"level":"info","ts":1778430113.8045778,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc00056a880"}
     Valid configuration
   --- end validate ---
   ✅ Caddy swapped + reloaded
@@ -798,12 +689,12 @@ unknown
   nginx: active=inactive
 unknown enabled=disabled
 unknown
-  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260503-185735.tar.gz
+  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260510-235811.tar.gz
   ✓ nginx already disabled
 ::endgroup::
 ::group::D) Smoke tests
   /health (container):
-{"status":"ok","timestamp":"2026-05-03T11:18:41.825Z","version":"1.0.0","environment":"production"}
+{"status":"ok","timestamp":"2026-05-10T16:21:57.043Z","version":"1.0.0","environment":"production"}
   / (via nginx):
     HTTP 200
   /api/demo/samples (via nginx):
@@ -814,5 +705,5 @@ unknown
     HTTP 200
 ::endgroup::
 Total reclaimed space: 0B
-===== ✅ Deploy 20260503-185735 done =====
+===== ✅ Deploy 20260510-235811 done =====
 ```

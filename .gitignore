@@ -55,6 +55,7 @@ jspm_packages/
 .env.development
 .env.test
 .env.production
+.env.bak*
 
 # parcel-bundler cache
 .cache
@@ -147,6 +148,7 @@ $RECYCLE.BIN/
 
 # Docker
 .dockerignore
+!/.dockerignore
 docker-compose.override.yml
 
 # Database
@@ -168,6 +170,9 @@ temp/
 dist/
 build/
 out/
+
+# Generated report artifacts
+scripts/output/
 
 # Uploads
 uploads/

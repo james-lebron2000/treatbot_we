@@ -89,12 +89,14 @@ describe('editResult contract', () => {
     )
   })
 
-  test('Case B: gapDirty=true → 调 enrich(fileId, parsedData) + 清当条匹配缓存 + 重置 dirty', async () => {
+  test('Case B: gapDirty=true → 调 enrich(currentRecordId, parsedData) + 清当条匹配缓存 + 重置 dirty', async () => {
+    // 注意：editResult 与 startMatching 语义对齐 —— 都用 currentRecordId = recordId || fileId
+    // 在测试 fixture 里 recordId='rec-001' 优先，所以两个 mock 都收到 'rec-001'
     const ctx = buildCtx({ gapDirty: true })
 
     await pageOptions.editResult.call(ctx)
 
-    expect(api.enrichMedicalRecord).toHaveBeenCalledWith('fid-001', expect.any(Object))
+    expect(api.enrichMedicalRecord).toHaveBeenCalledWith('rec-001', expect.any(Object))
     expect(parseTask.clearCachedMatches).toHaveBeenCalledWith('rec-001')
     expect(ctx.data.gapDirty).toBe(false)
   })
@@ -116,12 +118,12 @@ describe('editResult contract', () => {
 })
 
 describe('startMatching contract', () => {
-  test('Case D: gapDirty=true → 调 enrich + 清匹配缓存 + 跳转 matches', async () => {
+  test('Case D: gapDirty=true → 调 enrich(currentRecordId) + 清匹配缓存 + 跳转 matches', async () => {
     const ctx = buildCtx({ gapDirty: true })
 
     await pageOptions.startMatching.call(ctx)
 
-    expect(api.enrichMedicalRecord).toHaveBeenCalledWith('fid-001', expect.any(Object))
+    expect(api.enrichMedicalRecord).toHaveBeenCalledWith('rec-001', expect.any(Object))
     expect(parseTask.clearCachedMatches).toHaveBeenCalledWith('rec-001')
     expect(wxMock.switchTab).toHaveBeenCalledWith({ url: '/pages/matches/matches' })
   })

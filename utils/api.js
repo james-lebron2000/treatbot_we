@@ -777,6 +777,33 @@ const softDeleteMedicalRecord = (id) =>
 
 // ==================== 病历相关 API ====================
 
+// Plan §Phase 2.1：客户端直传 COS（用户最痛点的解药）
+//   - fetchUploadSts(params) → GET /api/medical/upload-sts?count=&originalNames=&types=
+//   - finalizeUpload(payload) → POST /api/medical/upload-finalize
+// 与 uploadMedicalRecord (multipart) 双轨并存：cosDirectUploader 拿到 mode='local' 或
+// 任何不可恢复错误时回落到老路径，前端无需感知。
+const fetchUploadSts = (params = {}) => {
+  const safeParams = {
+    count: params.count,
+    originalNames: Array.isArray(params.originalNames)
+      ? params.originalNames.join(',')
+      : params.originalNames,
+    types: Array.isArray(params.types) ? params.types.join(',') : params.types
+  }
+  return request({
+    url: `/api/medical/upload-sts${buildQueryString(safeParams)}`,
+    method: 'GET'
+  })
+}
+
+const finalizeUpload = (payload = {}) =>
+  request({
+    url: '/api/medical/upload-finalize',
+    method: 'POST',
+    data: { files: Array.isArray(payload.files) ? payload.files : [] },
+    timeout: 30000
+  })
+
 const uploadMedicalRecord = async (params) => {
   const res = await uploadFile({
     url: '/api/medical/upload',
@@ -1450,6 +1477,9 @@ module.exports = {
   changeMyPassword,
   // PRD-2026Q2 §3.5：病历软删除
   softDeleteMedicalRecord,
+  // Plan §Phase 2.1：客户端直传 COS
+  fetchUploadSts,
+  finalizeUpload,
   uploadMedicalRecord,
   getParseStatus,
   // Phase E.2/E.3：批量上传 + 批量轮询 + 时间线

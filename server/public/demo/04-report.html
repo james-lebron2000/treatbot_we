@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>数愈健康 · 路演演示 4/5 · 病历摘要</title>
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./_shared.css">
+  <style>
+    .report-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: var(--s-4);
+    }
+    @media (max-width: 760px) { .report-grid { grid-template-columns: 1fr; } }
+
+    .summary-hero {
+      background: linear-gradient(145deg, #16344b 0%, #1f4e5f 60%, #2f6f75 100%);
+      color: #fff;
+      border-radius: var(--r-lg);
+      padding: var(--s-6);
+      box-shadow: var(--shadow-2);
+    }
+    .summary-hero .label {
+      font-size: var(--fs-caption);
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.75);
+    }
+    .summary-hero .diagnosis {
+      font-size: var(--fs-title);
+      font-weight: 700;
+      line-height: var(--lh-tight);
+      margin: var(--s-2) 0 var(--s-3);
+    }
+    .summary-hero .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--s-2);
+      margin-top: var(--s-4);
+    }
+    .summary-hero .pill {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: var(--s-1) var(--s-3);
+      border-radius: var(--r-pill);
+      font-size: var(--fs-caption);
+      font-weight: 600;
+    }
+    .completeness {
+      display: flex;
+      align-items: center;
+      gap: var(--s-3);
+      margin-top: var(--s-6);
+    }
+    .completeness-bar {
+      flex: 1;
+      height: 8px;
+      background: rgba(255,255,255,0.18);
+      border-radius: var(--r-pill);
+      overflow: hidden;
+    }
+    .completeness-fill {
+      height: 100%;
+      width: 86%;
+      background: linear-gradient(90deg, #34d399, var(--mint));
+      border-radius: var(--r-pill);
+    }
+    .completeness-value { font-weight: 700; }
+
+    .kv-card {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: var(--s-6);
+      box-shadow: var(--shadow-1);
+    }
+    .kv-card h3 {
+      margin: 0 0 var(--s-4);
+      font-size: var(--fs-subtitle);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .kv-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--s-3);
+    }
+    .kv {
+      background: var(--bg-soft);
+      border-radius: var(--r-md);
+      padding: var(--s-3);
+    }
+    .kv-label { font-size: var(--fs-caption); color: var(--text-dim); display: block; margin-bottom: var(--s-1); }
+    .kv-value { font-size: var(--fs-callout); font-weight: 600; color: var(--text); }
+
+    .gene-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+    .gene-chip {
+      background: var(--mint-soft);
+      color: var(--mint-text);
+      padding: var(--s-1) var(--s-3);
+      border-radius: var(--r-pill);
+      font-size: var(--fs-caption);
+      font-weight: 600;
+    }
+
+    .lab-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: var(--s-3) var(--s-4);
+      background: var(--bg-soft);
+      border-radius: var(--r-md);
+      margin-bottom: var(--s-2);
+    }
+    .lab-name { font-size: var(--fs-callout); color: var(--text-dim); }
+    .lab-value { font-size: var(--fs-callout); font-weight: 700; color: var(--text); }
+    .lab-value.high { color: var(--amber); }
+    .lab-value.low { color: var(--red); }
+
+    .missing-banner {
+      display: flex;
+      align-items: center;
+      gap: var(--s-3);
+      background: var(--amber-soft);
+      color: var(--amber-text);
+      padding: var(--s-3) var(--s-4);
+      border-radius: var(--r-md);
+      margin-top: var(--s-4);
+      font-size: var(--fs-caption);
+    }
+    .missing-banner button {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid currentColor;
+      color: inherit;
+      padding: var(--s-1) var(--s-3);
+      border-radius: var(--r-sm);
+      font-weight: 600;
+      font-size: var(--fs-caption);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <div class="demo-topbar">
+      <span class="demo-brand">
+        <span class="demo-brand-mark"></span>
+        数愈健康
+      </span>
+      <span class="demo-badge">DEMO · 4 / 5</span>
+    </div>
+
+    <nav class="demo-steps" aria-label="演示进度">
+      <div class="demo-step done"><span class="demo-step-dot">✓</span><span class="demo-step-label">首屏</span></div>
+      <span class="demo-step-line done"></span>
+      <div class="demo-step done"><span class="demo-step-dot">✓</span><span class="demo-step-label">上传</span></div>
+      <span class="demo-step-line done"></span>
+      <div class="demo-step done"><span class="demo-step-dot">✓</span><span class="demo-step-label">解析</span></div>
+      <span class="demo-step-line done"></span>
+      <div class="demo-step active"><span class="demo-step-dot">4</span><span class="demo-step-label">报告</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">5</span><span class="demo-step-label">匹配</span></div>
+    </nav>
+
+    <section class="demo-hero demo-fade-in">
+      <span class="demo-eyebrow">第 4 步</span>
+      <h1 class="demo-title">病历摘要 · <span class="accent">15 秒读完</span></h1>
+      <p class="demo-sub">关键诊断、分期、基因、用药、化验关键值，一屏看完。</p>
+    </section>
+
+    <div class="report-grid">
+      <div class="summary-hero">
+        <span class="label">主要诊断</span>
+        <h2 class="diagnosis">非小细胞肺癌（NSCLC） · 腺癌 · IV 期</h2>
+        <p style="margin: 0; color: rgba(255, 255, 255, 0.85); font-size: var(--fs-callout); line-height: var(--lh-relaxed);">
+          女 · 64 岁 · 2024-11 初诊。EGFR L858R 突变阳性，已接受奥希替尼一线治疗 9 个月，近期影像提示进展。
+        </p>
+        <div class="meta-row">
+          <span class="pill">ECOG 1</span>
+          <span class="pill">PD-L1 35%</span>
+          <span class="pill">脑转移（已 SRT）</span>
+        </div>
+
+        <div class="completeness">
+          <span style="font-size: var(--fs-caption); color: rgba(255,255,255,0.75); flex-shrink:0;">病历完整度</span>
+          <div class="completeness-bar"><div class="completeness-fill"></div></div>
+          <span class="completeness-value">86%</span>
+        </div>
+
+        <div class="missing-banner" style="background: rgba(254, 243, 199, 0.18); color: #fde68a;">
+          缺一份 1 周内的肝肾功能化验，会影响 2 个试验入组判断
+          <button type="button" onclick="alert('演示模式：补传化验单按钮')">补传化验单</button>
+        </div>
+      </div>
+
+      <div class="kv-card">
+        <h3>分子病理</h3>
+        <div class="kv-grid">
+          <div class="kv">
+            <span class="kv-label">驱动基因</span>
+            <span class="kv-value">EGFR L858R</span>
+          </div>
+          <div class="kv">
+            <span class="kv-label">耐药突变</span>
+            <span class="kv-value">T790M（－）</span>
+          </div>
+          <div class="kv">
+            <span class="kv-label">PD-L1 (TPS)</span>
+            <span class="kv-value">35%</span>
+          </div>
+          <div class="kv">
+            <span class="kv-label">TMB</span>
+            <span class="kv-value">8.2 muts/Mb</span>
+          </div>
+        </div>
+        <h3 style="margin-top: var(--s-6);">合并基因变异</h3>
+        <div class="gene-row">
+          <span class="gene-chip">TP53 R273H</span>
+          <span class="gene-chip">CDKN2A LOSS</span>
+          <span class="gene-chip">RB1 wild-type</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="report-grid" style="margin-top: var(--s-4);">
+      <div class="kv-card">
+        <h3>治疗经过</h3>
+        <div class="lab-row">
+          <span class="lab-name">一线 · 奥希替尼 80mg qd</span>
+          <span class="lab-value">2024-12 → 2025-09</span>
+        </div>
+        <div class="lab-row">
+          <span class="lab-name">脑转移 · 立体定向放疗（SRT）</span>
+          <span class="lab-value">2025-04（4 灶）</span>
+        </div>
+        <div class="lab-row">
+          <span class="lab-name">2025-10 复查 · CT</span>
+          <span class="lab-value high">RECIST PD（新增 1 灶）</span>
+        </div>
+      </div>
+
+      <div class="kv-card">
+        <h3>关键化验（最近一次）</h3>
+        <div class="lab-row">
+          <span class="lab-name">血红蛋白 (g/L)</span>
+          <span class="lab-value">112</span>
+        </div>
+        <div class="lab-row">
+          <span class="lab-name">中性粒细胞 (×10⁹/L)</span>
+          <span class="lab-value">2.1</span>
+        </div>
+        <div class="lab-row">
+          <span class="lab-name">ALT (U/L)</span>
+          <span class="lab-value high">68 ↑</span>
+        </div>
+        <div class="lab-row">
+          <span class="lab-name">肌酐 (μmol/L)</span>
+          <span class="lab-value">82</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="demo-footer">
+      <span class="meta">演示模式 · 数据均为模拟，与真实病例无关</span>
+      <div class="demo-footer-nav">
+        <a href="./03-parsing.html" class="demo-btn secondary">上一步</a>
+        <a href="./05-match.html" class="demo-btn primary">下一步：试验匹配 →</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    if (new URLSearchParams(location.search).get('fullscreen') === '1') {
+      document.body.classList.add('fullscreen');
+    }
+  </script>
+</body>
+</html>

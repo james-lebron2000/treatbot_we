@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>数愈健康 · 路演演示 1/5 · 首屏</title>
+  <meta name="description" content="数愈健康路演演示第 1 屏：让每一份病历，都找到属于它的答案。">
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./_shared.css">
+</head>
+<body>
+  <div class="demo-shell">
+    <div class="demo-topbar">
+      <span class="demo-brand">
+        <span class="demo-brand-mark"></span>
+        数愈健康
+      </span>
+      <span class="demo-badge">DEMO · 1 / 5</span>
+    </div>
+
+    <nav class="demo-steps" aria-label="演示进度">
+      <div class="demo-step active"><span class="demo-step-dot">1</span><span class="demo-step-label">首屏</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">2</span><span class="demo-step-label">上传</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">3</span><span class="demo-step-label">解析</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">4</span><span class="demo-step-label">报告</span></div>
+      <span class="demo-step-line"></span>
+      <div class="demo-step"><span class="demo-step-dot">5</span><span class="demo-step-label">匹配</span></div>
+    </nav>
+
+    <section class="demo-hero demo-fade-in">
+      <span class="demo-eyebrow">面向晚期肿瘤患者与家属</span>
+      <h1 class="demo-title">让每一份病历，<br>都找到<span class="accent">属于它的答案</span></h1>
+      <p class="demo-sub">把病历放心交给我们 —— 一次上传，AI 帮您看懂关键指标，对接最新临床试验。数据完全由您掌管，随时可以删除。</p>
+
+      <div class="demo-cta-row">
+        <a href="./02-upload.html" class="demo-btn primary">体验上传流程</a>
+        <a href="./05-match.html" class="demo-btn ghost">直接看匹配结果</a>
+      </div>
+    </section>
+
+    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s-4);margin-top:var(--s-8);">
+      <div class="demo-card tinted-soft">
+        <span class="demo-pill brand">3 步上手</span>
+        <h3 style="margin-top:var(--s-3);">病历上传</h3>
+        <p>支持检查报告、CT 影像、病理报告等多种文件，本地不留痕。</p>
+      </div>
+      <div class="demo-card tinted-mint">
+        <span class="demo-pill mint">AI 辅助</span>
+        <h3 style="margin-top:var(--s-3);">智能解析</h3>
+        <p>15 秒内识别分期、基因、用药史，给出可读摘要与疑点提示。</p>
+      </div>
+      <div class="demo-card tinted-cream">
+        <span class="demo-pill amber">动态库</span>
+        <h3 style="margin-top:var(--s-3);">试验匹配</h3>
+        <p>对照 CSCO / NCCN / ESMO 与全国临床试验库，给出排序建议。</p>
+      </div>
+    </section>
+
+    <footer class="demo-footer">
+      <span class="meta">演示模式 · 数据均为模拟</span>
+      <div class="demo-footer-nav">
+        <a href="../landing/index.html" class="demo-btn secondary">回到 Landing</a>
+        <a href="./02-upload.html" class="demo-btn primary">下一步：上传 →</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // 投屏全屏模式：?fullscreen=1 时隐藏 topbar 与 body 滚动条，便于大屏沉浸演示
+    if (new URLSearchParams(location.search).get('fullscreen') === '1') {
+      document.body.classList.add('fullscreen');
+    }
+  </script>
+</body>
+</html>

@@ -7,6 +7,8 @@ const { track } = require('../../utils/track')
 // U4：把后端返回的英文/术语 reasons 翻译成普通人能读懂的一句话。
 // 共享文案已从 .json 迁到 .js（WeApp require 不识 .json）；详见 shared/copy/glossary.js。
 const glossary = require('../../shared/copy/glossary.js')
+// PRD-2026Q2 §P0-4：matches 场景文案字典（含 0 结果三步兜底文案）
+const matchesCopy = require('../../shared/copy/matches.js')
 // 阿里健康/美团买药货架风格：把研究包装成"药品" — 主标题展示通用名/代号。
 const { resolveDrug } = require('../../utils/drug-extractor')
 
@@ -66,7 +68,12 @@ Page({
     lowScoreMode: false,
     usingFallback: false,
     fallbackMessage: '',
-    activeParseTask: null
+    activeParseTask: null,
+    // PRD-2026Q2 §P0-4：0 结果三步兜底文案
+    emptyCopy: matchesCopy.empty,
+    coverageTitle: matchesCopy.empty.coverage.title.replace('{n}', matchesCopy.empty.coverage.defaultN),
+    // PRD-2026Q2 §P1-5：三 stat 区分判定依据 —— 已申请数从 trial.applied 累加
+    appliedCount: 0
   },
 
   decorateMatches(list = [], previousMatches = this.data.matches || []) {
@@ -191,12 +198,15 @@ Page({
       const highMatches = matches.filter((item) => item.score >= 80).length
       const readyMatches = matches.filter((item) => item.exclusionRisks.length === 0 && item.missingEvidence.length <= 2).length
       const needSupplement = matches.filter((item) => item.missingEvidence.length >= 3).length
+      // PRD-2026Q2 §P1-5：「找到的新药」caption「含已申请 X 种」
+      const appliedCount = matches.filter((item) => item.applied || item.applicationStatus).length
 
       this.setData({
         matches,
         highMatches,
         readyMatches,
         needSupplement,
+        appliedCount,
         lowScoreMode,
         loading: false,
         errorMessage: '',
@@ -296,6 +306,55 @@ Page({
     wx.navigateTo({
       url: '/pages/upload/upload'
     })
+  },
+
+  // PRD-2026Q2 §P0-4：0 结果三步兜底之一 —— 订阅通知
+  // 现阶段后端 /api/medical/notify-subscribe 还没就绪，先存本地 + 给 toast。
+  // 上线后改 await api.subscribeNotify({ recordId, phone }) 即可。
+  notifyOnNewMatch() {
+    const recordId = this.data.recordId
+    const existed = wx.getStorageSync('notifySubscribed') || {}
+    if (existed[recordId]) {
+      wx.showToast({ title: matchesCopy.notifyResult.duplicate, icon: 'none' })
+      return
+    }
+
+    // 让用户填手机号；在小程序里复用 wx.getUserProfile 流程会更复杂，
+    // 这里走一个简单的 prompt。后续接 wx.login + 真实接口再升级。
+    wx.showModal({
+      title: '留个手机号',
+      editable: true,
+      placeholderText: '11 位手机号',
+      confirmText: '订阅',
+      cancelText: '再想想',
+      success: (res) => {
+        if (!res.confirm) return
+        const phone = (res.content || '').trim()
+        if (!/^1\d{10}$/.test(phone)) {
+          wx.showToast({ title: '手机号好像不对', icon: 'none' })
+          return
+        }
+        // 本地存下，不上传服务器（避免在没有同意书的情况下传 PII）
+        existed[recordId] = { phone, ts: Date.now() }
+        wx.setStorageSync('notifySubscribed', existed)
+        wx.showToast({ title: matchesCopy.notifyResult.success, icon: 'success' })
+        try { track('notify_subscribed', { recordId }) } catch (e) { /* ignore */ }
+      }
+    })
+  },
+
+  // PRD-2026Q2 §P0-4：0 结果三步兜底之二 —— 拨打客服
+  callSupport() {
+    const phone = matchesCopy.empty.contact.phone
+    wx.makePhoneCall({
+      phoneNumber: phone,
+      fail: (err) => {
+        if (err && err.errMsg && err.errMsg.indexOf('cancel') === -1) {
+          wx.showToast({ title: `请手动拨打 ${phone}`, icon: 'none' })
+        }
+      }
+    })
+    try { track('support_called', { from: 'matches_empty' }) } catch (e) { /* ignore */ }
   },
 
   async onPullDownRefresh() {

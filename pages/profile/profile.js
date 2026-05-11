@@ -95,11 +95,19 @@ Page({
     wx.switchTab({ url: '/pages/matches/matches' })
   },
 
+  // PRD-2026Q2 §P0-8：「正在联络的」菜单项暂时下线（wxml 已注释）。
+  // 此函数保留：万一缓存版本仍能触发，给用户一个真实可拨的客服电话兜底。
   goToApplications() {
     wx.showModal({
-      title: '报名记录',
-      content: '可在匹配页面提交报名（姓名、疾病和可选手机号）。报名记录页面将在后续版本开放。',
-      showCancel: false
+      title: '我们正在帮您联络',
+      content: '研究团队会在 1-3 个工作日内电话联系您。\n如需立即咨询，请拨打客服 400-666-8899。',
+      confirmText: '拨打客服',
+      cancelText: '稍后再说',
+      success: (res) => {
+        if (res.confirm) {
+          wx.makePhoneCall({ phoneNumber: '400-666-8899' })
+        }
+      }
     })
   },
 
@@ -119,12 +127,10 @@ Page({
     })
   },
 
+  // PRD-2026Q2 §P0-2：从模糊的一句 modal 改为跳转到独立的隐私承诺页
+  // （5 张具体卡 + 客服可拨打）。
   showPrivacyPolicy() {
-    wx.showModal({
-      title: '隐私政策',
-      content: '我们仅在您授权范围内使用病历数据用于临床试验匹配。',
-      showCancel: false
-    })
+    wx.navigateTo({ url: '/pages/profile/privacy/privacy' })
   },
 
   // Q3-红线 §A.2：跳转「我的同意记录」页

@@ -1,4 +1,6 @@
 {
-  "usingComponents": {},
-  "navigationBarTitleText": "隐私政策"
+  "usingComponents": {
+    "icon": "/components/icon/icon"
+  },
+  "navigationBarTitleText": "您的数据由您掌控"
 }
