@@ -1202,14 +1202,10 @@ Page({
         if (completedCount > 0 && batchResult.mergedEntities) {
           // 把合并字段塞回 result 形态（与单文件 path 兼容）
           const mergedResult = {
+            ...(batchResult.mergedEntities || {}),
             id: batchResult.completedRecordIds[0] || this.data.fileId,
             recordId: batchResult.completedRecordIds[0] || this.data.fileId,
-            diagnosis: batchResult.mergedEntities.diagnosis || '',
-            stage: batchResult.mergedEntities.stage || '',
-            geneMutation: batchResult.mergedEntities.geneMutation || '',
-            treatment: batchResult.mergedEntities.treatment || '',
-            confidence: batchResult.mergedEntities.confidence || 0,
-            sourceRecordIds: batchResult.mergedEntities.sourceRecordIds || []
+            sourceRecordIds: batchResult.mergedEntities?.sourceRecordIds || []
           }
           this.pendingCompletedResult = mergedResult
           if (!this.completionHandled) {
@@ -1432,12 +1428,9 @@ Page({
       })
     } catch (e) { /* ignore */ }
 
-    const parsedData = {
-      diagnosis: result.diagnosis || '',
-      stage: result.stage || '',
-      geneMutation: result.geneMutation || '',
-      treatment: result.treatment || ''
-    }
+    // 转发整个 result —— applyParsedPresentation 下游的 normalizeStructuredRecord 按
+    // alias 解析全部 FIELD_SCHEMAS 字段；只挑 4 项会丢 age/ecog/pdL1/pathologyType 等 30+ 字段。
+    const parsedData = result || {}
 
     // Track C-2：先清掉上次 session 的初始 gap 总数（resetUploadSessionState 已经清，
     // 这里再保险一道，确保「同一份数据二次解析」不会用旧 baseline）。
