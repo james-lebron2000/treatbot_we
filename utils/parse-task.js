@@ -277,37 +277,44 @@ const mergeStructuredEntities = (entries) => {
     return null
   }
 
-  const merged = {
-    diagnosis: '',
-    stage: '',
-    geneMutation: '',
-    treatment: '',
-    confidence: 0,
-    sourceRecordIds: [],
-    erroredFileIds: errored.map((e) => e.fileId).filter(Boolean),
-    firstError: ''
-  }
+  // 起点是 schema 规范化的空骨架，覆盖 FIELD_SCHEMAS 全字段。
+  // 每条 entry 也走 normalize（alias 解析到 canonical key），逐字段做首条非空 wins —— 同一患者
+  // 多份病历期望大部分字段一致，不同份补字段不同时优先保留首条值。previousTreatments 走累加去重。
+  const merged = schema.normalizeStructuredRecord({})
   const treatments = []
+  let maxConfidence = 0
+  const sourceRecordIds = []
 
   completed.forEach((entry) => {
-    const r = entry.result || {}
-    if (!merged.diagnosis && r.diagnosis) merged.diagnosis = r.diagnosis
-    if (!merged.stage && r.stage) merged.stage = r.stage
-    if (!merged.geneMutation && r.geneMutation) merged.geneMutation = r.geneMutation
-    if (r.treatment) treatments.push(`${r.treatment}`)
-    if (typeof r.confidence === 'number' && r.confidence > merged.confidence) {
-      merged.confidence = r.confidence
+    const normalized = schema.normalizeStructuredRecord(entry.result || {})
+    Object.keys(normalized).forEach((key) => {
+      if (key === 'id' || key === 'matchCount' || key === 'uploadTime' || key === 'updatedAt') return
+      if (key === 'previousTreatments') return
+      if (merged[key] === '' && normalized[key] !== '' && normalized[key] !== null && normalized[key] !== undefined) {
+        merged[key] = normalized[key]
+      }
+    })
+    if (normalized.previousTreatments) treatments.push(`${normalized.previousTreatments}`)
+
+    const raw = entry.result || {}
+    if (typeof raw.confidence === 'number' && raw.confidence > maxConfidence) {
+      maxConfidence = raw.confidence
     }
-    if (entry.recordId) merged.sourceRecordIds.push(entry.recordId)
+    if (entry.recordId) sourceRecordIds.push(entry.recordId)
   })
 
-  // treatment 去重 + 合并
   if (treatments.length) {
     const uniq = Array.from(new Set(treatments.map((t) => t.trim()).filter(Boolean)))
-    merged.treatment = uniq.join('；')
+    merged.previousTreatments = uniq.join('；')
   }
 
-  // 抓首条失败的 errorMsg（用于上传页 toast / 模态展示）
+  merged.confidence = maxConfidence
+  merged.sourceRecordIds = sourceRecordIds
+  merged.erroredFileIds = errored.map((e) => e.fileId).filter(Boolean)
+  merged.firstError = ''
+  // 历史消费方按 mergedEntities.treatment 读取（previousTreatments 别名）；保留以免静默回归。
+  merged.treatment = merged.previousTreatments
+
   for (const e of errored) {
     if (e.errorMsg) {
       merged.firstError = e.errorMsg
@@ -315,7 +322,6 @@ const mergeStructuredEntities = (entries) => {
     }
   }
 
-  // 全部失败时返回 null（上传页走 handleParseFailure 路径），有任意一份完成就返回合并结果
   if (!completed.length) {
     return null
   }
