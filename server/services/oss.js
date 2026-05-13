@@ -189,7 +189,7 @@ const uploadStream = async (filePath, key, options = {}) => {
     throw new Error('uploadStream: filePath 必传');
   }
 
-  if (useLocalStorage) {
+  if (isLocalStorage()) {
     const normalizedKey = normalizeLocalKey(key);
     const fullPath = path.join(localUploadRoot, normalizedKey);
     await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
@@ -475,7 +475,7 @@ const deleteObject = (key) => deleteFile(key);
  * 返回 { exists, size } —— 不存在时不抛错，调用方按业务返回 404。
  */
 const headObject = async (key) => {
-  if (useLocalStorage) {
+  if (isLocalStorage()) {
     const normalizedKey = normalizeLocalKey(key);
     const fullPath = path.join(localUploadRoot, normalizedKey);
     try {
@@ -521,7 +521,7 @@ const headObject = async (key) => {
 const getDirectUploadInfo = async (userId, fileSpecs = []) => {
   const safeSpecs = Array.isArray(fileSpecs) && fileSpecs.length > 0 ? fileSpecs : [{ originalName: 'file.bin', mimeType: null }];
 
-  if (useLocalStorage) {
+  if (isLocalStorage()) {
     const baseUrl = getPublicBaseUrl();
     const files = safeSpecs.map((spec) => {
       const originalName = spec.originalName || 'file.bin';
