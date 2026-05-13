@@ -122,16 +122,42 @@ jobs:
       working-directory: ./server
       run: npm ci
 
+    # ubuntu-24.04 base image dropped mysql-client + redis-tools from the
+    # default set (had them on ubuntu-22.04). Without these, both the
+    # wait loop below and the Create+migrate step would fail
+    # silently — wait swallows errors via >/dev/null. Install explicitly.
+    - name: Install MySQL + Redis CLI tools
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends mysql-client redis-tools netcat-openbsd
+
     - name: Wait for MySQL & Redis
       run: |
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          if mysqladmin ping -h 127.0.0.1 -uroot -prootpw >/dev/null 2>&1 && redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
-            echo "services ready"
+        # Try TCP-port probe first (zero-dependency), then validate with
+        # client ping. Surface per-iteration errors so a regression here
+        # is debuggable instead of dying with "services not ready".
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+          mysql_ok=0
+          redis_ok=0
+          if nc -z 127.0.0.1 3306 && mysqladmin ping -h 127.0.0.1 -uroot -prootpw 2>&1 | grep -q 'mysqld is alive'; then
+            mysql_ok=1
+          fi
+          if nc -z 127.0.0.1 6379 && [ "$(redis-cli -h 127.0.0.1 ping 2>&1)" = "PONG" ]; then
+            redis_ok=1
+          fi
+          if [ "$mysql_ok" = "1" ] && [ "$redis_ok" = "1" ]; then
+            echo "services ready (attempt $i)"
             exit 0
           fi
+          echo "attempt $i: mysql_ok=$mysql_ok redis_ok=$redis_ok — retrying in 3s"
           sleep 3
         done
-        echo "services not ready"
+        echo "services not ready after 15 attempts"
+        # Final diagnostic dump before failing so the next debugger has signal.
+        nc -zv 127.0.0.1 3306 || true
+        nc -zv 127.0.0.1 6379 || true
+        mysqladmin ping -h 127.0.0.1 -uroot -prootpw || true
+        redis-cli -h 127.0.0.1 ping || true
         exit 1
 
     - name: Compute isolated test schema name
