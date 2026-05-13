@@ -104,7 +104,10 @@ jobs:
       DB_HOST: 127.0.0.1
       DB_PORT: '3306'
       DB_USER: root
-      DB_PASS: rootpw
+      # Server's config/database.js reads DB_PASSWORD (not DB_PASS).
+      # Keeping DB_PASS would leave sequelize connecting with empty
+      # password and fail every migrate/test that hits the live DB.
+      DB_PASSWORD: rootpw
       DB_NAME: treatbot_test
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: '6379'
