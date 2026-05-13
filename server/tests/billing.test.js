@@ -180,7 +180,7 @@ describe('billing.computeMonthly — T1-4', () => {
     const csv = billing.toCsv(r);
 
     expect(csv.charCodeAt(0)).toBe(0xFEFF);
-    const lines = csv.replace(/^﻿/, '').trim().split('\n');
+    const lines = csv.replace(/^\uFEFF/, '').trim().split('\n');
     // headers 仍按原顺序（不转义，硬编码字面量）。
     expect(lines[0]).toBe('月份,CRO ID,CRO 公司,试验 ID,合格状态,合格线索数,单价(元),小计(元)');
     // PRD-2026Q4 T0-7 followup（CSV formula injection）：每个 cell 都走 escapeCsvCell，

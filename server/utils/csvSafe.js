@@ -51,7 +51,7 @@ const escapeCsvCell = (value) => {
 
 /**
  * 把对象数组渲染成 CSV 字符串。
- * - 不带 BOM；调用方按需在 res.send 里前缀 ﻿。
+ * - 不带 BOM；调用方按需在 res.send 里前缀 U+FEFF。
  * - headers 缺省时取所有 row 的 key 并集（与原 admin.toCsv 行为一致）。
  * - 行内单元格全部走 escapeCsvCell；headers 默认按裸字符串拼接（与历史行为一致——
  *   header 在所有调用点都是源代码里硬编码的中/英文字面量，不来自用户输入；

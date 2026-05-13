@@ -205,9 +205,9 @@ const uploadStream = async (filePath, key, options = {}) => {
   }
 
   return new Promise((resolve, reject) => {
-    cos.sliceUploadFile({
-      Bucket: bucket,
-      Region: region,
+    getCosClient().sliceUploadFile({
+      Bucket: getCosBucket(),
+      Region: getCosRegion(),
       Key: key,
       FilePath: filePath,
       ContentType: options.contentType || 'application/octet-stream',
@@ -225,7 +225,7 @@ const uploadStream = async (filePath, key, options = {}) => {
         success: true,
         key,
         etag: options.etagOverride || (data && data.ETag) || null,
-        url: `https://${bucket}.cos.${region}.myqcloud.com/${key}`
+        url: `https://${getCosBucket()}.cos.${getCosRegion()}.myqcloud.com/${key}`
       });
     });
   });
@@ -487,7 +487,7 @@ const headObject = async (key) => {
     }
   }
   try {
-    const head = await cos.headObject({ Bucket: bucket, Region: region, Key: key });
+    const head = await getCosClient().headObject({ Bucket: getCosBucket(), Region: getCosRegion(), Key: key });
     const headers = (head && head.headers) || {};
     const size = Number(headers['content-length'] || head.ContentLength || 0);
     return { exists: true, size };
@@ -549,7 +549,7 @@ const getDirectUploadInfo = async (userId, fileSpecs = []) => {
 
   const sts = await getSTS(userId);
   const appId = process.env.COS_APPID || '';
-  const hostname = `${bucket}.cos.${region}.myqcloud.com`;
+  const hostname = `${getCosBucket()}.cos.${getCosRegion()}.myqcloud.com`;
   // sts.expiredTime 是秒还是毫秒看 SDK 版本 —— 大于 1e12 视作毫秒，否则当秒
   const rawExpired = (sts && sts.expiredTime) || 0;
   const expiredAt = rawExpired > 1e12 ? rawExpired : (rawExpired || (Math.floor(Date.now() / 1000) + 1800)) * 1000;
@@ -570,8 +570,8 @@ const getDirectUploadInfo = async (userId, fileSpecs = []) => {
   return {
     mode: 'cos',
     credentials: (sts && sts.credentials) || null,
-    region,
-    bucket,
+    region: getCosRegion(),
+    bucket: getCosBucket(),
     appId,
     hostname,
     expiredAt,

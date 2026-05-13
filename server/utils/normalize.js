@@ -53,7 +53,7 @@ const incNctInvalidCounter = (source) => {
 
 /**
  * 归一化手机号 → 11 位国内号码。
- * - 去：全角空格(　) / 半角空格 / 连字符 / 括号 / 点
+ * - 去：全角空格(U+3000) / 半角空格 / 连字符 / 括号 / 点
  * - 剥前缀：+86 / 0086 / 86（仅当后续是合法 11 位手机号时才剥离）
  * - 结果必须匹配 /^1[3-9]\d{9}$/，否则抛 ValidationError(PHONE_INVALID)
  */
@@ -64,7 +64,7 @@ function normalizePhone(s) {
   }
   const original = s;
   // 去全角空格 / 半角空格 / 连字符 / 括号 / 点
-  let cleaned = s.replace(/[\s　\-\(\)\.]/g, '');
+  let cleaned = s.replace(/[\s\u3000\-\(\)\.]/g, '');
   // 去 +86 / 0086 / 86 前缀（仅当后续是 11 位手机号时）
   cleaned = cleaned.replace(/^(\+?86|0086)(?=1[3-9]\d{9}$)/, '');
 
