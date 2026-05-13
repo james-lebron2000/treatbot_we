@@ -102,4 +102,22 @@ describe('funnel POST /api/track §B.2', () => {
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockLabels).not.toHaveBeenCalled();
   });
+
+  // Plan §Phase 3.2：客户端模糊度 advisory 事件加入白名单后必须可被接收
+  test('4) client_blur_advisory event 在白名单 → 200 + create 一次', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/track')
+      .send({
+        event: 'client_blur_advisory',
+        anonId: 'anon-blur',
+        metadata: { blurryCount: 1, total: 2, threshold: 80, scores: [42, 240] }
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.code).toBe(0);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreate.mock.calls[0][0].event).toBe('client_blur_advisory');
+    expect(mockLabels).toHaveBeenCalledWith('client_blur_advisory');
+  });
 });

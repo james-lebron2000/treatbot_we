@@ -21,8 +21,23 @@
       <view class="upload-title">把病历交给我们</view>
       <view class="upload-desc">拍照、相册、PDF 都行 —— 我们会自动识别类型。您的数据仅在自己的账户里，随时可以删除。</view>
 
-      <view class="upload-area" bindtap="chooseImage">
-        <view wx:if="{{tempFiles.length === 0}}" class="upload-placeholder">
+      <!--
+        PRD-2026Q4 followup（"无法上传"+ tap 冒泡修复）：
+        旧版外层 .upload-area 整块绑 bindtap="chooseImage"，导致：
+          1) 用户点缩略图想预览 → image 的 bindtap="previewFile" 冒泡到外层 → 又开一次选择器
+          2) tempFiles 满 9 时 .add-more 已隐藏，但外层 bindtap 还在 → 仍能进 chooseImage，
+             count 算成 0 进入 wx.chooseMedia，体验上"额满还能再点弹一次"。
+        新版：外层移除 bindtap，由两个明确入口承担选择动作 ——
+          (a) tempFiles 为空时显示的 .upload-placeholder
+          (b) 非空时显示的 .add-more（自带 wx:if 容量门）
+        预览区一律 catchtap，断绝冒泡链路。
+      -->
+      <view class="upload-area">
+        <view
+          wx:if="{{tempFiles.length === 0}}"
+          class="upload-placeholder"
+          bindtap="chooseImage"
+        >
           <view class="upload-icon">
             <icon name="camera" color="brand" size="96" />
           </view>
@@ -36,13 +51,13 @@
               wx:if="{{item.fileType === 'image'}}"
               src="{{item.path}}"
               mode="aspectFill"
-              bindtap="previewFile"
+              catchtap="previewFile"
               data-index="{{index}}"
             ></image>
             <view
               wx:else
               class="file-preview"
-              bindtap="previewFile"
+              catchtap="previewFile"
               data-index="{{index}}"
             >
               <icon name="file-text" color="brand" size="48" />
@@ -51,7 +66,7 @@
             </view>
             <view class="delete-btn" catchtap="deleteImage" data-index="{{index}}">×</view>
           </view>
-          <view class="add-more" bindtap="chooseImage" wx:if="{{tempFiles.length < 9}}">
+          <view class="add-more" catchtap="chooseImage" wx:if="{{tempFiles.length < maxUploadCount}}">
             <icon name="plus" color="text-muted" size="40" />
             <text class="add-text">添加</text>
           </view>
@@ -100,6 +115,21 @@
         <view class="processing-desc">{{processingStatus}}</view>
       </view>
 
+      <!-- Plan §Phase 3.3：文件名启发式占位卡 ——
+           OCR 跑 30-90s，让用户在等待时立刻看到"已经知道您给的是什么类型"。
+           这只是猜测；OCR 完成后跳到 step 3，这张卡随 currentStep 切换自动消失。 -->
+      <view class="placeholder-hint-card" wx:if="{{placeholderHints.length > 0}}">
+        <text class="placeholder-hint-kicker">已收到您的文件</text>
+        <view class="placeholder-hint-list">
+          <view class="placeholder-hint-chip" wx:for="{{placeholderHints}}" wx:key="label">
+            <text class="placeholder-hint-label">{{item.label}}</text>
+            <text class="placeholder-hint-count" wx:if="{{item.count > 1}}">×{{item.count}}</text>
+          </view>
+        </view>
+        <!-- Plan §Phase 3.4：队列深度提示 —— 只在 queueAhead > 0 时显示 -->
+        <text class="placeholder-hint-queue" wx:if="{{queueAhead > 0}}">前面还有 {{queueAhead}} 份在处理，请稍候</text>
+      </view>
+
       <view class="progress-panel">
         <view class="progress-panel-head">
           <text class="progress-kicker">当前进度</text>
@@ -112,41 +142,6 @@
         <view class="progress-meta">
           <!-- Track C-3（PRD-2026Q3）：基于预期时长的 ETA 倒数，给用户「快好了」的体感 -->
           <text class="progress-eta" wx:if="{{etaText}}">{{etaText}}</text>
-        </view>
-      </view>
-
-      <!--
-        PRD-2026Q4 流式 OCR：分组识别预览
-          - 4 个分组（基本信息/诊断/治疗/病程时间线）随 SSE field_group 事件依次"骨架→实体"
-          - streamRawText 一旦到达就允许用户展开折叠区核对原文
-          - 不影响 step 3 的 parsedSections 渲染（step 3 仍按完成态显示完整摘要）
-      -->
-      <view class="stream-preview" wx:if="{{currentStage}}">
-        <view class="stream-preview-title">
-          <text class="stream-preview-kicker">正在识别</text>
-          <text class="stream-preview-subtitle">每补一块都会立刻出现在这里</text>
-        </view>
-        <view class="stream-groups">
-          <view
-            class="stream-group {{group.filled ? 'is-filled' : 'is-pending'}}"
-            wx:for="{{streamGroups}}"
-            wx:key="key"
-            wx:for-item="group"
-          >
-            <view class="stream-group-dot"></view>
-            <text class="stream-group-label">{{group.label}}</text>
-            <text class="stream-group-state" wx:if="{{group.filled}}">已识别</text>
-            <text class="stream-group-state pending" wx:else>等待中</text>
-          </view>
-        </view>
-        <view wx:if="{{streamRawText}}" class="stream-rawtext">
-          <view class="stream-rawtext-head" bindtap="toggleRawText">
-            <text class="stream-rawtext-title">原文文本</text>
-            <text class="stream-rawtext-toggle">{{showRawText ? '收起' : '展开核对'}}</text>
-          </view>
-          <view wx:if="{{showRawText}}" class="stream-rawtext-body">
-            <text class="stream-rawtext-content">{{streamRawText}}</text>
-          </view>
         </view>
       </view>
 

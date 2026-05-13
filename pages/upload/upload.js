@@ -2,48 +2,20 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const schema = require('../../utils/schema')
 const parseTask = require('../../utils/parse-task')
+// Plan §Phase 2.1：客户端直传 COS（用户最痛点的解药）。本地 mode / 全部 PUT 失败时回落 legacy。
+const cosDirectUploader = require('../../utils/cosDirectUploader')
 // Q3-红线 §B.2：upload_start / upload_success 漏斗事件
 const { track } = require('../../utils/track')
+// Plan §Phase 3.2：模糊度 advisory 纯计算（variance-of-Laplacian）
+const { computeLaplacianVariance } = require('../../utils/blurAdvisory')
+// Plan §Phase 3.3：文件名启发式占位卡规则
+const { inferFileHint, buildPlaceholderHints } = require('../../utils/placeholderHints')
 // PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.js`）。
 // 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
 // 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
 const copy = require('../../shared/copy/upload.js')
-// PRD-2026Q4 流式 OCR：消费 /api/medical/parse-stream（chunked SSE），
-// 把进度从「线性模拟」换成「真实事件驱动」；onError/onNoredis 走原 polling 兜底。
-const sseClient = require('../../utils/sseClient')
-const { GROUPS, RENDERABLE_GROUPS } = require('../../shared/streaming/fieldGroups.js')
-const { STAGE, isTerminalStage } = require('../../shared/streaming/events.js')
-
-// SSE stage → step 卡片高亮（与 PROCESS_STEPS 对齐：0=ocr / 1=medical / 2=struct）
-const STAGE_PARSE_STEP = {
-  [STAGE.RECEIVED]: 0,
-  [STAGE.PREPROCESS]: 0,
-  [STAGE.OCR_TEXT]: 1,
-  [STAGE.FIELD_GROUP]: 2,
-  [STAGE.COMPLETED]: 2
-}
-
-// SSE stage → 顶部 processingStatus 文案（家属侧的同理心句式，非工程语）
-const STAGE_STATUS_TEXT = {
-  [STAGE.RECEIVED]: '收到啦，正在准备…',
-  [STAGE.PREPROCESS]: '准备文件…',
-  [STAGE.OCR_TEXT]: '看清病历写了什么…',
-  [STAGE.FIELD_GROUP]: '整理诊断、治疗这些关键信息…',
-  [STAGE.COMPLETED]: copy.status.completed
-}
-
-// 渲染时显示的"分组进度"：按 RENDERABLE_GROUPS 顺序，每组一个 chip。
-// 与 web 端 StreamingRecordCard 的 4 块骨架对应。
-const buildInitialStreamGroups = () =>
-  RENDERABLE_GROUPS.map((key) => ({
-    key,
-    label: GROUPS[key].label,
-    filled: false
-  }))
-
-// 8s 哨兵：SSE 连上但拿不到任何 state 事件时，假定 Redis/服务端有问题，回退到轮询。
-// 与 web 端 parseStream 兜底语义一致。
-const SSE_FALLBACK_SENTINEL_MS = 8000
+// PRD-2026Q4 followup：上传批次上限单一来源（与 server/controllers/medical.js 同源）
+const { BATCH_UPLOAD_MAX: SHARED_BATCH_UPLOAD_MAX } = require('../../shared/schemas/upload.js')
 
 // PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
 // 增量：DevTools 里 `wx.login` 自身会话过期 → utils/auth.js 抛 code='wx_login_session_expired'，
@@ -171,6 +143,12 @@ const MAX_UPLOAD_BYTES = 9 * 1024 * 1024
 const IMAGE_COMPRESS_THRESHOLD = 1.5 * 1024 * 1024
 const IMAGE_COMPRESS_LONG_EDGE = 2400
 
+// PRD-2026Q4 followup（用户反馈 5 张限额过紧）：
+// 一次上传上限。与 server/controllers/medical.js 共享同一个常量
+// （shared/schemas/upload.js BATCH_UPLOAD_MAX），避免历史的"三端各自硬编码漂移"事故。
+// wxml 的 `<9` 判断、wx.chooseMedia 系统硬上限 9、朋友圈 9 张图心智模型同步。
+const MAX_UPLOAD_COUNT = SHARED_BATCH_UPLOAD_MAX
+
 const compressImageAsync = (src) =>
   new Promise((resolve) => {
     wx.compressImage({
@@ -182,6 +160,71 @@ const compressImageAsync = (src) =>
       success: (res) => resolve((res && res.tempFilePath) || src),
       fail: () => resolve(src)
     })
+  })
+
+// Plan §Phase 3.2：客户端模糊度建议（variance-of-Laplacian）。
+//   - 200×200 灰度图上跑 5-point Laplacian 算子，方差 < 阈值即认定可能模糊。
+//   - **advisory only**：不阻塞用户上传，只 toast 一次提示 —— 误报不影响体验。
+//   - 老版本基础库（< 2.16.1，无 wx.createOffscreenCanvas type:'2d'）直接 skipped，等价于
+//     "没意见"，与无此功能完全等价。
+//   - 任何异常一律 skipped —— 模糊检测失败不能阻断主上传流。
+const BLUR_ADVISORY_SIZE = 200
+// 经验阈值：OpenCV 社区惯例 < 100 视为模糊；这里取 80 是 conservative ——
+// 漏报无伤大雅（用户没看到提示），误报会教用户"机器在乱讲"，所以宁紧不宽。
+const BLUR_VARIANCE_THRESHOLD = 80
+// 单图分析硬上限 1.5s：极少数格式 onload 事件不会触发，用 setTimeout 兜底，避免拖死整批。
+const BLUR_ASSESS_TIMEOUT_MS = 1500
+
+const assessImageBlurAsync = (filePath) =>
+  new Promise((resolve) => {
+    const skip = (reason) => resolve({ score: 0, isBlurry: false, skipped: true, reason })
+    try {
+      if (typeof wx.createOffscreenCanvas !== 'function') {
+        skip('no_offscreen')
+        return
+      }
+      const canvas = wx.createOffscreenCanvas({
+        type: '2d',
+        width: BLUR_ADVISORY_SIZE,
+        height: BLUR_ADVISORY_SIZE
+      })
+      if (!canvas || typeof canvas.createImage !== 'function' || typeof canvas.getContext !== 'function') {
+        skip('no_canvas_api')
+        return
+      }
+      const ctx = canvas.getContext('2d')
+      const img = canvas.createImage()
+      let settled = false
+      const safeResolve = (v) => {
+        if (settled) return
+        settled = true
+        resolve(v)
+      }
+      const guard = setTimeout(() => safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'timeout' }), BLUR_ASSESS_TIMEOUT_MS)
+      img.onload = () => {
+        try {
+          ctx.drawImage(img, 0, 0, BLUR_ADVISORY_SIZE, BLUR_ADVISORY_SIZE)
+          const imgData = ctx.getImageData(0, 0, BLUR_ADVISORY_SIZE, BLUR_ADVISORY_SIZE)
+          const variance = computeLaplacianVariance(imgData.data, BLUR_ADVISORY_SIZE)
+          clearTimeout(guard)
+          safeResolve({
+            score: Math.round(variance),
+            isBlurry: variance < BLUR_VARIANCE_THRESHOLD,
+            skipped: false
+          })
+        } catch (e) {
+          clearTimeout(guard)
+          safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'compute_error' })
+        }
+      }
+      img.onerror = () => {
+        clearTimeout(guard)
+        safeResolve({ score: 0, isBlurry: false, skipped: true, reason: 'image_error' })
+      }
+      img.src = filePath
+    } catch (e) {
+      skip('exception')
+    }
   })
 
 const getFileSizeAsync = (filePath) =>
@@ -244,6 +287,9 @@ Page({
     processSteps: PROCESS_STEPS,
     // PRD-2026Q2 §3.7：把共享文案挂到 data 上，wxml 直接 {{copy.cta.upload}} 等读取。
     copy,
+    // PRD-2026Q4 followup（消除 wxml 字面量 9）：把 MAX_UPLOAD_COUNT 透出到 data，
+    // wxml 用 {{tempFiles.length < maxUploadCount}} 取代裸数字 9，避免再漂。
+    maxUploadCount: MAX_UPLOAD_COUNT,
     tempFiles: [],
     remark: '',
     uploading: false,
@@ -270,6 +316,10 @@ Page({
     },
     summaryProgressStyle: 'width: 0%;',
     missingFields: [],
+    // PRD-2026Q4 followup（"补全字段不保存"修复）：onGapInput 改值后翻 true，
+    // startMatching 看到 dirty=true 就一定 PATCH 后端 + 清匹配缓存，
+    // 避免「missingFields 已被填到 0 → 保存条件失效 → 服务端仍是旧数据」。
+    gapDirty: false,
     // PRD-2026Q2 §P1-7：step 3 主 CTA 文案随 missingFields 数量动态切换
     // 在 applyParsedPresentation 内同步刷新，无 wxs computed 依赖。
     primaryCtaText: '看看为家人找到的新药',
@@ -287,20 +337,18 @@ Page({
     parseFallbackNotified: false,
     hasPdfUpload: false,
     pdfQualityHintShown: false,
-    // PRD-2026Q4 流式 OCR：在 currentStep===2 期间实时显示「正在识别什么」。
-    //   streamGroups   — 4 个分组的填充态（basic/diagnosis/treatment/timeline）
-    //   streamRawText  — OCR 抽出的原文文本，给用户一个折叠区核对
-    //   showRawText    — 折叠区开关
-    //   currentStage   — 当前 SSE 阶段（received/preprocess/ocr_text/field_group/completed）
-    streamGroups: buildInitialStreamGroups(),
-    streamRawText: '',
-    showRawText: false,
-    currentStage: ''
+    // Plan §Phase 3.3：基于文件名启发式给的占位卡数据；进入 step 2 立即可见，
+    // OCR 完成后由 step 3 的真实结果取代。每项 { label, count }。
+    placeholderHints: [],
+    // Plan §Phase 3.4：队列深度（"前面还有 N 份在处理"）。
+    //   null = 服务端没回 / Redis 异常 → 不显示；
+    //   0 = 队列已空 → 也不显示（没必要让用户知道"前面还有 0 份"，等价无信息）；
+    //   >0 = 显示"前面还有 N 份在处理"。
+    queueAhead: null
   },
 
   onLoad() {
-    // 关键：onLoad 之后微信会**立即同步**触发 onShow——两个都调 restoreProcessingSession
-    // 会在毫秒内连开两条 SSE。这里只做登录初始化，restoreProcessingSession 交给 onShow。
+    this.restoreProcessingSession()
     auth.ensureBaseLogin().catch(() => null)
   },
 
@@ -311,14 +359,12 @@ Page({
   onHide() {
     this.clearPollTimer()
     this.clearProgressTimer()
-    this.clearStream()
     this.clearAutoRedirectTimer()
   },
 
   onUnload() {
     this.clearPollTimer()
     this.clearProgressTimer()
-    this.clearStream()
     this.clearAutoRedirectTimer()
   },
 
@@ -330,6 +376,19 @@ Page({
   },
 
   chooseImage() {
+    // PRD-2026Q4 followup（满额 guard）：旧版外层 .upload-area 整块 bindtap，
+    // tempFiles 满 MAX_UPLOAD_COUNT 后还能进入 chooseImage，再走到 takePhoto / selectFromAlbum
+    // 时 count = MAX_UPLOAD_COUNT - 9 = 0；wx.chooseMedia({count:0}) 行为不一致 ——
+    // 不同基础库版本要么报错要么静默放行任意张。在入口 hard-guard 一刀切。
+    // 注意：wxml 已把 bindtap 收紧到 placeholder + add-more，这层 JS 是双保险。
+    if (this.data.tempFiles.length >= MAX_UPLOAD_COUNT) {
+      wx.showToast({
+        title: `最多 ${MAX_UPLOAD_COUNT} 份，已满 —— 删一张再加`,
+        icon: 'none',
+        duration: 2400
+      })
+      return
+    }
     wx.showActionSheet({
       itemList: ['拍照', '从相册选择图片', '上传PDF文件', '从聊天记录选择文件'],
       success: (res) => {
@@ -348,7 +407,7 @@ Page({
 
   takePhoto() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['camera'],
       success: (res) => {
@@ -359,7 +418,7 @@ Page({
 
   selectFromAlbum() {
     wx.chooseMedia({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       mediaType: ['image'],
       sourceType: ['album'],
       success: (res) => {
@@ -370,7 +429,7 @@ Page({
 
   selectPdfFile() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'file',
       extension: ['pdf'],
       success: (res) => {
@@ -381,7 +440,7 @@ Page({
 
   selectFromMessage() {
     wx.chooseMessageFile({
-      count: 5 - this.data.tempFiles.length,
+      count: MAX_UPLOAD_COUNT - this.data.tempFiles.length,
       type: 'all',
       success: (res) => {
         this.handleFiles(res.tempFiles || [])
@@ -492,9 +551,44 @@ Page({
       })
     }
 
-    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（默认 5）。
+    // Plan §Phase 3.2：模糊度 advisory —— 在文件加进 tempFiles 前并行评估，
+    // 任意一张 isBlurry 就 toast 一次（不阻塞）；老基础库 / 失败一律 skipped 等同没事。
+    // 注意时机：先 setData 让用户看到缩略图，再异步 advisory —— 模糊评估 ~50-200ms，
+    // 不该把这点延迟塞进感知路径。
+    const imageFiles = processed.filter((f) => f.fileType === 'image')
+    if (imageFiles.length > 0) {
+      Promise.all(imageFiles.map((f) => assessImageBlurAsync(f.path)))
+        .then((results) => {
+          const blurryCount = results.filter((r) => r && r.isBlurry).length
+          if (blurryCount === 0) return
+          // 单文件 vs 多文件文案分两套，避免 "1 张" 这种生硬措辞
+          const title = imageFiles.length === 1
+            ? '照片可能有点糊，仍可上传'
+            : `有 ${blurryCount} 张照片可能模糊，仍可上传`
+          wx.showToast({ title, icon: 'none', duration: 2400 })
+          try {
+            track('client_blur_advisory', {
+              blurryCount,
+              total: imageFiles.length,
+              threshold: BLUR_VARIANCE_THRESHOLD,
+              // 把每张分数寄出来便于后续校准阈值（数字而非路径，无 PII）
+              scores: results.map((r) => (r && typeof r.score === 'number' ? r.score : -1))
+            })
+          } catch (e) {}
+        })
+        .catch(() => {})
+    }
+
+    // Phase E.6 / Review #5：与 server BATCH_UPLOAD_MAX 同口径（来自 shared/schemas/upload.js）。
+    // PRD-2026Q4 followup（用户反馈"无法上传"）：原值硬编码 5 与 MAX_UPLOAD_COUNT=9
+    // 不一致 —— 用户选 6+ 张图，handleFiles 静默丢弃前 5 张之后的全部，UI 看起来"上传不上去"。
+    // 必须用同一个常量，不能再写裸数字。
+    // Plan §Phase 3.3：每份文件挂一个 hint 字段，step 2 占位卡读这个字段。
+    const withHints = processed.map((f) => ({ ...f, hint: inferFileHint(f) }))
+    const nextTempFiles = [...currentFiles, ...withHints].slice(0, MAX_UPLOAD_COUNT)
     this.setData({
-      tempFiles: [...currentFiles, ...processed].slice(0, 5)
+      tempFiles: nextTempFiles,
+      placeholderHints: buildPlaceholderHints(nextTempFiles)
     })
   },
 
@@ -530,7 +624,11 @@ Page({
     const { index } = e.currentTarget.dataset
     const tempFiles = [...this.data.tempFiles]
     tempFiles.splice(index, 1)
-    this.setData({ tempFiles })
+    this.setData({
+      tempFiles,
+      // Plan §Phase 3.3：删文件后占位卡需重算，否则会显示已删除文件的类型
+      placeholderHints: buildPlaceholderHints(tempFiles)
+    })
   },
 
   onRemarkInput(e) {
@@ -548,9 +646,6 @@ Page({
     }
   },
 
-  // PRD-2026Q4：旧版的 simulationTick 线性进度模拟已删除。进度现在由 SSE
-  // (utils/sseClient.js → openParseStream) 真实事件驱动；polling fallback 路径
-  // 仍可调 setProgressTarget 抬 floor，progressTimer 仅在那条路径上分时使用。
   clearProgressTimer() {
     if (this.progressTimer) {
       clearInterval(this.progressTimer)
@@ -558,26 +653,8 @@ Page({
     }
   },
 
-  // 关掉正在跑的 SSE 连接 + 哨兵 timer。
-  // 与 clearPollTimer / clearProgressTimer 互不耦合，方便单独清理。
-  clearStream() {
-    if (typeof this.streamCloser === 'function') {
-      try { this.streamCloser() } catch (_e) { /* ignore */ }
-    }
-    this.streamCloser = null
-    if (this.streamFallbackTimer) {
-      clearTimeout(this.streamFallbackTimer)
-      this.streamFallbackTimer = null
-    }
-    this.streamingActive = false
-    this.streamReceivedAnyState = false
-  },
-
   updateProgressBar(progress) {
     const next = Math.max(0, Math.min(100, Math.round(progress)))
-    // 永不倒退：SSE 的 received(5%) 不能把 upload phase 的 30% 拉下来
-    const cur = Number(this.data.parseProgress || 0)
-    if (next <= cur) return
     this.setData({
       parseProgress: next,
       parseProgressStyle: `width: ${next}%;`
@@ -585,8 +662,84 @@ Page({
   },
 
   /**
-   * polling fallback 路径用：把后端 legacy status (uploading/parsing/analyzing/structuring/completed)
-   * 转成 progressTarget + 文案 + 步骤卡片。SSE 路径不会调这个，走 applyStreamStage。
+   * Track C-3 v2（PRD-2026Q3）：启动「线性进度模拟」。
+   *   入参 totalSeconds：本次预期总耗时（estimateEtaSeconds 算出来的，单文件默认 60s）
+   *
+   * 曲线设计（关键）：
+   *   ratio = min(1, elapsed/ETA)
+   *   target = 1 + ratio * 91          // 1% → 92%
+   *
+   * 等价于：t=0 → 1%，t=ETA/2 → 46%，t=ETA → 92%，t>ETA → 92%（封顶等后端）
+   * 这样：
+   *   - 实际处理快 → 后端 status=completed 来时直接冲 100%
+   *   - 实际处理慢 → UI 在 92% 处停住，用户知道"快好了，再等等"
+   *   - 后端 status 跳跃（如直接到 analyzing）→ statusMinFloor 把 UI 立即抬上去
+   */
+  startSimulatedProgress(totalSeconds) {
+    this.clearProgressTimer()
+    this.simulationStartedAt = Date.now()
+    this.simulationEtaMs = Math.max(8000, Number(totalSeconds || 60) * 1000)
+    this.statusMinFloor = 1
+    this.completionFlooded = false
+    this.setData({
+      estimatedTotalSeconds: Math.round(this.simulationEtaMs / 1000),
+      etaSecondsRemaining: Math.round(this.simulationEtaMs / 1000),
+      etaText: formatEtaText(this.simulationEtaMs / 1000, false)
+    })
+    // 立刻给一个 1% 的初始动，避免用户盯着 0% 一拍空
+    this.updateProgressBar(1)
+    this.progressTimer = setInterval(() => this.simulationTick(), PROGRESS_TICK_MS)
+  },
+
+  /**
+   * Track C-3：单次进度 tick。逻辑分三档：
+   *   1. completionFlooded —— completed status 已到，正在冲 100%
+   *   2. 模拟阶段 —— 线性 ratio × 92%，比例诚实（t=ETA/2 → 46%, t=ETA → 92%）
+   *   3. ETA 倒数显示
+   */
+  simulationTick() {
+    const now = Date.now()
+    const elapsedMs = Math.max(0, now - (this.simulationStartedAt || now))
+    const etaMs = this.simulationEtaMs || 60000
+    const cur = Number(this.data.parseProgress || 0)
+
+    if (this.completionFlooded) {
+      // completed：每 tick 跳 8%，最多 4 个 tick 冲到 100
+      const next = Math.min(100, cur + 8)
+      this.updateProgressBar(next)
+      if (next >= 100) {
+        this.clearProgressTimer()
+        this.setData({ etaText: '', etaSecondsRemaining: 0 })
+      }
+      return
+    }
+
+    // 线性曲线：elapsed/ETA 直接映射到 1% → 92%。诚实：bar 位置 ≈ 已耗时占比。
+    const ratio = Math.min(1, elapsedMs / etaMs)
+    let target = 1 + ratio * (PROGRESS_CEIL_DURING_RUN - 1)
+    // 后端 status 推上来的 floor —— 让 UI 不能低于真实 stage
+    target = Math.max(target, Number(this.statusMinFloor || 1))
+    // 永不倒退（用户切回页 / 解析超时返回原 status 时）
+    target = Math.max(target, cur)
+    // 不能超过模拟阶段的天花板 92%
+    target = Math.min(target, PROGRESS_CEIL_DURING_RUN)
+
+    this.updateProgressBar(target)
+
+    // ETA 显示
+    const remainingSec = (etaMs - elapsedMs) / 1000
+    const isOverdue = remainingSec <= 0
+    this.setData({
+      etaSecondsRemaining: Math.max(0, Math.ceil(remainingSec)),
+      etaText: formatEtaText(remainingSec, isOverdue)
+    })
+  },
+
+  /**
+   * Track C-3：把 status 转成 statusMinFloor + 文案 / step，但 *不再* 直接驱动进度。
+   *   进度由 simulationTick 推动；这里只是抬底（floor）和切文案。
+   *
+   * minFloor 入参：兼容历史调用方传"开机最小进度"的语义；不传时取 status.minProgress。
    */
   setProgressTarget(status, minFloor = 0) {
     const config = STATUS_TEXT_MAP[status] || STATUS_TEXT_MAP.parsing
@@ -598,24 +751,19 @@ Page({
       progressTarget: floor
     })
 
-    // 实进度：直接更新到 floor（updateProgressBar 内部做永不倒退判断）
-    this.updateProgressBar(floor)
-  },
-
-  /**
-   * PRD-2026Q4 流式 OCR：把单个 SSE stage 映射到 UI 状态。
-   * 与 setProgressTarget 平行的"流式版"。
-   */
-  applyStreamStage(stage, progress) {
-    const parseStep = STAGE_PARSE_STEP[stage]
-    const statusText = STAGE_STATUS_TEXT[stage]
-    const patch = { currentStage: stage }
-    if (typeof parseStep === 'number') patch.parseStep = parseStep
-    if (statusText && !this.completionHandled) patch.processingStatus = statusText
-    this.setData(patch)
-    if (typeof progress === 'number' && progress > 0) {
-      this.updateProgressBar(progress)
+    // completed 触发冲 100% 模式
+    if (status === 'completed') {
+      this.completionFlooded = true
+      this.statusMinFloor = 100
+      // 如果模拟器还没启动（极端：跳过了 startSimulatedProgress），手动启
+      if (!this.progressTimer) {
+        this.progressTimer = setInterval(() => this.simulationTick(), PROGRESS_TICK_MS)
+      }
+      return
     }
+
+    // 普通状态：抬高 floor，让下一次 tick 把进度推上去
+    this.statusMinFloor = Math.max(Number(this.statusMinFloor || 1), floor)
   },
 
   resetUploadSessionState() {
@@ -625,7 +773,6 @@ Page({
     parseTask.clearActiveParseBatch()
     this.clearPollTimer()
     this.clearProgressTimer()
-    this.clearStream()
     this.setData({
       fileId: '',
       recordId: '',
@@ -636,6 +783,8 @@ Page({
       structuredSummary: schema.buildStructuredSummary({}),
       summaryProgressStyle: 'width: 0%;',
       missingFields: [],
+      // 新一份病历开始解析 → 重置 dirty，避免上一份残留的 dirty 旗标污染本次保存判断
+      gapDirty: false,
       // Track C-2：清掉上次 session 的 gap 状态，避免新一份病历进来时还看到旧分组
       gapSections: [],
       collapsedGroups: {},
@@ -651,13 +800,17 @@ Page({
       processingStatus: copy.status.pending,
       parseFallbackNotified: false,
       pdfQualityHintShown: false,
-      // PRD-2026Q4 流式 OCR：清掉上一次会话的分组填充态 / 原文文本
-      streamGroups: buildInitialStreamGroups(),
-      streamRawText: '',
-      showRawText: false,
-      currentStage: ''
+      // Plan §Phase 3.3：占位卡是一次会话级别的，结果到达 step 3 后由真实数据取代；
+      // 重置时清空避免下一次会话误用上一份的占位猜测。
+      placeholderHints: [],
+      // Plan §Phase 3.4：队列深度只在本次会话有意义，重置时清掉避免下一次显示陈旧数字
+      queueAhead: null
     })
-    // 旧 simulationTick 的状态已删除；保留 completionHandled 等业务标志
+    // Track C-3：模拟器内部状态也一起清掉，避免下次开始时被旧值干扰
+    this.simulationStartedAt = 0
+    this.simulationEtaMs = 0
+    this.statusMinFloor = 0
+    this.completionFlooded = false
     this._initialGapTotal = 0
     this.pendingCompletedResult = null
     this.completionHandled = false
@@ -678,18 +831,11 @@ Page({
       currentStep: 2,
       // PRD-2026Q2 §3.7：上传起步态沿用 shared status.pending
       processingStatus: copy.status.pending,
-      parseStep: 0,
-      // 给一个 1% 的初始动，避免用户盯着 0% 一拍空（不再走线性 simulator）
-      parseProgress: 1,
-      parseProgressStyle: 'width: 1%;'
+      parseStep: 0
     })
-    // ETA 文字仅作"参考预期"——不再用它驱动条宽，SSE 真实进度驱动。
+    // Track C-3：根据用户选的文件估个 ETA，启动平滑进度模拟器（从 1% 慢慢爬）
     const estimatedSeconds = estimateEtaSeconds(this.data.tempFiles)
-    this.setData({
-      estimatedTotalSeconds: estimatedSeconds,
-      etaSecondsRemaining: estimatedSeconds,
-      etaText: formatEtaText(estimatedSeconds, false)
-    })
+    this.startSimulatedProgress(estimatedSeconds)
     this.setProgressTarget('uploading', 2)
 
     // Q3-红线 §B.2：用户点击「开始上传」即视为漏斗 upload_start
@@ -714,7 +860,72 @@ Page({
       //     reset，被 utils/api.js 当成单次 fail 走完一次重试后仍失败的极端情况
       //   - 保持串行：单份失败时同步重试一次，不会让整批上传卡更久（最多 +1.5s × N）
       const PAGE_LEVEL_RETRY_DELAY_MS = 800
-      for (let i = 0; i < this.data.tempFiles.length; i += 1) {
+      // Plan §Phase 3.4：保留每次响应的 queueDepth；最后一次（最新值）赢，
+      // 让 step 2 显示"前面还有 N 份"用最新观察到的队列状态。
+      let lastQueueDepth = null
+
+      // Plan §Phase 2.1：先试 STS 直传 COS。失败 / 服务端 mode='local' 时回落 legacy 老路径。
+      //   - 成功：fileIds 就位、queueDepth 拿到，直接跳过下面的 wx.uploadFile 串行循环。
+      //   - 部分 PUT 失败：finalize 仍会成功，successCount < total 时把失败份计入 uploadErrors，
+      //     不阻塞已上传份继续解析。
+      let directUploadDone = false
+      try {
+        const directRes = await cosDirectUploader.directUploadFiles(
+          {
+            tempFiles: this.data.tempFiles,
+            type: 'auto',
+            remark: this.data.remark,
+            concurrency: 3,
+            onProgress: ({ phase, done, total }) => {
+              // 直传期间把进度细化到 10–28%，让 step 2 进度条不再静默
+              const ratio = total > 0 ? done / total : 0
+              const target = phase === 'finalizing'
+                ? 28
+                : 10 + Math.floor(ratio * 16)
+              this.setProgressTarget('uploading', target)
+            }
+          },
+          {
+            fetchSts: api.fetchUploadSts,
+            finalize: api.finalizeUpload
+          }
+        )
+        if (Array.isArray(directRes.fileIds) && directRes.fileIds.length > 0) {
+          fileIds.push(...directRes.fileIds)
+          // 把 PUT 阶段的失败映射成 page-level uploadErrors，与 legacy 路径展示一致
+          if (Array.isArray(directRes.putErrors) && directRes.putErrors.length) {
+            directRes.putErrors.forEach((p) => {
+              uploadErrors.push({
+                name: (p && p.originalName) || '未知文件',
+                message: (p && p.message) || '直传失败'
+              })
+            })
+          }
+          // finalize 响应里的 queueDepth 也喂给 step 2 文案
+          if (directRes.queueDepth && typeof directRes.queueDepth === 'object') {
+            lastQueueDepth = directRes.queueDepth
+          }
+          directUploadDone = true
+          try {
+            track('upload_direct_ok', {
+              fileCount: fileIds.length,
+              putErrors: (directRes.putErrors && directRes.putErrors.length) || 0
+            })
+          } catch (_) { /* ignore */ }
+        }
+      } catch (directErr) {
+        const code = directErr && directErr.code
+        // local 模式 / 全部 PUT 失败 / STS 异常 → 静默回落 legacy
+        console.warn('[upload] direct upload fell back to legacy:', code || (directErr && directErr.message))
+        try {
+          track('upload_direct_fallback', {
+            code: code || 'unknown',
+            message: (directErr && directErr.message) || ''
+          })
+        } catch (_) { /* ignore */ }
+      }
+
+      for (let i = 0; !directUploadDone && i < this.data.tempFiles.length; i += 1) {
         const file = this.data.tempFiles[i]
         // 上传过程中给用户一点进度提示（10% → 30% 平均分摊）
         const stepProgress = 10 + Math.floor((i / this.data.tempFiles.length) * 20)
@@ -740,6 +951,10 @@ Page({
             })
             const payload = pickPayload(res)
             const fid = payload.fileId || payload.recordId || payload.id || ''
+            // Plan §Phase 3.4：服务端可能返回 null（Redis 不通时）—— 任何非 object 都跳过，UI 默认不显示
+            if (payload.queueDepth && typeof payload.queueDepth === 'object') {
+              lastQueueDepth = payload.queueDepth
+            }
             if (fid) {
               fileIds.push(fid)
               succeeded = true
@@ -760,7 +975,16 @@ Page({
               continue
             }
             console.error(`第 ${i + 1} 份文件上传失败:`, err)
-            uploadErrors.push({ name: file.name, message: err && err.message ? err.message : '上传失败' })
+            // PRD-2026Q4 followup（用户反馈"网络卡顿"误报）：保留原 err（含 statusCode）。
+            // 老实现只 push { name, message }，下面 throw 时 new Error(last.message)
+            // 把 statusCode 丢成 0 → classifyUploadError 看到 status===0 一律归类
+            // 'network' → "网络有点卡" 文案。真正原因（429 限流 / 400 超限 / 415 格式）
+            // 都被掩盖。修复：把 err 一起带上，throw 时 re-throw 原 err。
+            uploadErrors.push({
+              name: file.name,
+              message: err && err.message ? err.message : '上传失败',
+              error: err
+            })
             break
           }
         }
@@ -770,8 +994,14 @@ Page({
       }
 
       if (!fileIds.length) {
-        // 全部失败 → 抛出最后一个错误（保留 statusCode 以便 classifyUploadError 分流）
+        // 全部失败 → 抛出最后一份的原始 error（含 statusCode），
+        // 让上层 catch → classifyUploadError 能把 429 / 4xx / 网络层 fail 分流到正确文案。
+        // 老实现是 throw new Error(last.message)，statusCode 全丢失，所有失败都被
+        // 错分类成 "network" → "网络有点卡"。
         const last = uploadErrors[uploadErrors.length - 1] || { message: '上传成功但未获取文件ID' }
+        if (last.error) {
+          throw last.error
+        }
         throw new Error(last.message)
       }
 
@@ -788,6 +1018,13 @@ Page({
       const isBatch = fileIds.length > 1
       const primaryFileId = fileIds[0]
 
+      // Plan §Phase 3.4：减掉本次成功入队的份数 ——
+      //   服务端返回的 total 是「含本批的整队当前总长」，而用户想看的是
+      //   "我前面还有几份"。最少 0，避免出现"前面还有 -1 份"。
+      const queueAhead = lastQueueDepth && typeof lastQueueDepth.total === 'number'
+        ? Math.max(0, lastQueueDepth.total - fileIds.length)
+        : null
+
       this.setData({
         uploading: false,
         fileId: primaryFileId,
@@ -800,7 +1037,8 @@ Page({
           : '文件已上传，等待AI解析...',
         parseFallbackNotified: false,
         hasPdfUpload: this.data.tempFiles.some((file) => file.fileType === 'pdf'),
-        pdfQualityHintShown: false
+        pdfQualityHintShown: false,
+        queueAhead
       })
 
       const taskMeta = {
@@ -833,8 +1071,7 @@ Page({
         })
       }
       this.setProgressTarget('parsing', Math.max(12, Number(this.data.parseProgress || 0)))
-      // PRD-2026Q4：优先尝试 SSE 流式；onError / onNoredis-with-no-state → fallback 到 polling
-      this.startStreamOrFallback()
+      this.startPolling()
     } catch (error) {
       console.error('上传失败:', error)
       // PRD-2026Q2 §3.7：按三类错误（rate_limit / parse / network）+ unknown 映射到 shared copy
@@ -844,184 +1081,8 @@ Page({
       })
       this.setData({ uploading: false })
       this.clearProgressTimer()
-      this.clearStream()
       this.setData({ currentStep: 1 })
     }
-  },
-
-  /**
-   * PRD-2026Q4 流式 OCR：开 SSE 连接，事件驱动 UI；失败 → 走 polling 兜底。
-   *
-   * 关键策略：
-   *   - onError      → 直接 fallback polling（连不通 / HTTP 4xx-5xx）
-   *   - onNoredis    → 8s 哨兵：8s 内若拿不到任何 state 事件，认为 Redis 不可用 → polling
-   *                    （单进程开发环境 localBus 还能投递事件，所以不立即放弃）
-   *   - onState      → 真实驱动进度 + 增量渲染分组
-   *   - onDone       → terminal，关连接；具体完成处理由 onState(stage=completed) 触发
-   */
-  startStreamOrFallback() {
-    const ids = (this.data.fileIds || []).filter(Boolean)
-    if (!ids.length) {
-      this.startPolling()
-      return
-    }
-
-    // 幂等保护：onLoad/onShow/uploadFiles/restoreProcessingSession 都会进这条路径，
-    // 任何并发或重复调用必须先关掉前一条流，不然两条 SSE 同时往同一 handler 灌事件，
-    // completionHandled / handleParseFailure 会被触发两次，且老 task 还在偷消耗带宽。
-    this.clearStream()
-
-    this.streamReceivedAnyState = false
-    this.streamingActive = true
-
-    const fallbackToPolling = (reason) => {
-      if (!this.streamingActive && !this.streamCloser) return
-      console.warn('[upload] SSE fallback →', reason)
-      this.clearStream()
-      // polling 兜底之前若还未启动过，立刻补一次
-      if (!this.pollingActive) {
-        this.startPolling()
-      }
-    }
-
-    const handlers = {
-      onHello: (info) => {
-        // info: { hasRedis, recordIds }；当前不强依赖
-        if (info && info.hasRedis === false) {
-          // 单进程模式 localBus 仍能送 → 不立即 fallback，等 SSE_FALLBACK_SENTINEL_MS
-          this.armSseFallbackSentinel(() => fallbackToPolling('hello.hasRedis=false 且 8s 无事件'))
-        }
-      },
-      onNoredis: (info) => {
-        // 服务端显式告诉我们：Redis 不可用。
-        // 仍给 8s 哨兵 —— 单进程 localBus 还能投递；超时再切轮询。
-        this.armSseFallbackSentinel(() => fallbackToPolling((info && info.reason) || 'noredis 8s 无 state'))
-      },
-      onState: (evt) => {
-        if (!evt) return
-        this.streamReceivedAnyState = true
-        this.disarmSseFallbackSentinel()
-        this.handleStreamEvent(evt)
-      },
-      onDone: () => {
-        // terminal：completed/error 已在 onState 触发过 handleCompletedResult / handleParseFailure
-        this.clearStream()
-      },
-      onError: (err) => {
-        // 网络/HTTP 错误（含基础库不支持 enableChunked 之后的 task.onChunkReceived 缺失）
-        fallbackToPolling((err && err.message) || 'stream onError')
-      }
-    }
-
-    this.streamCloser = sseClient.openParseStream(ids, handlers)
-  },
-
-  armSseFallbackSentinel(onTimeout) {
-    if (this.streamFallbackTimer) return  // 已经武装过，不重置
-    this.streamFallbackTimer = setTimeout(() => {
-      this.streamFallbackTimer = null
-      if (!this.streamReceivedAnyState) {
-        try { onTimeout && onTimeout() } catch (_e) { /* ignore */ }
-      }
-    }, SSE_FALLBACK_SENTINEL_MS)
-  },
-
-  disarmSseFallbackSentinel() {
-    if (this.streamFallbackTimer) {
-      clearTimeout(this.streamFallbackTimer)
-      this.streamFallbackTimer = null
-    }
-  },
-
-  /**
-   * PRD-2026Q4：把一个 SSE state 事件分发到 UI 状态。
-   *   stage='ocr_text'     → streamRawText
-   *   stage='field_group'  → 增量合并字段 + 标记分组 filled
-   *   stage='completed'    → handleCompletedResult（保持与 polling 路径同收尾）
-   *   stage='error'        → handleParseFailure
-   *   其它（received/preprocess/heartbeat）→ 只更新进度与 step 卡片
-   */
-  handleStreamEvent(evt) {
-    const stage = evt.stage
-    const progress = typeof evt.progress === 'number' ? evt.progress : null
-    this.applyStreamStage(stage, progress)
-
-    if (stage === STAGE.OCR_TEXT && typeof evt.rawText === 'string') {
-      // OCR 原文：默认折叠，仅在用户点开折叠区时展示
-      this.setData({ streamRawText: evt.rawText })
-      return
-    }
-
-    if (stage === STAGE.FIELD_GROUP && evt.fieldGroup && evt.fields) {
-      this.mergeFieldGroup(evt.fieldGroup, evt.fields)
-      return
-    }
-
-    if (stage === STAGE.COMPLETED && evt.result) {
-      // result: { entities, text, provider, confidence }（与 ocrPipeline 输出一致）
-      const entities = evt.result.entities || evt.result || {}
-      this.pendingCompletedResult = entities
-      // 终态：关 SSE 哨兵，关连接（onDone 也会再调一次，幂等）
-      this.disarmSseFallbackSentinel()
-      // 把 4 个 group 都标 filled，避免数据齐了但骨架卡死
-      this.fillAllStreamGroups()
-      if (!this.completionHandled) {
-        this.handleCompletedResult(entities)
-      }
-      return
-    }
-
-    if (stage === STAGE.ERROR) {
-      this.handleParseFailure({ errorMsg: evt.errorMsg || '解析失败' })
-    }
-  },
-
-  /**
-   * field_group 事件 → 把新字段叠到 parsedData，调一次 applyParsedPresentation（增量幂等）。
-   * 同时把对应 group 标记成 filled，让 step 2 的"分组指示"骨架变实体。
-   */
-  mergeFieldGroup(groupKey, fields) {
-    if (!groupKey || !fields) return
-
-    // 字段叠加：仅在原值"空"时覆盖（保护用户已经 selectGapOption 改过的值）。
-    // 关键：空数组/空对象也算"空"——partial-json 早期可能把 treatmentHistory:[] 先发出来，
-    // 后续完整数组要能替换它，否则用户永远看不到治疗记录。
-    const isEmpty = (x) => {
-      if (x === undefined || x === null || x === '') return true
-      if (Array.isArray(x) && x.length === 0) return true
-      if (typeof x === 'object' && x !== null && Object.keys(x).length === 0) return true
-      return false
-    }
-    const next = { ...this.data.parsedData }
-    Object.keys(fields).forEach((k) => {
-      if (isEmpty(next[k])) {
-        next[k] = fields[k]
-      }
-    })
-    this.applyParsedPresentation(next)
-
-    // 分组填充态：把对应 group 改成 filled
-    const groups = this.data.streamGroups.map((g) =>
-      g.key === groupKey ? { ...g, filled: true } : g
-    )
-    this.setData({ streamGroups: groups })
-  },
-
-  /**
-   * completed 事件到来时把 4 个 group 全部标 filled。
-   * 适用场景：snapshot-at-open 直接给 completed、或 streamChatJson 一次性出齐、或非流式 fallback。
-   * 没有这一步，UI 会一直显示 4 块骨架（数据其实已在 parsedData 里）。
-   */
-  fillAllStreamGroups() {
-    const groups = (this.data.streamGroups || []).map((g) => ({ ...g, filled: true }))
-    this.setData({ streamGroups: groups })
-  },
-
-  /**
-   * 用户点折叠区头标 → 展开/收起 OCR 原文
-   */
-  toggleRawText() {
-    this.setData({ showRawText: !this.data.showRawText })
   },
 
   startPolling() {
@@ -1237,7 +1298,6 @@ Page({
   handleParseFailure(payload) {
     this.clearPollTimer()
     this.clearProgressTimer()
-    this.clearStream()
     this.setData({ uploading: false })
 
     const realErrMsg = (payload && (payload.errorMsg || payload.message)) || ''
@@ -1363,12 +1423,7 @@ Page({
   handleCompletedResult(result) {
     this.completionHandled = true
     this.clearPollTimer()
-    this.clearStream()
     this.setProgressTarget('completed', 100)
-    // PRD-2026Q4：completed 时把 4 个分组都标 filled，让 step 2 -> step 3 之前的瞬间
-    // 没有任何"还在骨架"的视觉残留
-    const allFilled = this.data.streamGroups.map((g) => ({ ...g, filled: true }))
-    this.setData({ streamGroups: allFilled, currentStage: STAGE.COMPLETED, etaText: '' })
 
     // Q3-红线 §B.2：解析完成 = 漏斗 upload_success
     try {
@@ -1377,14 +1432,11 @@ Page({
       })
     } catch (e) { /* ignore */ }
 
-    // PRD-2026Q4：完成时把全部 entities 都喂给 normalize（不再只投影 4 个字段），
-    // 让流式累积的 age/ecog/pdl1/treatmentLine/... 不会被收尾覆盖丢失。
-    // 同时叠加 this.data.parsedData（流式期间已累积的字段）—— result 是服务端
-    // 最终结果，里面有值会覆盖；result 没填的字段 streaming 期间填过的会保留。
-    // 浅 merge 足够：所有候选字段都是 primitive / string / array，没有需要深合并的嵌套对象。
     const parsedData = {
-      ...(this.data.parsedData || {}),
-      ...(result || {})
+      diagnosis: result.diagnosis || '',
+      stage: result.stage || '',
+      geneMutation: result.geneMutation || '',
+      treatment: result.treatment || ''
     }
 
     // Track C-2：先清掉上次 session 的初始 gap 总数（resetUploadSessionState 已经清，
@@ -1467,6 +1519,9 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    if (!this.data.gapDirty) {
+      this.setData({ gapDirty: true })
+    }
   },
 
   onGapInput(e) {
@@ -1481,10 +1536,27 @@ Page({
     }
     const { normalized } = this.applyParsedPresentation(parsedData)
     wx.setStorageSync('structuredRecordDraft', normalized)
+    // PRD-2026Q4 followup：用户改了字段就翻 dirty —— 让 startMatching 一定走 PATCH。
+    // 单独 setData 一次（applyParsedPresentation 不应该承担 dirty 语义，留给输入入口控制）。
+    if (!this.data.gapDirty) {
+      this.setData({ gapDirty: true })
+    }
   },
 
-  editResult() {
-    const { missingFields, structuredSummary } = this.data
+  // PRD-2026Q4 followup（editResult 短路 + PATCH 同步）：
+  //   旧版 editResult 是「点完只 toast 不落库」，与 startMatching 的 gapDirty 语义不一致。
+  //   现在三段决策树：
+  //     1. missingFields > 0  → 拦截，让用户先补完
+  //     2. gapDirty = false   → 没改动，纯确认 toast，不发 PATCH（避免空请求）
+  //     3. gapDirty = true    → 走 enrich + clearCachedMatches（与 startMatching 同语义）
+  //   保留 currentRecordId = recordId || fileId 的回退，与 startMatching 保持一致。
+  async editResult() {
+    if (this.data.submittingGap) {
+      return
+    }
+
+    const { missingFields, structuredSummary, fileId, parsedData, recordId, gapDirty } = this.data
+
     if (missingFields.length > 0) {
       wx.showToast({
         title: `仍有${missingFields.length}项待补充`,
@@ -1493,10 +1565,46 @@ Page({
       return
     }
 
-    wx.showToast({
-      title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已确认',
-      icon: 'success'
-    })
+    // 没改动 → 纯确认 toast 直接返回（与 startMatching 的 shouldPersist 短路对称）
+    if (!gapDirty) {
+      wx.showToast({
+        title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已确认',
+        icon: 'success'
+      })
+      return
+    }
+
+    // gapDirty = true → 真有改动 → PATCH + 清当条 recordId 的匹配缓存
+    const currentRecordId = recordId || fileId || ''
+
+    this.setData({ submittingGap: true })
+    wx.showLoading({ title: '保存中...' })
+
+    try {
+      if (currentRecordId) {
+        await api.enrichMedicalRecord(currentRecordId, parsedData)
+        parseTask.clearCachedMatches(currentRecordId)
+        this.setData({ gapDirty: false })
+      }
+
+      if (currentRecordId) {
+        wx.setStorageSync('currentRecordId', currentRecordId)
+      }
+      wx.setStorageSync('structuredRecordDraft', parsedData)
+
+      wx.showToast({
+        title: structuredSummary.missingRequired > 0 ? '已保存，可继续补充' : '信息已保存',
+        icon: 'success'
+      })
+    } catch (error) {
+      wx.showToast({
+        title: resolveErrorCopy(error),
+        icon: 'none'
+      })
+    } finally {
+      wx.hideLoading()
+      this.setData({ submittingGap: false })
+    }
   },
 
   async startMatching() {
@@ -1504,18 +1612,28 @@ Page({
       return
     }
 
-    const { missingFields, fileId, parsedData, recordId } = this.data
+    const { missingFields, fileId, parsedData, recordId, gapDirty } = this.data
+    const currentRecordId = recordId || fileId || ''
 
     this.setData({ submittingGap: true })
     wx.showLoading({ title: '正在进入匹配...' })
 
     try {
-      if (missingFields.length > 0 && fileId) {
-        await api.enrichMedicalRecord(fileId, parsedData)
+      // PRD-2026Q4 followup（"补全字段后必定 PATCH 后端"小修复）：
+      // 旧条件 `missingFields.length > 0 && fileId` 把"用户把所有 missing 都填齐"这个
+      // 最常见的成功路径漏掉了 —— missing 变 0 反而不再 PATCH，服务端仍是旧解析数据，
+      // 病历列表/详情/匹配评分都基于过期值。修法：只要 recordId/fileId 在，并且
+      // (missing 非空 或 gap 被改过)，就保存；保存成功后清这条 recordId 的匹配缓存。
+      const shouldPersist = !!currentRecordId && (missingFields.length > 0 || gapDirty)
+      if (shouldPersist) {
+        await api.enrichMedicalRecord(currentRecordId, parsedData)
         wx.showToast({ title: '补全信息已保存', icon: 'success' })
+        // 用户改了字段 = 旧匹配结果一定过时，让 matches 页重新拉
+        parseTask.clearCachedMatches(currentRecordId)
+        // 一次成功 PATCH 后清掉 dirty，避免用户回退再点又触发一次空保存
+        this.setData({ gapDirty: false })
       }
 
-      const currentRecordId = recordId || fileId || ''
       if (currentRecordId) {
         wx.setStorageSync('currentRecordId', currentRecordId)
       }
@@ -1551,8 +1669,7 @@ Page({
         isBatchParse: activeBatch.fileIds.length > 1,
         hasPdfUpload: !!activeBatch.hasPdfUpload
       })
-      // PRD-2026Q4：恢复会话时优先 SSE（snapshot 回放能让用户立刻看到当前阶段）
-      this.startStreamOrFallback()
+      this.startPolling()
       return
     }
 
@@ -1565,10 +1682,9 @@ Page({
       currentStep: 2,
       fileId: activeTask.fileId,
       recordId: activeTask.recordId || '',
-      fileIds: [activeTask.fileId],
       isBatchParse: false,
       hasPdfUpload: !!activeTask.hasPdfUpload
     })
-    this.startStreamOrFallback()
+    this.startPolling()
   }
 })

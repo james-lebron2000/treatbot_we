@@ -1,0 +1,80 @@
+name: Match Report Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_pdfs:
+        description: 'Skip PDF rendering and package HTML/JSON/Markdown only'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-report-artifact:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Restore report inputs from secrets
+        env:
+          REPORT_INPUTS_TGZ_B64: ${{ secrets.REPORT_INPUTS_TGZ_B64 }}
+          TRIALS_DATA_JSON_B64: ${{ secrets.TRIALS_DATA_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p scripts/output server/data
+
+          if [ -z "${REPORT_INPUTS_TGZ_B64:-}" ]; then
+            echo "::error::REPORT_INPUTS_TGZ_B64 secret is required. It must be a base64 .tar.gz containing patient_profiles.json and raw_texts/."
+            exit 1
+          fi
+          printf '%s' "$REPORT_INPUTS_TGZ_B64" | base64 -d | tar -xzf - -C scripts/output
+
+          if [ -n "${TRIALS_DATA_JSON_B64:-}" ]; then
+            printf '%s' "$TRIALS_DATA_JSON_B64" | base64 -d > server/data/trials_data.json
+          fi
+
+          test -f scripts/output/patient_profiles.json
+          test -d scripts/output/raw_texts
+          test -f server/data/trials_data.json
+
+      - name: Generate match JSON and Markdown
+        run: node scripts/batch_match_patients.js
+
+      - name: Set up Chrome
+        if: ${{ !inputs.skip_pdfs }}
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Generate HTML and optional PDFs
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.skip_pdfs }}" = "true" ]; then
+            export REPORT_SKIP_PDF=1
+          else
+            export CHROME_BIN="${{ steps.setup-chrome.outputs.chrome-path }}"
+          fi
+          node scripts/build_html_reports.js
+
+      - name: Package report zip
+        run: bash scripts/package_report_artifact.sh scripts/output
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: treatbot-match-report
+          path: scripts/output/treatbot-match-report-*.zip
+          if-no-files-found: error
+          retention-days: 14

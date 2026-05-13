@@ -1,0 +1,19 @@
+# Production API image build context is the repo root so Docker can copy /shared.
+# Keep the context tight; the image only needs server/ and shared/.
+**
+!server/
+!server/**
+!shared/
+!shared/**
+
+server/.env
+server/.env.*
+!server/.env.example
+server/node_modules
+server/coverage
+server/logs
+server/uploads
+server/tmp
+
+**/.DS_Store
+**/*.log

@@ -376,6 +376,62 @@
 }
 
 /* background tip ------------------------------------------------------ */
+/* Plan §Phase 3.3：文件名启发式占位卡 ——
+   柔和 brand-soft 底，不抢主进度条焦点；点不动（无 bindtap）。
+   chip 间距与 background-tip 同节奏，让 step 2 顶部有"在做事"的视觉暗示。 */
+.placeholder-hint-card {
+  margin-bottom: 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 24rpx;
+  background: var(--brand-soft);
+  border: 2rpx solid transparent;
+  text-align: left;
+}
+
+.placeholder-hint-kicker {
+  display: block;
+  font-size: 26rpx;
+  color: var(--text-dim);
+  margin-bottom: 12rpx;
+}
+
+.placeholder-hint-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.placeholder-hint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.7);
+  border: 2rpx solid var(--brand);
+}
+
+.placeholder-hint-label {
+  font-size: 26rpx;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.placeholder-hint-count {
+  font-size: 24rpx;
+  color: var(--brand);
+  opacity: 0.7;
+}
+
+/* Plan §Phase 3.4：队列深度提示，副信息体积，不抢主进度条焦点 */
+.placeholder-hint-queue {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
 .background-tip {
   margin-bottom: 24rpx;
   padding: 20rpx 24rpx;
@@ -962,138 +1018,4 @@
   font-size: 26rpx;
   color: var(--brand);
   text-decoration: underline;
-}
-
-/* ----------------------------------------------------------------------
-   PRD-2026Q4 流式 OCR：step 2 期间的"正在识别"分组预览
-   ---------------------------------------------------------------------- */
-.stream-preview {
-  margin-bottom: 24rpx;
-  padding: 24rpx;
-  border-radius: 24rpx;
-  background: var(--bg);
-  border: 2rpx solid var(--line);
-}
-
-.stream-preview-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 16rpx;
-}
-
-.stream-preview-kicker {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.stream-preview-subtitle {
-  font-size: 22rpx;
-  color: var(--text-muted);
-}
-
-.stream-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.stream-group {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  padding: 14rpx 16rpx;
-  border-radius: 18rpx;
-  background: var(--bg-soft);
-  border: 2rpx solid var(--line);
-  transition: background 280ms ease, border-color 280ms ease;
-}
-
-.stream-group.is-filled {
-  background: var(--brand-soft);
-  border-color: var(--brand);
-}
-
-.stream-group-dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.stream-group.is-filled .stream-group-dot {
-  background: var(--brand);
-}
-
-/* 骨架"识别中"的脉动 —— 与 .animation-circle 同曲线，节奏稍快让用户感受到"还在动" */
-.stream-group.is-pending .stream-group-dot {
-  animation: streamGroupPulse 1.2s ease-in-out infinite;
-}
-
-@keyframes streamGroupPulse {
-  0%, 100% { opacity: 0.35; transform: scale(1); }
-  50%      { opacity: 1;    transform: scale(1.2); }
-}
-
-.stream-group-label {
-  flex: 1;
-  font-size: 26rpx;
-  color: var(--text);
-}
-
-.stream-group-state {
-  font-size: 22rpx;
-  color: var(--brand);
-  font-weight: 600;
-}
-
-.stream-group-state.pending {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-/* 原文折叠区：与 .background-tip 风格一致但更克制（这是辅助信息） */
-.stream-rawtext {
-  margin-top: 16rpx;
-  border-radius: 18rpx;
-  background: var(--bg-soft);
-  border: 2rpx solid var(--line);
-  overflow: hidden;
-}
-
-.stream-rawtext-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14rpx 16rpx;
-}
-
-.stream-rawtext-title {
-  font-size: 26rpx;
-  color: var(--text);
-  font-weight: 600;
-}
-
-.stream-rawtext-toggle {
-  font-size: 24rpx;
-  color: var(--brand);
-}
-
-.stream-rawtext-body {
-  padding: 0 16rpx 16rpx 16rpx;
-  border-top: 2rpx solid var(--line);
-  max-height: 360rpx;
-  overflow-y: auto;
-}
-
-.stream-rawtext-content {
-  display: block;
-  font-size: 24rpx;
-  color: var(--text-dim);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
-  padding-top: 12rpx;
 }

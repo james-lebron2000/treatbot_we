@@ -73,12 +73,21 @@ router.post('/medical/upload-batch',
   medicalController.uploadMiddlewareBatch,
   medicalController.handleUploadBatch
 );
+// Plan §Phase 2.1 ★：客户端直传 COS（用户最痛点的解药）
+//   1) GET  /medical/upload-sts        →  发放 STS + 预生成 fileKey（资源域锁定 uploads/${userId}/）
+//   2) POST /medical/upload-finalize   →  客户端 PUT 完成后逐文件 finalize（headObject 验证 + 入队）
+// 与 /medical/upload[-batch] 双轨并存；老客户端仍走 multipart 路径。
+router.get('/medical/upload-sts', authMiddleware, uploadLimiter, medicalController.handleStsIssue);
+router.post('/medical/upload-finalize', authMiddleware, uploadLimiter, medicalController.handleFinalize);
 router.get('/medical/parse-status', authMiddleware, medicalController.getParseStatus);
 // Phase E.2：批量查询解析状态，单次请求最多 20 个 fileId
 router.get('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
 router.post('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
-// PRD-2026Q4 流式 OCR：SSE 端点，客户端边收边渲染（fallback 仍可用 parse-status-batch 轮询）
-router.get('/medical/parse-stream', authMiddleware, medicalController.getParseStream);
+// Plan §Phase 2.3 + PRD-2026Q4 流式 OCR：SSE 解析状态推送（主路径）+ 客户端 10s 内 fallback 轮询。
+//   - text/event-stream long poll；无 rate limit（同一用户最多 20 个 record）
+//   - 终态自动 end；Redis 不可用立即吐 noredis 让客户端切回轮询
+//   - PRD-2026Q4 流式 OCR 复用同一 pipe：每帧附带 statusPhase + fieldGroup + fields/rawText
+router.get('/medical/parse-status-stream', authMiddleware, medicalController.handleParseStatusStream);
 // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（Doubao 优先，规则兜底）。
 // Phase E.6 / Review #3：每次调用都跑 LLM（~$0.05/call），强制走 uploadLimiter (30/h) 防被滥用。
 router.get('/medical/timeline', authMiddleware, uploadLimiter, medicalController.getTimeline);

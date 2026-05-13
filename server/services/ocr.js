@@ -11,6 +11,8 @@ const logger = require('../utils/logger');
 const { scrubForLlm, restoreFromLlm } = require('../utils/piiScrubber');
 const { chatJson } = require('./llmClient');
 const { OcrExtractionSchema } = require('./llmSchemas');
+// Plan §Phase 2.4：拉图加速。CDN host 改写无配置时是 identity。
+const { wrapPresignedWithCdn } = require('./oss');
 // Q3-红线 §B.1：所有 LLM prompt 走版本化 registry，禁止散落硬编码字符串。
 const { getPrompt } = require('./promptRegistry');
 // Q3-红线 §A.3.2：LLM 调用可观测性（计时 / token / 错误分类）。
@@ -1020,9 +1022,23 @@ const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }) => {
     return requestDoubao(dataUrl);
   }
 
+  // Plan §Phase 2.4：把 *.cos.{region}.myqcloud.com 改写成 CDN 域；
+  // COS_CDN_DOMAIN 未配置时 wrapPresignedWithCdn 是 identity。
+  const cdnUrl = wrapPresignedWithCdn(imageUrl);
   try {
-    return await requestDoubao(imageUrl);
+    return await requestDoubao(cdnUrl);
   } catch (firstError) {
+    // 一级回退：CDN 出错回退到原 COS URL（CDN 短期故障不阻塞 OCR 主路径）
+    if (cdnUrl !== imageUrl) {
+      logger.warn('Doubao CDN URL 失败，回退到原 COS URL', { error: firstError.message });
+      try {
+        return await requestDoubao(imageUrl);
+      } catch (secondError) {
+        logger.warn('Doubao 原 URL 模式也失败，再尝试 Base64 回退', { error: secondError.message });
+        const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
+        return requestDoubao(dataUrl);
+      }
+    }
     logger.warn('Doubao URL 模式失败，尝试 Base64 回退', { error: firstError.message });
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
     return requestDoubao(dataUrl);

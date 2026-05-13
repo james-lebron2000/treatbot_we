@@ -10,6 +10,21 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# PRD-2026Q4 followup（deploy 并发竞态修复）：
+#   2026-05-10 一次性合 5 个 PR 触发 5 次并发 deploy，每次 deploy 都跑
+#   `rm -rf /tmp/treatbot-upload && mkdir -p /tmp/treatbot-upload/deploy`，
+#   导致 A 在 mkdir 后还没 scp 完，B 进来 rm 把 A 的工作目录端了 ——
+#   scp 报 "No such file or directory"，2 个 deploy 因此红灯。
+#
+#   修法：按 ref 分组排队。
+#     - push to main → group = "deploy-refs/heads/main" → 全部串行，不 cancel-in-progress，
+#       每个 commit 都要 deploy，丢一次都不行
+#     - pull_request → group = "deploy-refs/pull/N/merge" → 每个 PR 独立队列，
+#       cancel-in-progress=true 让新 commit 取代正在跑的旧 commit（PR 体验优先）
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # PRD-2026Q4 T0-11：fast lane —— 必须 blocking，目标 ~3s。
   # 跑 lint + 全部 mock-only 单测，排除真集成 suite（tests/api.test.js 需要 MySQL/Redis）。
@@ -212,7 +227,8 @@ jobs:
     - name: Build and push API image to GHCR
       uses: docker/build-push-action@v4
       with:
-        context: ./server
+        context: .
+        file: ./server/Dockerfile
         push: true
         tags: ghcr.io/james-lebron2000/treatbot-api:${{ github.sha }}
         cache-from: type=gha
@@ -281,7 +297,7 @@ jobs:
 
     - name: Pack server source as tarball
       run: |
-        git archive --format=tar HEAD server | gzip -1 > server-src.tar.gz
+        git archive --format=tar HEAD server shared .dockerignore | gzip -1 > server-src.tar.gz
         ls -lh server-src.tar.gz
 
     # 只上传小文件。API 镜像不再通过 SCP/GHCR 跨境搬运大制品，改由服务器本地构建。
@@ -445,9 +461,9 @@ jobs:
             if [ ! -f "$BUILD_DIR/server/Dockerfile" ]; then
               echo "  ⚠ source tarball extracted but server/Dockerfile is missing; falling back"
             elif command -v timeout >/dev/null 2>&1; then
-              timeout 35m docker build -t "$SHA_TAG" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
+              timeout 35m docker build -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
             else
-              docker build -t "$SHA_TAG" "$BUILD_DIR/server" && IMAGE_READY=1 || IMAGE_READY=0
+              docker build -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
             fi
             rm -rf "$BUILD_DIR"
             if [ "$IMAGE_READY" = "1" ]; then

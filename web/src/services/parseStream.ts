@@ -1,4 +1,25 @@
-// PRD-2026Q4 流式 OCR 客户端：消费 GET /api/medical/parse-stream
+// PRD-2026Q4 流式 OCR 客户端：消费 GET /api/medical/parse-status-stream
+//
+// 与服务端合约（main / PR #11 Plan §Phase 2.3 + 本 PR 的 streaming 扩展）：
+//   - URL: /api/medical/parse-status-stream?recordIds=a,b,c
+//   - 服务端写出 `event: <name>\ndata: <json>\n\n`，name 已知集合：
+//       state | done | noredis | error
+//   - state.data 形如：
+//       {
+//         fileId, recordId, status, progress, result, partial, errorMsg, cancelledAt, ts,
+//         // PRD-2026Q4 streaming OCR 扩展（仅在 worker 发 statusPhase='streaming' 时出现）：
+//         statusPhase?, fieldGroup?, fields?, rawText?
+//       }
+//
+// 本模块对外保留旧的 stage-based `StreamEvent` 接口（UploadView 早期版本以 stage 为中心写的渲染逻辑），
+// 在 dispatch 这一层把 main 的 status-based frame 折成 stage：
+//   - status='running' + statusPhase='queued'/'analyzing' / 未携带 streaming payload → 'preprocess'
+//   - status='running' + 携带 rawText                                       → 'ocr_text'
+//   - status='running' + 携带 fieldGroup+fields                              → 'field_group'
+//   - status='running' + statusPhase='structuring'                          → 'preprocess'（进度条 90%）
+//   - status='completed'                                                    → 'completed'
+//   - status='error'                                                        → 'error'
+//   - status='cancelled'                                                    → 'error'（携带 '已取消' 文案）
 //
 // 为什么不用 EventSource？
 //   原生 EventSource 不支持自定义 header → 不能带 Authorization。
@@ -7,10 +28,6 @@
 // fallback 策略：
 //   - 连接失败 / 收到 noredis 事件 → handlers.onNoredis() 触发上游切到现有 parse-status-batch 轮询
 //   - 收到 done → handlers.onDone()
-//
-// 协议：服务端写出 `event: <name>\ndata: <json>\n\n` 块，name 已知集合：
-//   hello | noredis | state | done | error
-// 其中 state.data 是 composeEvent 产物：{ recordId, stage, progress, ts, ...payload }
 
 import { http } from './api'
 
@@ -50,11 +67,97 @@ export interface ParseStreamHandlers {
 
 const SSE_DELIMITER = '\n\n'
 
+/**
+ * 把 main 的 status-based frame 折成 UploadView 早期版本用的 stage-based StreamEvent。
+ * 关键点：
+ *  - field_group 必须在 ocr_text 之前判定 —— streaming 阶段服务端可能同时携带 fieldGroup+rawText？
+ *    （目前不会，但即使将来同帧也 OK，优先把"字段已就位"信号给前端）
+ *  - completed 时，main 的 result 是平铺 {diagnosis, stage, geneMutation, treatment, rawText, confidence}，
+ *    UploadView 期望 `evt.result.entities`（mergeRecords/normalizeRecord 读这个 key）；
+ *    所以重新包成 { entities, text, provider, confidence }，rawText 截断 500 字也只能丢给 text。
+ *  - cancelled 折成 error + errorMsg='已取消'，让上游一致的 erroredCount 走通；UI 文案再做兜底。
+ */
+const folMainFrameToStage = (payload: any): StreamEvent | null => {
+  if (!payload || !payload.recordId) return null
+  const recordId = String(payload.recordId)
+  const progress = typeof payload.progress === 'number' ? payload.progress : null
+  const ts = typeof payload.ts === 'number' ? payload.ts : Date.now()
+  const status = String(payload.status || 'unknown')
+
+  // streaming 扩展：fieldGroup + fields → field_group stage
+  if (payload.fieldGroup && payload.fields && typeof payload.fields === 'object') {
+    return {
+      recordId,
+      stage: 'field_group',
+      progress,
+      ts,
+      fieldGroup: payload.fieldGroup,
+      fields: payload.fields
+    }
+  }
+  // streaming 扩展：rawText（取得 OCR 全文，前端展开 raw text 折叠面板）
+  if (typeof payload.rawText === 'string' && payload.rawText.length) {
+    return {
+      recordId,
+      stage: 'ocr_text',
+      progress,
+      ts,
+      rawText: payload.rawText
+    }
+  }
+
+  if (status === 'completed') {
+    const r = payload.result || {}
+    // 把 main 的扁平字段重新包成 UploadView 期望的 { entities, text, provider, confidence }。
+    // 注意：main 的 result.rawText 是截断到 500 字的 preview，不能当全量 text 用；
+    // 但 UploadView 的 normalizeRecord 仅用 entities 的字段，text 仅做兜底显示，所以这里截断版本就够了。
+    const entities: Record<string, unknown> = {}
+    for (const k of ['diagnosis', 'stage', 'geneMutation', 'treatment', 'treatmentLine', 'pdl1', 'ecog']) {
+      if (r[k] !== undefined && r[k] !== null) entities[k] = r[k]
+    }
+    return {
+      recordId,
+      stage: 'completed',
+      progress,
+      ts,
+      result: {
+        entities,
+        text: typeof r.rawText === 'string' ? r.rawText : '',
+        provider: typeof r.provider === 'string' ? r.provider : 'unknown',
+        confidence: typeof r.confidence === 'number' ? r.confidence : 0.5
+      }
+    }
+  }
+  if (status === 'error') {
+    return {
+      recordId,
+      stage: 'error',
+      progress,
+      ts,
+      errorMsg: typeof payload.errorMsg === 'string' ? payload.errorMsg : '解析失败'
+    }
+  }
+  if (status === 'cancelled') {
+    return {
+      recordId,
+      stage: 'error',
+      progress,
+      ts,
+      errorMsg: '已取消'
+    }
+  }
+
+  // 其他 running 阶段（queued / analyzing / structuring 未携带 streaming payload）
+  // 折成 preprocess —— UploadView 的阶段指示器把它当作"准备/识别中"，进度条以 progress 数字为准。
+  return {
+    recordId,
+    stage: 'preprocess',
+    progress,
+    ts
+  }
+}
+
 const parseSseBlock = (block: string): { event: string; data: string } | null => {
-  // 一个 block 形如：
-  //   event: state
-  //   data: {"...":...}
-  // 没有 event 行时默认 'message'
   let event = 'message'
   const dataLines: string[] = []
   for (const rawLine of block.split('\n')) {
@@ -80,9 +183,12 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
     return  // 心跳行或损坏数据，忽略
   }
   switch (parsed.event) {
-    case 'hello':   handlers.onHello?.(payload); break
     case 'noredis': handlers.onNoredis?.(payload); break
-    case 'state':   handlers.onState(payload as StreamEvent); break
+    case 'state': {
+      const evt = folMainFrameToStage(payload)
+      if (evt) handlers.onState(evt)
+      break
+    }
     case 'done':    handlers.onDone?.(payload); break
     case 'error':   handlers.onError?.(new Error(payload?.message || 'stream error')); break
     default: break
@@ -90,7 +196,7 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
 }
 
 /**
- * 打开一条 parse-stream SSE 连接，返回 close() 函数。
+ * 打开一条 parse-status-stream SSE 连接，返回 close() 函数。
  * 错误已经回调 handlers.onError 了；调用方拿到 close 主要用于"页面切走 / 取消上传"时主动断。
  */
 export const openParseStream = (
@@ -105,7 +211,7 @@ export const openParseStream = (
 
   const baseURL = http.defaults.baseURL || ''
   const token = localStorage.getItem('token') || ''
-  const url = `${baseURL}/api/medical/parse-stream?recordIds=${encodeURIComponent(ids.join(','))}`
+  const url = `${baseURL}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(ids.join(','))}`
 
   const ctrl = new AbortController()
   let closed = false
@@ -141,7 +247,7 @@ export const openParseStream = (
     }
 
     if (!response.ok || !response.body) {
-      handlers.onError?.(new Error(`parse-stream HTTP ${response.status}`))
+      handlers.onError?.(new Error(`parse-status-stream HTTP ${response.status}`))
       return
     }
 
@@ -178,3 +284,6 @@ export const openParseStream = (
 
   return close
 }
+
+// 测试桩：让 web/tests 单测能直接断言 frame 折叠逻辑（不必启 fetch / SSE 真实通道）
+export const __internals = { folMainFrameToStage, parseSseBlock }
