@@ -251,6 +251,19 @@ export const openParseStream = (
       return
     }
 
+    // Content-Type 守门：如果不是 text/event-stream（例如 nginx 把 SSE 当普通 JSON 缓冲、
+    // 测试环境的 catch-all mock 返了 application/json、网关把 SSE 转成了 chunked JSON），
+    // 继续按 SSE 解析会"读完 body 都没 \n\n → 静默退出 → 没人触发 fallback"，
+    // 上游就死等到超时。
+    //
+    // 注意走 onError 而不是 onNoredis：onNoredis 在调用方有个 8s 哨兵（等本地 EventEmitter
+    // 兜底），但当前情形下 SSE 通道根本不可用，再等 8s 是浪费。onError 直接进入轮询 fallback。
+    const ct = (response.headers.get('content-type') || '').toLowerCase()
+    if (!ct.includes('text/event-stream')) {
+      handlers.onError?.(new Error(`parse-status-stream non-SSE content-type: ${ct || 'none'}`))
+      return
+    }
+
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
