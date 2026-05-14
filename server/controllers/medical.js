@@ -8,6 +8,8 @@ const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+// PRD-2026Q4 T0-10：转化漏斗埋点
+const funnelTracker = require('../services/funnelTracker');
 // PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/H5 各自
 // 硬编码不同步"反复事故。env BATCH_UPLOAD_MAX 仍可覆盖默认（仅服务端，便于压测/灰度）。
 const sharedUploadSchema = require('../../shared/schemas/upload.js');
@@ -314,6 +316,20 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
     }
   }
   logger.info('病历上传成功:', { recordId: record.id, userId, fileKey, fileSize: file.size, ocrQueued });
+
+  // PRD-2026Q4 T0-10：MEDICAL_UPLOADED 埋点。
+  // 此处只表示"文件已落库 + 入队成功"，OCR 解析完成事件后续如需独立埋点可加 MEDICAL_PARSED。
+  // 失败仅 logger.warn，绝不影响上传响应。
+  try {
+    funnelTracker.track(funnelTracker.EVENTS.MEDICAL_UPLOADED, {
+      user_id: userId,
+      entity_id: record.id,
+      payload: { type: type || '其他', file_size: file.size, ocr_queued: ocrQueued }
+    });
+  } catch (trackErr) {
+    logger.warn('[medical] 漏斗埋点失败（已吞）:', { recordId: record.id, error: trackErr.message });
+  }
+
   return {
     fileId: record.id,
     recordId: record.id,
@@ -1257,7 +1273,47 @@ const getTimeline = async (req, res, next) => {
 };
 
 /**
- * Plan §Phase 2.3：SSE 解析状态推送主路径。
+ * PRD-2026Q3 T1-3：多病历 active 切换。
+ * 一个用户全局只有一份 is_active=true。事务里先把当前 active 重置为 0，
+ * 再把目标置 1，避免出现"两份都 active / 切换中竞态"的窗口。
+ */
+const activateRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    const { MedicalRecord, sequelize } = require('../models');
+
+    const result = await sequelize.transaction(async (t) => {
+      const rec = await MedicalRecord.findOne({
+        where: { id, user_id: userId, deleted_at: null },
+        lock: t.LOCK ? t.LOCK.UPDATE : 'UPDATE',
+        transaction: t
+      });
+      if (!rec) return { notFound: true };
+      if (rec.is_active === true) {
+        return { id: rec.id, isActive: true, noop: true };
+      }
+      await MedicalRecord.update(
+        { is_active: false },
+        { where: { user_id: userId, is_active: true }, transaction: t }
+      );
+      await rec.update({ is_active: true }, { transaction: t });
+      return { id: rec.id, isActive: true, noop: false };
+    });
+
+    if (result && result.notFound) {
+      if (typeof res.fail === 'function') return res.fail('记录不存在', 404);
+      return res.status(404).json({ code: 404, message: '记录不存在', data: null });
+    }
+    if (typeof res.ok === 'function') return res.ok(result);
+    return res.json(success(result, '已切换 active 病历'));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Plan §Phase 2.3 + PRD-2026Q4 streaming OCR：SSE 解析状态推送主路径。
  *
  *   GET /medical/parse-status-stream?recordIds=a,b,c
  *
@@ -1273,9 +1329,17 @@ const getTimeline = async (req, res, next) => {
  *  - `req.on('close')` 兜底 unsubscribe，防 zombie 订阅占 Redis 内存。
  *
  * Frame 格式：`event: <name>\ndata: <json>\n\n`
- *   - event: state    {fileId, recordId, status, progress, result, partial, errorMsg, ts}
+ *   - event: state    {fileId, recordId, status, statusPhase, progress, result, partial,
+ *                      fieldGroup, fields, rawText, errorMsg, ts}
  *   - event: done     {reason: 'all_terminal'|'terminal'|'closed'}
  *   - event: noredis  {reason: 'redis_unavailable'} —— 客户端切回轮询信号
+ *
+ * PRD-2026Q4 流式 OCR 扩展（向后兼容）：
+ *   - 当 worker 通过 publishRecordEventSafe 发出 `statusPhase: 'streaming'` 事件时，
+ *     payload 里会附带 `fieldGroup`（basic/diagnosis/treatment/timeline）+ `fields`（本组已就位的字段）
+ *     + `progress`（50/65/80/95）。这些字段在 onEvent 里被原样透传给客户端。
+ *   - `statusPhase: 'preprocess'` / `'ocr_text'` 也可能携带 rawText 文本，前端按需展示原始识别区。
+ *   - 老客户端只读 status/progress 字段时不会被破坏（额外字段直接忽略）。
  */
 const handleParseStatusStream = async (req, res, next) => {
   try {
@@ -1363,7 +1427,11 @@ const handleParseStatusStream = async (req, res, next) => {
       const rid = String(payload.recordId);
       if (!ownedSet.has(rid)) return;
       const status = payload.status || 'unknown';
-      writeFrame('state', {
+      // PRD-2026Q4 流式 OCR：额外透传 statusPhase / fieldGroup / fields / rawText 给前端。
+      // 这些字段仅在 worker 进入 streaming 阶段时被 publishRecordEventSafe 注入；
+      // 老 worker 只发 status/progress/result —— 这里全部用 `?? null` 与"only if defined"
+      // 防御性策略，避免历史数据被 undefined 污染。
+      const frame = {
         fileId: rid,
         recordId: rid,
         status,
@@ -1373,7 +1441,12 @@ const handleParseStatusStream = async (req, res, next) => {
         errorMsg: payload.errorMsg || null,
         cancelledAt: payload.cancelledAt || null,
         ts: payload.ts || Date.now()
-      });
+      };
+      if (payload.statusPhase) frame.statusPhase = payload.statusPhase;
+      if (payload.fieldGroup) frame.fieldGroup = payload.fieldGroup;
+      if (payload.fields && typeof payload.fields === 'object') frame.fields = payload.fields;
+      if (typeof payload.rawText === 'string' && payload.rawText.length) frame.rawText = payload.rawText;
+      writeFrame('state', frame);
       if (TERMINAL.has(status)) finishStream('terminal');
     };
 
@@ -1411,7 +1484,7 @@ module.exports = {
   handleFinalize,
   getParseStatus,
   getParseStatusBatch,
-  // Plan §Phase 2.3：SSE 解析状态推送
+  // Plan §Phase 2.3：SSE 解析状态推送（PRD-2026Q4 流式 OCR 复用这条 pipe）
   handleParseStatusStream,
   getTimeline,
   getRecords,
@@ -1420,6 +1493,7 @@ module.exports = {
   downloadRecordFile,
   deleteRecord,
   softDeleteRecord,
+  activateRecord,
   // Plan §Phase 1.3 测试钩子（仅供 tests/medicalParseStatus.test.js 直查纯函数）
   __mapParseStatus: mapParseStatus,
   __buildParseStatusEntry: buildParseStatusEntry

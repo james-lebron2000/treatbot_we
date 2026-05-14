@@ -160,6 +160,8 @@ docker-compose.override.yml
 *.bak
 *.backup
 *.old
+.env.bak*
+**/.env.bak*
 
 # Temporary files
 tmp/

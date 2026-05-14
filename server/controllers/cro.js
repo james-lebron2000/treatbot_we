@@ -1,11 +1,28 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op, fn, col } = require('sequelize');
-const { CroCompany, TrialApplication, Trial, User, MedicalRecord } = require('../models');
+const { CroCompany, TrialApplication, Trial, User, MedicalRecord, CroExportLog, AdminAuditLog } = require('../models');
 const { success, error } = require('../utils/response');
 const { safeText } = require('../utils/text');
+// PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：CRO export 也走集中式 CSV 转义。
+const { escapeCsvCell } = require('../utils/csvSafe');
 const logger = require('../utils/logger');
 const { JWT_SECRET } = require('../utils/jwtSecret');
+// PRD-2026Q4 T0-10：转化漏斗埋点
+const funnelTracker = require('../services/funnelTracker');
+
+// PRD-2026Q4 T0-10：状态 → 漏斗事件映射。
+// 与 application.create 那一步触发的 APPLICATION_SUBMITTED 衔接成完整漏斗。
+// 注意：cancelled 不映射任何事件 —— 用户取消由前端自助接口（application.cancel）触发，
+// 与 CRO 推进流程是两条不同的语义路径；如果需要 WITHDRAWN，应在 application.cancel
+// 里单独触发。
+const STATUS_TO_FUNNEL_EVENT = {
+  contacted: funnelTracker.EVENTS.CRO_CONTACTED,
+  screened: funnelTracker.EVENTS.SCREENED,
+  enrolled: funnelTracker.EVENTS.ENROLLED,
+  rejected: funnelTracker.EVENTS.REJECTED,
+  withdrawn: funnelTracker.EVENTS.WITHDRAWN
+};
 
 const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN) || 1800;
 
@@ -192,8 +209,27 @@ const updateCroApplicationStatus = async (req, res, next) => {
       return res.status(400).json(error('无效状态', 400));
     }
 
+    const prevStatus = app.status;
     await app.update({ status });
     logger.info(`[CRO] 状态更新: ${id} → ${status} by ${req.croCompany.name}`);
+
+    // PRD-2026Q4 T0-10：状态实际发生变更（noop=false）时埋点；
+    // 包在 try/catch，失败仅 logger.warn，不影响业务响应。
+    if (prevStatus !== status) {
+      const eventName = STATUS_TO_FUNNEL_EVENT[status];
+      if (eventName) {
+        try {
+          funnelTracker.track(eventName, {
+            user_id: app.user_id,
+            entity_id: app.id,
+            payload: { trial_id: app.trial_id, prev_status: prevStatus, source: 'cro' }
+          });
+        } catch (trackErr) {
+          logger.warn('[CRO] 漏斗埋点失败（已吞）:', { id, status, error: trackErr.message });
+        }
+      }
+    }
+
     res.json(success({ id, status }));
   } catch (err) {
     next(err);
@@ -235,17 +271,65 @@ const addCroNote = async (req, res, next) => {
 /**
  * CRO 导出自己试验的线索
  */
+// PRD-2026Q3 T0-1：导出表头固定顺序（CSV 第一行 / JSON rows 字段顺序）。
+const EXPORT_HEADERS = [
+  '申请ID', '状态', '申请时间', '患者昵称', '手机号',
+  '诊断', '分期', '基因突变', '治疗线数', 'PD-L1',
+  '城市', 'ECOG', '年龄', '性别', '备注', 'record_ids'
+];
+
+const maskPhoneCsv = (phone) => {
+  if (!phone || typeof phone !== 'string') return '';
+  if (phone.length < 8) return phone.replace(/\d/g, '*');
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+};
+
+/**
+ * PRD-2026Q3 T0-1：CRO 多试验导出（CSV / JSON）+ unmask 审计。
+ *   - trialIds：csv 或单 trialId（兼容老调用）；上限 20。
+ *   - 任一 trialId 不在 croCompany.trial_ids → 403，且不查 DB。
+ *   - unmask=true 时手机号明文 + 写 admin_audit_log；否则 138****1234 掩码。
+ *   - cro_export_log 每次必写；admin_audit_log 仅 unmask=true。
+ *   - 日期范围 from/to → created_at >=/< Op.gte/Op.lt。
+ */
 const exportCroApplications = async (req, res, next) => {
   try {
-    const { trialId } = req.query;
-    const allowedTrials = req.croCompany.trial_ids || [];
-
-    if (!trialId || !allowedTrials.includes(trialId)) {
+    const allowedTrials = (req.croCompany && req.croCompany.trial_ids) || [];
+    const raw = req.query.trialIds || req.query.trialId;
+    if (!raw || !String(raw).trim()) {
+      return res.status(400).json(error('trialIds 不能为空', 400));
+    }
+    const trialIds = String(raw).split(',').map((s) => s.trim()).filter(Boolean);
+    if (trialIds.length === 0) {
+      return res.status(400).json(error('trialIds 不能为空', 400));
+    }
+    if (trialIds.length > 20) {
+      return res.status(400).json(error('单次最多导出 20 个试验', 400));
+    }
+    const unauthorized = trialIds.filter((t) => !allowedTrials.includes(t));
+    if (unauthorized.length > 0) {
       return res.status(403).json(error('无权导出', 403));
     }
 
-    const rows = await TrialApplication.findAll({
-      where: { trial_id: trialId },
+    const { status, format = 'csv', unmask, from, to } = req.query;
+    const wantUnmask = unmask === 'true' || unmask === true;
+
+    const where = trialIds.length === 1
+      ? { trial_id: trialIds[0] }
+      : { trial_id: { [Op.in]: trialIds } };
+    if (status) {
+      const sl = String(status).split(',').map((s) => s.trim()).filter(Boolean);
+      where.status = sl.length === 1 ? sl[0] : { [Op.in]: sl };
+    }
+    if (from || to) {
+      const range = {};
+      if (from) range[Op.gte] = new Date(from);
+      if (to) range[Op.lt] = new Date(to);
+      where.created_at = range;
+    }
+
+    const apps = await TrialApplication.findAll({
+      where,
       include: [
         { model: User, attributes: ['id', 'nickname', 'phone'] },
         { model: Trial, attributes: ['id', 'name'] }
@@ -253,41 +337,80 @@ const exportCroApplications = async (req, res, next) => {
       order: [['created_at', 'DESC']]
     });
 
-    const recordIds = [...new Set(rows.flatMap((a) => parseRecordIds(a.record_ids)))];
+    const recordIds = [...new Set((apps || []).flatMap((a) => parseRecordIds(a.record_ids)))];
     const records = recordIds.length
       ? await MedicalRecord.findAll({ where: { id: { [Op.in]: recordIds } } })
       : [];
-    const recordMap = records.reduce((m, r) => { m[r.id] = r; return m; }, {});
+    const recordMap = (records || []).reduce((m, r) => { m[r.id] = r; return m; }, {});
 
-    const csvRows = rows.map((app) => {
+    const rows = (apps || []).map((app) => {
       const rids = parseRecordIds(app.record_ids);
       const pr = rids.length ? recordMap[rids[0]] : null;
+      const phone = (app.User && app.User.phone) || '';
+      const structured = (pr && pr.structured) || {};
       return {
         '申请ID': app.id,
-        '患者昵称': safeText(app.User?.nickname),
-        '手机号': safeText(app.User?.phone),
-        '诊断': safeText(pr?.diagnosis),
-        '分期': safeText(pr?.stage),
-        '基因突变': safeText(pr?.gene_mutation),
-        '治疗线数': pr?.treatment_line || '',
-        'PD-L1': safeText(pr?.pdl1),
         '状态': APPLICATION_STATUS_TEXT[app.status] || app.status,
         '申请时间': app.created_at,
-        '备注': (app.notes || []).map((n) => n.content).join('; ')
+        '患者昵称': safeText(app.User && app.User.nickname),
+        '手机号': wantUnmask ? phone : maskPhoneCsv(phone),
+        '诊断': safeText(pr && pr.diagnosis),
+        '分期': safeText(pr && pr.stage),
+        '基因突变': safeText(pr && pr.gene_mutation),
+        '治疗线数': (pr && pr.treatment_line) || '',
+        'PD-L1': safeText(pr && pr.pdl1),
+        '城市': safeText(structured.city),
+        'ECOG': structured.ecog == null ? '' : String(structured.ecog),
+        '年龄': structured.age == null ? '' : String(structured.age),
+        '性别': safeText(structured.gender),
+        '备注': (app.notes || []).map((n) => n.content).join('; '),
+        'record_ids': rids.join('|')
       };
     });
 
-    if (!csvRows.length) {
-      return res.status(200).send('\uFEFF暂无数据');
+    try {
+      if (CroExportLog && typeof CroExportLog.create === 'function') {
+        await CroExportLog.create({
+          cro_id: (req.croCompany && req.croCompany.id) || null,
+          trial_ids: trialIds,
+          row_count: rows.length,
+          format,
+          unmask: !!wantUnmask,
+          fields: { phone_full: !!wantUnmask },
+          status_filter: status || null,
+          from: from || null,
+          to: to || null
+        });
+      }
+    } catch (e) { logger.warn('[CRO] cro_export_log write 失败（已吞）', { err: e.message }); }
+
+    if (wantUnmask) {
+      try {
+        if (AdminAuditLog && typeof AdminAuditLog.create === 'function') {
+          await AdminAuditLog.create({
+            admin_id: `cro:${(req.croCompany && req.croCompany.id) || 'unknown'}`,
+            action: 'cro_export_unmask',
+            target_type: 'cro_export',
+            target_id: trialIds.join(','),
+            payload: { trialIds, row_count: rows.length, format }
+          });
+        }
+      } catch (e) { logger.warn('[CRO] admin_audit_log unmask write 失败（已吞）', { err: e.message }); }
     }
 
-    const headers = Object.keys(csvRows[0]);
-    const escape = (v) => `"${`${v ?? ''}`.replace(/"/g, '""')}"`;
-    const csv = [headers.join(','), ...csvRows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\n');
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.json(success({ trialIds, total: rows.length, rows }, 'ok'));
+    }
 
+    const headers = EXPORT_HEADERS;
+    // PRD-2026Q4 T0-7 followup：每个 cell 走 escapeCsvCell（首字符为 = + - @ \t \r 时
+    // 前缀单引号）—— 防止患者把 `=HYPERLINK(...)` 塞进昵称 / 备注 / 主诉，CRO 在
+    // Excel 打开 leads_xxx.csv 时被公式劫持。Headers 是硬编码中文，不需要转义。
+    const csv = [headers.join(','), ...rows.map((r) => headers.map((h) => escapeCsvCell(r[h])).join(','))].join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="trial_${trialId}_leads.csv"`);
-    res.send(`\uFEFF${csv}`);
+    res.setHeader('Content-Disposition', `attachment; filename="leads_${trialIds.join('_')}.csv"`);
+    return res.send(`\uFEFF${csv}`);
   } catch (err) {
     next(err);
   }
@@ -312,11 +435,69 @@ const getCroProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * PRD-2026Q3 T0-2：CRO 批量推进状态（最多 200 条）。
+ * 单条失败不阻塞其它；返回每条的成功/失败明细。
+ * 复用 updateCroApplicationStatus 的状态机 + funnelTracker 路径，循环调用即可。
+ */
+const bulkUpdateCroApplicationStatus = async (req, res, next) => {
+  try {
+    const { ids, status, remark } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ code: 400, message: 'ids 不能为空', data: null });
+    }
+    if (ids.length > 200) {
+      return res.status(400).json({ code: 400, message: '单次最多 200 条', data: null });
+    }
+    if (!status || typeof status !== 'string') {
+      return res.status(400).json({ code: 400, message: 'status 必填', data: null });
+    }
+    const stateMachine = require('../services/applicationStateMachine');
+    const results = [];
+    for (const id of ids) {
+      try {
+        const app = await TrialApplication.findOne({ where: { id }, include: [{ model: Trial, as: 'trial', required: false }] });
+        if (!app) { results.push({ id, ok: false, reason: 'not_found' }); continue; }
+        if (app.trial && req.croId && app.trial.cro_company_id && app.trial.cro_company_id !== req.croId) {
+          results.push({ id, ok: false, reason: 'forbidden' });
+          continue;
+        }
+        const prevStatus = app.status;
+        const r = await stateMachine.transition(id, status, {
+          actor: { type: 'cro', id: req.croId },
+          reason: remark || null,
+          extraFields: remark ? { remark } : {}
+        });
+        if (prevStatus !== status) {
+          const eventName = STATUS_TO_FUNNEL_EVENT[status];
+          if (eventName) {
+            try {
+              funnelTracker.track(eventName, {
+                user_id: app.user_id,
+                entity_id: app.id,
+                payload: { trial_id: app.trial_id, prev_status: prevStatus, source: 'cro-bulk' }
+              });
+            } catch (_e) { /* 漏斗失败不影响主流程 */ }
+          }
+        }
+        results.push({ id, ok: true, from: r.from, to: r.to });
+      } catch (e) {
+        results.push({ id, ok: false, reason: e instanceof stateMachine.InvalidTransitionError ? 'invalid_transition' : e.message });
+      }
+    }
+    const okCount = results.filter((r) => r.ok).length;
+    res.json(success({ total: ids.length, ok: okCount, failed: ids.length - okCount, results }, '批量更新完成'));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   croLogin,
   getCroTrials,
   getCroApplications,
   updateCroApplicationStatus,
+  bulkUpdateCroApplicationStatus,
   addCroNote,
   exportCroApplications,
   getCroProfile

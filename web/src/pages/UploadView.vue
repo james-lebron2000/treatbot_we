@@ -91,21 +91,21 @@
       </div>
     </div>
 
-    <!-- 解析中 -->
-    <div v-if="parseStatus && parseStatus !== 'error' && parseStatus !== 'completed' && !Object.keys(parsedRecord).length" class="card" style="text-align:center;padding:30px 16px;">
-      <div class="pulse-dot"></div>
-      <p style="font-size:1rem;margin:12px 0 4px;">{{ uploadCopy.status.parsing }}</p>
-      <p style="font-size:0.85rem;color:#6b7280;">
-        {{ parseStatus === 'running' ? 'AI 在找诊断、分期、基因信息 —— 这些稍后您能直接核对修改' : uploadCopy.status.pending }}
-      </p>
-      <!-- 批量场景显示 X / Y 进度（更直观） -->
-      <p v-if="isBatchParse && batchStats.total > 1" style="color:#2563eb;font-weight:500;">
+    <!-- 解析中（PRD-2026Q4 流式 OCR）：边收 SSE 边渐显字段 -->
+    <div v-if="parseStatus && parseStatus !== 'error' && parseStatus !== 'completed'" class="grid">
+      <StreamingRecordCard
+        :record="parsedRecord"
+        :filled-groups="filledGroups"
+        :raw-text="streamRawText"
+        :stage="currentStage"
+        :upload-percent="uploadPercent"
+      />
+      <p v-if="isBatchParse && batchStats.total > 1" style="color:#2563eb;font-weight:500;text-align:center;margin:0;">
         已处理 {{ batchStats.completedCount + batchStats.erroredCount }} / {{ batchStats.total }} 份
         <span v-if="batchStats.completedCount" style="color:#16a34a;">（成功 {{ batchStats.completedCount }}）</span>
         <span v-if="batchStats.erroredCount" style="color:#dc2626;">（失败 {{ batchStats.erroredCount }}）</span>
       </p>
-      <p v-else-if="parseProgress > 0" style="color:#2563eb;">进度 {{ parseProgress }}%</p>
-      <p v-if="elapsedSeconds > 10" style="font-size:0.8rem;color:#9ca3af;">
+      <p v-if="elapsedSeconds > 10" style="font-size:0.8rem;color:#9ca3af;text-align:center;margin:0;">
         已花 {{ elapsedSeconds }} 秒{{ elapsedSeconds > 30 ? '，这份内容偏多，再稍等一下' : '' }}
       </p>
     </div>
@@ -212,6 +212,9 @@ import { api } from '../services/api'
 import { FIELD_SCHEMAS, getMissingFields, normalizeRecord } from '../utils/schema'
 import { usePatientStore } from '../stores/patient'
 import RecordSummaryCard from '../components/RecordSummaryCard.vue'
+// PRD-2026Q4 流式 OCR：边解析边渲染的字段卡 + SSE 客户端
+import StreamingRecordCard from '../components/StreamingRecordCard.vue'
+import { openParseStream, type StreamEvent } from '../services/parseStream'
 import PrivacyPromiseCard from '../components/PrivacyPromiseCard.vue'
 // PRD-2026Q3 §U2：字段补全区的「？白话说明 + 我不知道逃生口」组件。
 import FieldExplainer from '../components/FieldExplainer.vue'
@@ -253,6 +256,13 @@ const fileIds = ref<string[]>([])
 const isBatchParse = ref(false)
 const batchStats = reactive({ total: 0, completedCount: 0, erroredCount: 0 })
 const timelineSummary = ref<any | null>(null)
+// PRD-2026Q4 流式 OCR
+type GroupName = 'basic' | 'diagnosis' | 'treatment' | 'timeline'
+const filledGroups = ref<GroupName[]>([])
+const streamRawText = ref<string>('')
+const currentStage = ref<'received' | 'preprocess' | 'ocr_text' | 'field_group' | 'completed' | 'error'>('received')
+const uploadPercent = ref<number>(0)
+let streamCloser: (() => void) | null = null
 const submitting = ref(false)
 type UploadErrorKind = 'rate_limit' | 'parse' | 'network' | ''
 interface UploadErrorState {
@@ -418,6 +428,11 @@ const resetUpload = () => {
   parseProgress.value = 0
   Object.keys(gapValues).forEach((k) => delete gapValues[k])
   unknownFieldKeys.value = []
+  filledGroups.value = []
+  streamRawText.value = ''
+  currentStage.value = 'received'
+  uploadPercent.value = 0
+  if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
 }
 
 const onFileChange = (event: Event) => {
@@ -640,7 +655,15 @@ const uploadAndParse = async () => {
       elapsedSeconds.value = Math.floor((Date.now() - pollStartTime) / 1000)
     }, 1000)
 
-    const uploadRes = await api.uploadMedicalRecordBatch(files.value, 'auto', remark.value)
+    // PRD-2026Q4：把 axios 上传进度回灌到 uploadPercent —— StreamingRecordCard 的
+    // 「准备」阶段会显示具体百分比，让多文件 / 大文件上传等待时不再是一片"准备中"。
+    uploadPercent.value = 0
+    const uploadRes = await api.uploadMedicalRecordBatch(
+      files.value,
+      'auto',
+      remark.value,
+      (percent) => { uploadPercent.value = percent }
+    )
     fileIds.value = Array.isArray(uploadRes.fileIds) ? uploadRes.fileIds : []
     if (!fileIds.value.length) {
       throw new Error(`所有文件上传失败（共 ${uploadRes.total} 份）`)
@@ -657,45 +680,167 @@ const uploadAndParse = async () => {
       showToast(`${uploadRes.total - uploadRes.successCount} 份上传失败，其余 ${uploadRes.successCount} 份继续解析`)
     }
 
-    // Step 2：批量轮询
+    // Step 2：流式订阅（SSE，PRD-2026Q4）
+    //   主路径：openParseStream → 阶段事件 + 字段分组事件 → 增量 merge 到 parsedRecord
+    //   兜底：onError / onNoredis → 触发 pollBatchOnce 轮询循环
     parseStatus.value = 'running'
     parseProgress.value = 5
+    filledGroups.value = []
+    streamRawText.value = ''
+    currentStage.value = 'received'
 
     const startedAt = Date.now()
-    // 单文件 90s；批量 = 90s + (n-1) * 20s，封顶 180s
     const timeoutMs = Math.min(180_000, 90_000 + Math.max(0, fileIds.value.length - 1) * 20_000)
 
-    while (true) {
-      if (Date.now() - startedAt > timeoutMs) {
-        throw new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`)
-      }
-      const { done, mergedResult, firstError } = await pollBatchOnce()
-      if (done) {
-        if (Object.keys(mergedResult).length) {
-          parseStatus.value = 'completed'
-          // Step 3：跨多份病历的时间线（只在 ≥2 份完成时才有意义；单份后端也会回，但价值小）
-          if (batchStats.completedCount >= 2) {
-            await fetchTimeline()
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const safeResolve = () => { if (!settled) { settled = true; resolve() } }
+      const safeReject = (e: Error) => { if (!settled) { settled = true; reject(e) } }
+      let timeoutTimer: number | null = window.setTimeout(() => {
+        safeReject(new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`))
+      }, timeoutMs)
+      const clearTimer = () => { if (timeoutTimer) { window.clearTimeout(timeoutTimer); timeoutTimer = null } }
+
+      // 兜底：进入轮询直到所有 record 都是终态（与原 while 循环等价）
+      let pollingActive = false
+      const startPollingFallback = async (reason: string) => {
+        if (pollingActive) return
+        pollingActive = true
+        // 关闭当前 SSE，避免双路径都在写 parsedRecord
+        if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
+        console.warn('parse-stream fallback to polling:', reason)
+        while (true) {
+          if (Date.now() - startedAt > timeoutMs) {
+            return safeReject(new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`))
           }
-          track('upload_success', {
-            recordId: recordId.value,
-            fileCount: files.value.length,
-            successCount: batchStats.completedCount,
-            errorCount: batchStats.erroredCount
-          })
-        } else {
-          // 全部失败 → 抛 firstError 让 setUploadError 走 parse 分支
-          throw new Error(firstError || '所有文件解析均失败')
+          try {
+            const { done, mergedResult, firstError } = await pollBatchOnce()
+            if (done) {
+              if (Object.keys(mergedResult).length) {
+                parseStatus.value = 'completed'
+                currentStage.value = 'completed'
+                if (batchStats.completedCount >= 2) await fetchTimeline()
+                clearTimer()
+                return safeResolve()
+              }
+              clearTimer()
+              return safeReject(new Error(firstError || '所有文件解析均失败'))
+            }
+          } catch (err: any) {
+            clearTimer()
+            return safeReject(err)
+          }
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
         }
-        break
       }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-    }
+
+      // record 终态计数：所有 fileIds 都到 completed/error 时才算整体 done
+      const terminalRecordIds = new Set<string>()
+      // 是否至少收到过一条 state 事件（用于 noredis 8s 哨兵判定）。
+      // 不能用 `currentStage === 'received'` 判定，因为 received 既是初始值也是首个 state 的 stage。
+      let sseReceivedAnyState = false
+
+      const onState = (evt: StreamEvent) => {
+        sseReceivedAnyState = true
+        currentStage.value = evt.stage as typeof currentStage.value
+        if (typeof evt.progress === 'number' && evt.progress > parseProgress.value) {
+          parseProgress.value = evt.progress
+        }
+        if (evt.stage === 'ocr_text' && evt.rawText) {
+          streamRawText.value = evt.rawText
+        }
+        if (evt.stage === 'field_group' && evt.fieldGroup && evt.fields) {
+          // 增量 merge：保留已有"有意义"值（保护用户编辑过的字段不被回填覆盖），
+          // 但**空数组 / 空对象**不算"已有值"——partial-json 早期可能把 treatmentHistory 之类
+          // 先发成 []，后续完整数组要能把它替换掉，否则用户永远看不到治疗记录。
+          const isEmpty = (x: unknown): boolean => {
+            if (x === undefined || x === null || x === '') return true
+            if (Array.isArray(x) && x.length === 0) return true
+            if (typeof x === 'object' && x !== null && Object.keys(x as object).length === 0) return true
+            return false
+          }
+          const next = { ...parsedRecord.value }
+          for (const [k, v] of Object.entries(evt.fields)) {
+            if (isEmpty(next[k])) {
+              next[k] = v as unknown
+            }
+          }
+          parsedRecord.value = next
+          if (!filledGroups.value.includes(evt.fieldGroup)) {
+            filledGroups.value = [...filledGroups.value, evt.fieldGroup]
+          }
+        }
+        if (evt.stage === 'completed' && evt.result) {
+          // 把最终 entities merge（normalizeRecord 把别名映射到标准 key）
+          const merged = mergeRecords(parsedRecord.value, normalizeRecord(evt.result.entities))
+          parsedRecord.value = merged
+          if (!recordId.value && evt.recordId) recordId.value = evt.recordId
+          terminalRecordIds.add(String(evt.recordId))
+          batchStats.completedCount = terminalRecordIds.size  // 简化：忽略 partial 失败计数
+          // 关键：completed 到来但 4 个 field_group 没全发（snapshot-at-open / 非流式 fallback /
+          // streamChatJson 一次性出齐）时，filledGroups 不补会导致 4 块骨架卡死。
+          // 此时数据已经在 parsedRecord 里完整可见，直接把 4 组都标 filled。
+          const ALL_GROUPS: GroupName[] = ['basic', 'diagnosis', 'treatment', 'timeline']
+          const missing = ALL_GROUPS.filter((g) => !filledGroups.value.includes(g))
+          if (missing.length) {
+            filledGroups.value = [...filledGroups.value, ...missing]
+          }
+        }
+        if (evt.stage === 'error' && evt.recordId) {
+          terminalRecordIds.add(String(evt.recordId))
+          batchStats.erroredCount += 1
+        }
+        if (terminalRecordIds.size >= fileIds.value.length) {
+          if (Object.keys(parsedRecord.value).length) {
+            parseStatus.value = 'completed'
+            currentStage.value = 'completed'
+            if (batchStats.completedCount >= 2) {
+              fetchTimeline().finally(() => { clearTimer(); safeResolve() })
+            } else {
+              clearTimer()
+              safeResolve()
+            }
+          } else {
+            clearTimer()
+            safeReject(new Error(evt.errorMsg || '所有文件解析均失败'))
+          }
+        }
+      }
+
+      streamCloser = openParseStream(fileIds.value, {
+        onState,
+        onDone: () => {
+          // 服务端通知"全部终态"——若我们这边 onState 还没走完，也用本回调收尾
+          if (!settled && terminalRecordIds.size === 0) {
+            // 没收到任何 state？不太可能，但安全起见走 fallback
+            startPollingFallback('done_without_state')
+          }
+        },
+        onError: (e) => { startPollingFallback(e.message || 'sse_error') },
+        onNoredis: () => {
+          // Redis 不可用：单进程下 localBus 仍能送事件，先不立即 fallback；
+          // 但起一个 8s 哨兵——如果 8s 内没收到任何 state，再切轮询。
+          window.setTimeout(() => {
+            if (!settled && !sseReceivedAnyState) {
+              startPollingFallback('noredis_timeout')
+            }
+          }, 8000)
+        }
+      })
+    })
+
+    track('upload_success', {
+      recordId: recordId.value,
+      fileCount: files.value.length,
+      successCount: batchStats.completedCount,
+      errorCount: batchStats.erroredCount
+    })
   } catch (err: any) {
     setUploadError(err)
   } finally {
     uploading.value = false
     stopPolling()
+    if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
   }
 }
 
@@ -729,6 +874,7 @@ onUnmounted(() => {
   stopPolling()
   if (retryTimer) { window.clearInterval(retryTimer); retryTimer = null }
   if (toastTimer) { window.clearTimeout(toastTimer); toastTimer = null }
+  if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
 })
 </script>
 

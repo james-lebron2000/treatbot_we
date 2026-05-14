@@ -233,11 +233,28 @@ export const api = {
   },
   // Phase E.2：H5 端原生支持 multi-FormData（<input multiple>），所以这里直接命中
   // /api/medical/upload-batch（一次最多 10 份）。返回 { total, successCount, fileIds, records[] }。
-  async uploadMedicalRecordBatch(files: File[], type: string, remark: string) {
+  async uploadMedicalRecordBatch(
+    files: File[],
+    type: string,
+    remark: string,
+    onUploadProgress?: (percent: number) => void
+  ) {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
     formData.append('type', type)
     formData.append('remark', remark)
+    // PRD-2026Q4：axios 自带的上传进度事件——交给调用方驱动 StreamingRecordCard
+    // 的「准备」阶段百分比；total 缺失时（极少数 transfer-encoded 场景）退化为 0
+    // 以避免 NaN 渗到 UI。仅在 onUploadProgress 存在时拼装 config，最小化 baseline 改动。
+    const config = onUploadProgress
+      ? {
+          onUploadProgress: (evt: { loaded: number; total?: number }) => {
+            const total = evt.total || 0
+            const percent = total > 0 ? Math.min(100, Math.round((evt.loaded / total) * 100)) : 0
+            try { onUploadProgress(percent) } catch { /* never let UI callbacks break upload */ }
+          }
+        }
+      : undefined
     const { data } = await http.post<ApiResponse<{
       total: number;
       successCount: number;
@@ -247,7 +264,7 @@ export const api = {
         ocrQueued?: boolean; isDuplicate?: boolean; uploadedAt?: string;
         message?: string; originalName?: string;
       }>;
-    }>>('/api/medical/upload-batch', formData)
+    }>>('/api/medical/upload-batch', formData, config)
     return unwrap(data)
   },
   async getParseStatus(fileId: string) {

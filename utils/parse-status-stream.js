@@ -18,24 +18,122 @@
  *   - 以 `:` 开头是注释（心跳），忽略
  */
 
+/**
+ * PRD-2026Q4 流式 OCR：把跨 chunk 的 utf-8 多字节字符正确拼起来。
+ *
+ * 历史踩坑：旧的 arrayBufferToString 在每个 chunk 上各做一次 TextDecoder.decode() —— 默认 streaming=false，
+ * 字符末尾若落在多字节序列中间（3-byte CJK 或 4-byte emoji 被 TCP 切两段），尾部那几个字节会被
+ * 替换成 U+FFFD（黑底问号），整个 SSE 帧的 JSON.parse 失败被外层 catch 静默吞掉，field_group 事件永久丢失。
+ *
+ * 修法：用 `new TextDecoder('utf-8', { fatal:false })` + `decode(chunk, { stream:true })`，
+ * 让 decoder 自己 hold 住跨包的尾巴字节，下一次 decode 时再续上。
+ *
+ * Fallback：基础库 2.20.x 没有 TextDecoder —— 手写一个把"未完成的尾巴"挂在 `pendingBytes` 上，
+ * 下次 decode 时拼回到前面继续解。和 TextDecoder 的语义等价。
+ *
+ * 关键 invariant：同一个 stream 必须复用同一个 decoder 实例（不能每个 chunk 都 new 一个），
+ * 否则连续 chunk 之间的尾巴字节会丢。openParseStatusStream 在闭包里持有 decoder，已满足。
+ */
+const createUtf8Decoder = () => {
+  if (typeof TextDecoder !== 'undefined') {
+    const td = new TextDecoder('utf-8', { fatal: false })
+    return {
+      decode: (buf) => {
+        if (!buf) return ''
+        try {
+          const view = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
+          return td.decode(view, { stream: true })
+        } catch (_e) {
+          return ''
+        }
+      },
+      end: () => {
+        try { return td.decode() } catch (_e) { return '' }
+      }
+    }
+  }
+  // 手写 fallback：累积「最后一段未完成的多字节」到 pendingBytes，下次拼回头部。
+  let pendingBytes = []
+  // 判断一个 byte 是 utf-8 序列的首字节，并返回其期望总长度（1/2/3/4）。
+  // 0xxxxxxx → 1, 110xxxxx → 2, 1110xxxx → 3, 11110xxx → 4
+  const utf8LenFromLead = (b) => {
+    if ((b & 0x80) === 0) return 1
+    if ((b & 0xe0) === 0xc0) return 2
+    if ((b & 0xf0) === 0xe0) return 3
+    if ((b & 0xf8) === 0xf0) return 4
+    return 1   // 非法首字节，按 1 字节吞掉避免无限挂起
+  }
+  return {
+    decode: (buf) => {
+      if (!buf) return ''
+      let bytes
+      try {
+        bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
+      } catch (_e) {
+        return ''
+      }
+      // 把上次留的尾巴拼到 input 前面
+      const combined = pendingBytes.length
+        ? Uint8Array.from([...pendingBytes, ...bytes])
+        : bytes
+      pendingBytes = []
+      // 从尾部往前找到「最后一个完整字符」的边界
+      let cutAt = combined.length
+      let i = combined.length - 1
+      while (i >= 0 && (combined[i] & 0xc0) === 0x80) i--   // 跳过续字节
+      if (i >= 0) {
+        const need = utf8LenFromLead(combined[i])
+        if (i + need > combined.length) {
+          // 尾巴不完整，把 [i, end) 留到下次
+          cutAt = i
+          pendingBytes = Array.from(combined.slice(i))
+        }
+      }
+      // 解码完整部分。注意 String.fromCharCode 路径只在没有 TextDecoder 时走到，
+      // 这里手写一个 utf-8 → string，覆盖 1/2/3/4 字节序列。
+      let out = ''
+      let j = 0
+      while (j < cutAt) {
+        const b1 = combined[j]
+        if (b1 < 0x80) { out += String.fromCharCode(b1); j += 1; continue }
+        if ((b1 & 0xe0) === 0xc0 && j + 1 < cutAt) {
+          const cp = ((b1 & 0x1f) << 6) | (combined[j + 1] & 0x3f)
+          out += String.fromCharCode(cp); j += 2; continue
+        }
+        if ((b1 & 0xf0) === 0xe0 && j + 2 < cutAt) {
+          const cp = ((b1 & 0x0f) << 12) | ((combined[j + 1] & 0x3f) << 6) | (combined[j + 2] & 0x3f)
+          out += String.fromCharCode(cp); j += 3; continue
+        }
+        if ((b1 & 0xf8) === 0xf0 && j + 3 < cutAt) {
+          const cp = ((b1 & 0x07) << 18) | ((combined[j + 1] & 0x3f) << 12)
+            | ((combined[j + 2] & 0x3f) << 6) | (combined[j + 3] & 0x3f)
+          // surrogate pair
+          const adj = cp - 0x10000
+          out += String.fromCharCode(0xd800 + (adj >>> 10), 0xdc00 + (adj & 0x3ff))
+          j += 4; continue
+        }
+        // 非法 / 截断：跳一个字节避免死循环
+        j += 1
+      }
+      return out
+    },
+    end: () => {
+      const tail = pendingBytes
+      pendingBytes = []
+      // 残留就当损坏字符丢掉（与 TextDecoder fatal:false 一致）
+      return tail.length ? '' : ''
+    }
+  }
+}
+
+// 旧函数签名兼容：旧测试可能直接调 arrayBufferToString —— 内部包一个 short-lived decoder。
+// 注意：这种 one-shot 用法在 chunk 边界仍会丢字节，仅供「整条字符串一次性 decode」的纯函数测试场景。
+// 真实 SSE 流走 openParseStatusStream → 闭包持有的 decoder，不会撞这条路径。
 const arrayBufferToString = (buf) => {
   if (!buf) return ''
-  // wx.onChunkReceived 提供 ArrayBuffer；Node 环境下也可能直接传字符串。
   if (typeof buf === 'string') return buf
-  try {
-    const bytes = new Uint8Array(buf)
-    // 简化：仅处理 UTF-8。SSE 协议规定 UTF-8。
-    if (typeof TextDecoder !== 'undefined') {
-      return new TextDecoder('utf-8').decode(bytes)
-    }
-    let str = ''
-    for (let i = 0; i < bytes.length; i += 1) {
-      str += String.fromCharCode(bytes[i])
-    }
-    return decodeURIComponent(escape(str))
-  } catch (e) {
-    return ''
-  }
+  const dec = createUtf8Decoder()
+  return dec.decode(buf) + dec.end()
 }
 
 /**
@@ -98,6 +196,8 @@ const openParseStatusStream = (opts) => {
   let buffer = ''
   let closed = false
   let firstChunkReceived = false
+  // PRD-2026Q4：每条流持有自己的 utf-8 decoder，跨 chunk 的多字节 CJK / emoji 不会被切坏。
+  const utf8Decoder = createUtf8Decoder()
 
   const callError = (reason) => {
     if (closed) return
@@ -156,7 +256,11 @@ const openParseStatusStream = (opts) => {
       firstChunkTimer = null
     }
 
-    buffer += arrayBufferToString(chunkResp && chunkResp.data)
+    // PRD-2026Q4 流式 OCR：用持有状态的 decoder 累积 chunk，跨包的多字节字符不会被替成 U+FFFD。
+    const chunkText = chunkResp && chunkResp.data
+      ? (typeof chunkResp.data === 'string' ? chunkResp.data : utf8Decoder.decode(chunkResp.data))
+      : ''
+    buffer += chunkText
     const { frames, remainder } = splitFrames(buffer)
     buffer = remainder
 
@@ -197,5 +301,5 @@ const openParseStatusStream = (opts) => {
 module.exports = {
   openParseStatusStream,
   // 暴露给单测：纯函数，无副作用
-  __testables: { splitFrames, parseFrame, arrayBufferToString }
+  __testables: { splitFrames, parseFrame, arrayBufferToString, createUtf8Decoder }
 }

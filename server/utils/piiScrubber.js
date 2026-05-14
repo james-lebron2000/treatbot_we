@@ -115,7 +115,62 @@ const restoreFromLlm = (scrubbedJson, mapping) => {
   return walk(scrubbedJson);
 };
 
+/**
+ * Q3-红线 §A.1.2：日志侧 PII 脱敏。和 scrubForLlm 不同——
+ *   - 不需要回填，所以不维护 mapping；
+ *   - 手机号保留末 4 位（运维排障常用），其他 PII 全部 redact；
+ *   - 接受 string / 普通 object（深克隆并替换字符串值）；非字符串/对象原样返回。
+ *
+ * 设计动机（PRD-2026Q4 T0-7 followup）：
+ *   多个 logger.* 调用点直接把 phone / verification code / id_card 写进 message 或 meta，
+ *   docker logs / Sentry breadcrumb / 文件备份都会落盘。这是"低概率高代价"的合规风险。
+ *   提供集中工具 + 静态回归门后，新增日志只要走它就免得到处考虑遮罩。
+ *
+ * 用法：
+ *   logger.info('[me.delete] code 已生成', { userId, phone: scrubForLog(user.phone) });
+ *   logger.info(scrubForLog(`SMS to ${phone}: ${code}`));   // 字符串内联也可
+ */
+const maskPhone = (phone) => {
+  const s = String(phone);
+  if (!/^\d{11}$/.test(s)) return '<PHONE>';
+  return `***${s.slice(-4)}`;
+};
+
+const scrubStringForLog = (str) => {
+  let out = String(str);
+  out = out.replace(ID_CARD_RE, '<ID_REDACTED>');
+  out = out.replace(PHONE_RE, (m) => maskPhone(m));
+  out = out.replace(BANK_CARD_RE, '<BANKCARD_REDACTED>');
+  out = out.replace(EMAIL_RE, '<EMAIL_REDACTED>');
+  return out;
+};
+
+const scrubForLog = (val) => {
+  if (val == null) return val;
+  if (typeof val === 'string') return scrubStringForLog(val);
+  if (typeof val === 'number' || typeof val === 'boolean') return val;
+  if (Array.isArray(val)) return val.map(scrubForLog);
+  if (typeof val === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      // 字段名命中 phone → 直接走 maskPhone（哪怕值是数字）
+      if (/^phone$|Phone$/.test(k) && (typeof v === 'string' || typeof v === 'number')) {
+        out[k] = maskPhone(v);
+      } else if (/idCard|id_card/i.test(k)) {
+        out[k] = '<ID_REDACTED>';
+      } else {
+        out[k] = scrubForLog(v);
+      }
+    }
+    return out;
+  }
+  return val;
+};
+
 module.exports = {
   scrubForLlm,
-  restoreFromLlm
+  restoreFromLlm,
+  scrubForLog,
+  // 暴露给单元测试 / 极小调用点
+  _maskPhone: maskPhone
 };

@@ -14,9 +14,11 @@ const mockRedis = {
     redisStore.set(key, value);
     return Promise.resolve('OK');
   }),
+  // Real Redis DEL returns 1 if key existed (and was deleted), 0 if not.
+  // PRD-2026Q4 T0-7 followup（refresh rotation atomic claim）依赖这个语义做 CAS。
   del: jest.fn((key) => {
-    redisStore.delete(key);
-    return Promise.resolve(1);
+    const existed = redisStore.delete(key);
+    return Promise.resolve(existed ? 1 : 0);
   })
 };
 
@@ -135,5 +137,45 @@ describe('auth.refreshToken §3.4', () => {
     const res = buildRes();
     await authController.refreshToken(req, res, jest.fn());
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  // PRD-2026Q4 T0-7 followup（refresh rotation atomic claim）：
+  // 老实现 isRefreshJtiValid + revokeRefreshJti 是 GET-then-DEL 两步 → 并发 refresh 都
+  // 通过校验、双双轮换出新 token，「one-time use」 设计被打破。新实现走单次原子 DEL。
+  // 这条测试模拟两路并发 refresh 同一个 jti，断言只有一路成功。
+  test('并发 refresh 同一 jti → 仅一个成功，另一个 401（atomic claim）', async () => {
+    const originalJti = 'jti-concurrent';
+    redisStore.set(`refresh:user_42:${originalJti}`, '1');
+    const sharedRefresh = buildRefresh({ userId: 'user_42', type: 'refresh', jti: originalJti });
+
+    const r1 = buildRes();
+    const r2 = buildRes();
+    // 同时启动 → Promise.all 让两个 await 在 microtask 队列里交错。
+    await Promise.all([
+      authController.refreshToken({ body: { refreshToken: sharedRefresh } }, r1, jest.fn()),
+      authController.refreshToken({ body: { refreshToken: sharedRefresh } }, r2, jest.fn())
+    ]);
+
+    const wins = [r1, r2].filter((r) => !r.status.mock.calls.some((c) => c[0] === 401));
+    const losses = [r1, r2].filter((r) => r.status.mock.calls.some((c) => c[0] === 401));
+    expect(wins.length).toBe(1);
+    expect(losses.length).toBe(1);
+  });
+
+  test('Redis del 抛错 → fail-open（兼容 PRD-2026Q2 §3.4 fail-open 决策）', async () => {
+    const originalJti = 'jti-redis-down';
+    redisStore.set(`refresh:user_42:${originalJti}`, '1');
+    const refresh = buildRefresh({ userId: 'user_42', type: 'refresh', jti: originalJti });
+
+    // 让 del 抛错一次（claim 阶段），后续 setex/del 仍走真 mock。
+    mockRedis.del.mockImplementationOnce(() => Promise.reject(new Error('redis down')));
+
+    const res = buildRes();
+    await authController.refreshToken({ body: { refreshToken: refresh } }, res, jest.fn());
+    // fail-open：不应被打成 401
+    expect(res.status).not.toHaveBeenCalledWith(401);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.code).toBe(0);
+    expect(payload.data.token).toBeTruthy();
   });
 });

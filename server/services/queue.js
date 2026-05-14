@@ -1,6 +1,10 @@
 const Queue = require('bull');
 const logger = require('../utils/logger');
-const { processMedicalImage } = require('./ocr');
+const { runStreamingPipeline } = require('./ocrPipeline');
+// PRD-2026Q4 流式 OCR：ocrPipeline 仍然以 stage-based 事件回调（preprocess/ocr_text/field_group/...）
+// 让 emit 看到的是 { recordId, stage, progress, fieldGroup, fields, rawText } 这种语义清晰的形状；
+// 然后 buildEmitAdapter 把它折成 main 的 status-based 形状（statusPhase + fields 附加）发给 SSE。
+const { STAGE } = require('../../shared/streaming/events');
 const { MedicalRecord, OcrJobFailure } = require('../models');
 // Plan §Phase 1.2：OCR 结果缓存（按 file_hash + prompt_version）
 const ocrCache = require('./ocrCache');
@@ -133,6 +137,27 @@ const runOcrTask = async (data, opts = {}) => {
   const { jobId } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
 
+  // PRD-2026Q4 流式 OCR：把 ocrPipeline 发出的 stage-based 事件折成 main 的 status-based SSE payload。
+  // 设计点：
+  //  - preprocess（queue.js 入口 worker 起步） → 由 queue.js 自己已经发了 analyzing 阶段事件，pipeline 的
+  //    preprocess 与之重叠，直接丢弃（避免连发两条 statusPhase='analyzing'）。
+  //  - ocr_text（拿到 rawText） → 折成 { statusPhase:'streaming', progress, rawText }，
+  //    让前端立刻能展示原始识别文本面板。
+  //  - field_group（每分组凑齐就 emit 一次） → 折成 { statusPhase:'streaming', progress, fieldGroup, fields }，
+  //    SSE 帧里 fields 是这一组刚写好的字段，前端可逐组渲染骨架→实体。
+  //  - completed / error / received → 全部丢弃，由 queue.js 主循环自己最后发终态（避免重复推 + 顺序漂移）。
+  const emit = async (evt) => {
+    if (!evt || !evt.stage) return;
+    if (evt.stage === STAGE.RECEIVED || evt.stage === STAGE.PREPROCESS) return;
+    if (evt.stage === STAGE.COMPLETED || evt.stage === STAGE.ERROR) return;
+    const payload = { status: 'running', statusPhase: 'streaming' };
+    if (typeof evt.progress === 'number') payload.progress = evt.progress;
+    if (evt.fieldGroup) payload.fieldGroup = evt.fieldGroup;
+    if (evt.fields && typeof evt.fields === 'object') payload.fields = evt.fields;
+    if (typeof evt.rawText === 'string' && evt.rawText.length) payload.rawText = evt.rawText;
+    await publishRecordEventSafe(recordId, payload);
+  };
+
   let fileHash = null;
   try {
     // Plan §Phase 3.1：第一道取消闸 —— worker 启动瞬间用户已点过取消的快路径。
@@ -181,10 +206,10 @@ const runOcrTask = async (data, opts = {}) => {
       progress: 55
     });
 
-    const result = await processMedicalImage({
-      sourceUrl: imageUrl,
-      mimeType,
-      fileKey
+    // 2) 走流式管线：内部会发 preprocess(15) → ocr_text(40) → field_group(50–95)
+    const result = await runStreamingPipeline({
+      source: { sourceUrl: imageUrl, mimeType, fileKey },
+      emit
     });
 
     // Plan §Phase 3.1：第二道取消闸 —— OCR 跑完后再查一次 cancelled_at。
@@ -288,6 +313,8 @@ const runOcrTask = async (data, opts = {}) => {
     });
 
     // 失败状态回写也用 try/catch，避免再次抛异常吃掉原始错误
+    // 注：error 事件由本块末尾 publishRecordEventSafe(status:'error') 统一推 SSE，
+    // 不需要单独 emit STAGE.ERROR —— PRD-2026Q4 的 emit adapter 已显式丢弃 ERROR/COMPLETED 阶段事件。
     try {
       await MedicalRecord.update({
         status: 'error',

@@ -26,7 +26,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  # PRD-2026Q4 T0-11：fast lane —— 必须 blocking，目标 ~3s。
+  # 跑 lint + 全部 mock-only 单测，排除真集成 suite（tests/api.test.js 需要 MySQL/Redis）。
+  fast:
+    name: fast (lint + unit, blocking)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -46,9 +49,9 @@ jobs:
       working-directory: ./server
       run: npm run lint
 
-    - name: Run tests
+    - name: Run unit tests (excluding integration)
       working-directory: ./server
-      run: npm test -- --runInBand --forceExit
+      run: npx jest --runInBand --forceExit --testPathIgnorePatterns=tests/api.test.js
       env:
         NODE_ENV: test
         JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
@@ -64,6 +67,173 @@ jobs:
         echo "▶ 3/3 production + short value should throw"
         ! NODE_ENV=production JWT_SECRET=abc123short node -e "require('./utils/jwtSecret')" 2>/dev/null
         echo "✅ JWT_SECRET guard intact"
+
+  # PRD-2026Q4 T0-11：slow lane —— required-but-non-blocking，目标 ~3min。
+  # service-container 起 MySQL+Redis，跑 migrate + tests/api.test.js（真集成）。
+  # 失败时自动开 issue + Slack on-call webhook 通知，但 continue-on-error: true 不阻 deploy。
+  slow:
+    name: slow (integration, non-blocking)
+    runs-on: ubuntu-latest
+    needs: fast
+    continue-on-error: true
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: treatbot_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      # Server's config/database.js reads DB_PASSWORD (not DB_PASS).
+      # Keeping DB_PASS would leave sequelize connecting with empty
+      # password and fail every migrate/test that hits the live DB.
+      DB_PASSWORD: rootpw
+      DB_NAME: treatbot_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: server/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./server
+      run: npm ci
+
+    # ubuntu-24.04 base image dropped mysql-client + redis-tools from the
+    # default set (had them on ubuntu-22.04). Without these, both the
+    # wait loop below and the Create+migrate step would fail
+    # silently — wait swallows errors via >/dev/null. Install explicitly.
+    - name: Install MySQL + Redis CLI tools
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends mysql-client redis-tools netcat-openbsd
+
+    - name: Wait for MySQL & Redis
+      run: |
+        # Try TCP-port probe first (zero-dependency), then validate with
+        # client ping. Surface per-iteration errors so a regression here
+        # is debuggable instead of dying with "services not ready".
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+          mysql_ok=0
+          redis_ok=0
+          if nc -z 127.0.0.1 3306 && mysqladmin ping -h 127.0.0.1 -uroot -prootpw 2>&1 | grep -q 'mysqld is alive'; then
+            mysql_ok=1
+          fi
+          if nc -z 127.0.0.1 6379 && [ "$(redis-cli -h 127.0.0.1 ping 2>&1)" = "PONG" ]; then
+            redis_ok=1
+          fi
+          if [ "$mysql_ok" = "1" ] && [ "$redis_ok" = "1" ]; then
+            echo "services ready (attempt $i)"
+            exit 0
+          fi
+          echo "attempt $i: mysql_ok=$mysql_ok redis_ok=$redis_ok — retrying in 3s"
+          sleep 3
+        done
+        echo "services not ready after 15 attempts"
+        # Final diagnostic dump before failing so the next debugger has signal.
+        nc -zv 127.0.0.1 3306 || true
+        nc -zv 127.0.0.1 6379 || true
+        mysqladmin ping -h 127.0.0.1 -uroot -prootpw || true
+        redis-cli -h 127.0.0.1 ping || true
+        exit 1
+
+    - name: Compute isolated test schema name
+      id: schema
+      working-directory: ./server
+      run: |
+        SCHEMA=$(node scripts/test/setup-isolated-schema.js)
+        echo "schema=$SCHEMA" >> "$GITHUB_OUTPUT"
+        echo "TEST_SCHEMA_NAME=$SCHEMA" >> "$GITHUB_ENV"
+        echo "DB_NAME=$SCHEMA" >> "$GITHUB_ENV"
+      env:
+        PR_NUM: ${{ github.event.pull_request.number }}
+        GITHUB_SHA: ${{ github.sha }}
+
+    - name: Create + migrate isolated schema
+      working-directory: ./server
+      run: |
+        mysql -h 127.0.0.1 -uroot -prootpw -e "DROP DATABASE IF EXISTS \`$TEST_SCHEMA_NAME\`; CREATE DATABASE \`$TEST_SCHEMA_NAME\`;"
+        node scripts/migrate.js
+
+    - name: Run integration tests
+      working-directory: ./server
+      run: npx jest tests/api.test.js --runInBand --forceExit
+
+    - name: Cleanup isolated schema
+      if: always()
+      run: |
+        mysql -h 127.0.0.1 -uroot -prootpw -e "DROP DATABASE IF EXISTS \`$TEST_SCHEMA_NAME\`;" || true
+
+    - name: Notify on-call (Slack webhook)
+      if: failure()
+      env:
+        SLACK_ONCALL_WEBHOOK: ${{ secrets.SLACK_ONCALL_WEBHOOK }}
+      run: |
+        if [ -z "${SLACK_ONCALL_WEBHOOK:-}" ]; then
+          echo "SLACK_ONCALL_WEBHOOK not set — skipping Slack notify"
+          exit 0
+        fi
+        curl -fsSL -X POST -H 'Content-Type: application/json' \
+          --data "{\"text\":\":rotating_light: slow CI failed on ${{ github.repository }}@${{ github.sha }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+          "$SLACK_ONCALL_WEBHOOK" || true
+
+    - name: Open issue on failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `slow CI failed on ${context.sha.slice(0,7)}`;
+          const body = [
+            `slow lane (integration) failed for run [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            ``,
+            `- workflow: ${context.workflow}`,
+            `- branch: ${context.ref}`,
+            `- sha: ${context.sha}`,
+            ``,
+            `_auto-opened by deploy.yml slow job (PRD-2026Q4 T0-11)._`
+          ].join('\n');
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title,
+            body,
+            labels: ['ci-slow-failure']
+          });
+
+  # 保留 test job 名作为 build-api / build-web / deploy 的依赖锚点
+  # （只是把 fast 当成新的 test gate，避免 deploy 流水线断链）
+  test:
+    name: test (gate)
+    runs-on: ubuntu-latest
+    needs: fast
+    steps:
+    - run: echo "fast lane passed; deploy chain may proceed"
 
   build-api:
     needs: test
