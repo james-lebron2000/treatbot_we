@@ -41,6 +41,10 @@ const ensureTrialMatchingColumns = async () => {
   await ensureMrCol('pdl1', { type: DataTypes.STRING(64), allowNull: true });
   // PRD-2026Q2 §3.5：多病历管理页软删除字段（对应 20260423_medical_record_soft_delete.sql）
   await ensureMrCol('deleted_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
+  // PRD-2026Q4 流式 OCR/取消解析依赖这两个列；生产 deploy 只跑本脚本，
+  // 因此必须在这里保持与 SQL migration 文件同等的幂等补列能力。
+  await ensureMrCol('status_phase', { type: DataTypes.STRING(24), allowNull: true, defaultValue: null });
+  await ensureMrCol('cancelled_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
   // PRD-2026Q3 T1-3：多病历 active 切换 —— 列存在但可能未回填；回填由 SQL migration 完成。
   await ensureMrCol('is_active', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false });
 
