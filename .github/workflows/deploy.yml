@@ -430,6 +430,39 @@ jobs:
           echo "===== Deploy $TS — SHA=$SHA ====="
 
           ###############################################
+          # PART 0 — 生产 schema 快速修复（换容器前）
+          ###############################################
+          echo "::group::0) Preflight schema repair"
+          if docker inspect treatbot-api >/dev/null 2>&1; then
+            docker exec treatbot-api node - <<'NODE'
+          const { sequelize } = require('./config/database');
+          const { DataTypes } = require('sequelize');
+          (async () => {
+            const qi = sequelize.getQueryInterface();
+            const table = await qi.describeTable('medical_records');
+            const add = async (name, definition) => {
+              if (table[name]) {
+                console.log(`  ✓ medical_records.${name} exists`);
+                return;
+              }
+              await qi.addColumn('medical_records', name, definition);
+              console.log(`  ✓ added medical_records.${name}`);
+            };
+            await add('status_phase', { type: DataTypes.STRING(24), allowNull: true, defaultValue: null });
+            await add('cancelled_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
+          })()
+            .then(() => sequelize.close())
+            .catch(async (err) => {
+              console.log(`  ⚠ schema repair skipped: ${err && err.message ? err.message : err}`);
+              try { await sequelize.close(); } catch (_) {}
+            });
+          NODE
+          else
+            echo "  (no existing treatbot-api container; skip preflight repair)"
+          fi
+          echo "::endgroup::"
+
+          ###############################################
           # PART A — 后端容器替换（带备份 + 自动回滚）
           ###############################################
           echo "::group::A) Backend container replace"
