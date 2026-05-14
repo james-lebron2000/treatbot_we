@@ -1119,7 +1119,7 @@ const recognizeByRule = async ({ imageUrl, fileKey, mimeType: _mimeType }) => {
   };
 };
 
-const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
+const recognizeGeneral = async ({ imageUrl, fileKey, mimeType, emitEvent = () => {} }) => {
   const providerPreference = getOcrProvider();
   const attemptedProviders = new Set();
 
@@ -1127,19 +1127,47 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     // 主路径：Doubao/ARK。生产 OCR 唯一视觉 provider，coding-plan key 已弃用。
     if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential())) {
       attemptedProviders.add('doubao');
+      emitEvent({
+        type: 'provider_attempt',
+        status: 'running',
+        progress: 45,
+        stage: 'provider_doubao',
+        message: '正在调用 Doubao 视觉识别'
+      });
       return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
     }
 
     if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential())) {
       attemptedProviders.add('kimi');
+      emitEvent({
+        type: 'provider_attempt',
+        status: 'running',
+        progress: 45,
+        stage: 'provider_kimi',
+        message: '正在调用 Kimi 视觉识别'
+      });
       return await recognizeByKimi({ imageUrl, fileKey, mimeType });
     }
 
     if (providerPreference === 'tencent' || (providerPreference === 'auto' && hasTencentCredential())) {
       attemptedProviders.add('tencent');
+      emitEvent({
+        type: 'provider_attempt',
+        status: 'running',
+        progress: 45,
+        stage: 'provider_tencent',
+        message: '正在调用腾讯云 OCR'
+      });
       return await recognizeByTencent(imageUrl);
     }
 
+    emitEvent({
+      type: 'provider_attempt',
+      status: 'running',
+      progress: 45,
+      stage: 'provider_rule',
+      message: '正在使用规则兜底识别'
+    });
     return recognizeByRule({ imageUrl, fileKey, mimeType });
   } catch (error) {
     logger.warn('首选OCR提供方失败，进入回退路径', {
@@ -1154,6 +1182,14 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     if (hasDoubaoVisionCredential() && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
       try {
         recordLlmFallback(fromProvider, 'doubao', fallbackReason);
+        emitEvent({
+          type: 'provider_fallback',
+          status: 'running',
+          progress: 52,
+          stage: 'fallback_doubao',
+          message: '首选识别失败，切换到 Doubao',
+          meta: { fromProvider, reason: fallbackReason }
+        });
         return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
       } catch (e) {
         logger.warn('Doubao 回退失败', { error: e.message });
@@ -1163,6 +1199,14 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     if (hasKimiCredential() && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
         recordLlmFallback(fromProvider, 'kimi', fallbackReason);
+        emitEvent({
+          type: 'provider_fallback',
+          status: 'running',
+          progress: 58,
+          stage: 'fallback_kimi',
+          message: '正在切换到 Kimi 识别',
+          meta: { fromProvider, reason: fallbackReason }
+        });
         return await recognizeByKimi({ imageUrl, fileKey, mimeType });
       } catch (e) {
         logger.warn('Kimi 回退失败', { error: e.message });
@@ -1172,6 +1216,14 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     if (hasTencentCredential() && providerPreference !== 'tencent' && !attemptedProviders.has('tencent')) {
       try {
         recordLlmFallback(fromProvider, 'tencent', fallbackReason);
+        emitEvent({
+          type: 'provider_fallback',
+          status: 'running',
+          progress: 64,
+          stage: 'fallback_tencent',
+          message: '正在切换到腾讯云 OCR',
+          meta: { fromProvider, reason: fallbackReason }
+        });
         return await recognizeByTencent(imageUrl);
       } catch (e) {
         logger.warn('Tencent 回退失败', { error: e.message });
@@ -1179,19 +1231,27 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     }
 
     recordLlmFallback(fromProvider, 'rule', fallbackReason);
+    emitEvent({
+      type: 'provider_fallback',
+      status: 'running',
+      progress: 70,
+      stage: 'fallback_rule',
+      message: '正在使用规则兜底识别',
+      meta: { fromProvider, reason: fallbackReason }
+    });
     return recognizeByRule({ imageUrl, fileKey, mimeType });
   }
 };
 
 const recognizeMedical = async (imageUrl) => {
-  return recognizeGeneral(imageUrl);
+  return recognizeGeneral(typeof imageUrl === 'string' ? { imageUrl } : (imageUrl || {}));
 };
 
 /**
  * markitdown 预处理：尝试用 markitdown 将文件转为 Markdown，再交给 Kimi 结构化
  * 对 PDF（文本型）和文档格式效果最好；扫描件/图片可能返回空文本，自动降级
  */
-const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }) => {
+const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType, emitEvent = () => {} }) => {
   let markitdownService;
   try {
     markitdownService = require('./markitdown');
@@ -1200,6 +1260,13 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   }
 
   let markdown = '';
+  emitEvent({
+    type: 'stage',
+    status: 'running',
+    progress: 25,
+    stage: 'markitdown',
+    message: '正在尝试提取文档文本层'
+  });
 
   // 优先尝试本地文件
   if (fileKey) {
@@ -1221,10 +1288,25 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
     fileKey,
     markdownLength: markdown.length
   });
+  emitEvent({
+    type: 'stage',
+    status: 'running',
+    progress: 42,
+    stage: 'text_extracted',
+    message: '已提取文本，正在结构化关键信息',
+    meta: { textLength: markdown.length }
+  });
 
   // 优先用 Doubao/ARK 进行结构化抽取，缺失则回退 Kimi。
   if (hasDoubaoCredential()) {
     try {
+      emitEvent({
+        type: 'provider_attempt',
+        status: 'running',
+        progress: 55,
+        stage: 'provider_doubao_text',
+        message: '正在用 Doubao 结构化文本'
+      });
       const doubaoResult = await requestDoubaoText(markdown);
       return {
         success: true,
@@ -1237,12 +1319,26 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
       };
     } catch (doubaoErr) {
       logger.warn('markitdown + Doubao 文本抽取失败，尝试 Kimi 回退', { error: doubaoErr.message });
+      emitEvent({
+        type: 'provider_fallback',
+        status: 'running',
+        progress: 62,
+        stage: 'fallback_kimi_text',
+        message: 'Doubao 文本结构化失败，切换到 Kimi'
+      });
     }
   }
 
   // 次选：Kimi 文本抽取（fallback）
   if (hasKimiCredential()) {
     try {
+      emitEvent({
+        type: 'provider_attempt',
+        status: 'running',
+        progress: 65,
+        stage: 'provider_kimi_text',
+        message: '正在用 Kimi 结构化文本'
+      });
       const kimiResult = await requestKimiText(markdown);
       return {
         success: true,
@@ -1258,6 +1354,13 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   }
 
   // 无 LLM 或 LLM 失败：用规则兜底
+  emitEvent({
+    type: 'provider_fallback',
+    status: 'running',
+    progress: 72,
+    stage: 'fallback_rule_text',
+    message: '正在使用规则兜底结构化'
+  });
   const entities = extractMedicalEntities(markdown);
   return {
     success: true,
@@ -1278,6 +1381,27 @@ const processMedicalImage = async (imageUrl) => {
       ? { sourceUrl: imageUrl }
       : (imageUrl || {});
     const sourceUrl = source.sourceUrl || source.imageUrl || '';
+    const emitEvent = typeof source.emitEvent === 'function' ? source.emitEvent : () => {};
+    const emitPartial = (result = {}) => {
+      emitEvent({
+        type: 'partial_result',
+        status: 'running',
+        progress: 82,
+        stage: 'structured',
+        message: '已抽取出关键信息',
+        partialResult: {
+          diagnosis: result.entities?.diagnosis || null,
+          stage: result.entities?.stage || null,
+          geneMutation: result.entities?.geneMutation || null,
+          treatment: result.entities?.treatment || null,
+          confidence: result.confidence || null
+        },
+        meta: {
+          provider: result.provider || 'unknown',
+          pageCount: result.pageCount || null
+        }
+      });
+    };
 
     if (!sourceUrl && !source.fileKey) {
       throw new Error('缺少可识别的文件地址');
@@ -1297,10 +1421,12 @@ const processMedicalImage = async (imageUrl) => {
       const markitdownResult = await tryMarkitdownPipeline({
         fileKey: source.fileKey,
         sourceUrl,
-        mimeType: source.mimeType
+        mimeType: source.mimeType,
+        emitEvent
       });
       if (markitdownResult) {
         logger.info('markitdown 管线成功，跳过传统 OCR', { provider: markitdownResult.provider || 'markitdown' });
+        emitPartial(markitdownResult);
         return markitdownResult;
       }
     } catch (mdErr) {
@@ -1313,15 +1439,29 @@ const processMedicalImage = async (imageUrl) => {
       mimeType: source.mimeType,
       fileKey: source.fileKey
     })) {
+      emitEvent({
+        type: 'stage',
+        status: 'running',
+        progress: 32,
+        stage: 'pdf_detected',
+        message: '检测到 PDF，正在识别文本层或扫描页'
+      });
       // 主路径：Doubao。先尝试 PDF 文本层，抽空时立即转扫描件 vision 路径。
       if (hasDoubaoCredential()) {
         try {
+          emitEvent({
+            type: 'provider_attempt',
+            status: 'running',
+            progress: 45,
+            stage: 'provider_doubao_pdf',
+            message: '正在用 Doubao 解析 PDF 文本层'
+          });
           const doubaoPdfResult = await requestDoubaoPdf({
             sourceUrl,
             fileKey: source.fileKey
           });
           logger.info('PDF 走 Doubao 文本模式完成', { provider: doubaoPdfResult.provider });
-          return {
+          const normalized = {
             success: true,
             text: doubaoPdfResult.text,
             entities: doubaoPdfResult.entities,
@@ -1329,9 +1469,25 @@ const processMedicalImage = async (imageUrl) => {
             detections: [],
             provider: doubaoPdfResult.provider || 'doubao_pdf'
           };
+          emitPartial(normalized);
+          return normalized;
         } catch (doubaoTextErr) {
           logger.warn('Doubao PDF 文本路径失败，尝试扫描件 vision 路径', { error: doubaoTextErr.message });
+          emitEvent({
+            type: 'provider_fallback',
+            status: 'running',
+            progress: 52,
+            stage: 'fallback_pdf_vision',
+            message: 'PDF 文本层不可用，切换到扫描页视觉识别'
+          });
           try {
+            emitEvent({
+              type: 'stage',
+              status: 'running',
+              progress: 58,
+              stage: 'pdf_render',
+              message: '正在将 PDF 页面转换为图片'
+            });
             const doubaoVisionResult = await requestDoubaoPdfVision({
               sourceUrl,
               fileKey: source.fileKey
@@ -1340,7 +1496,7 @@ const processMedicalImage = async (imageUrl) => {
               provider: doubaoVisionResult.provider,
               pageCount: doubaoVisionResult.pageCount
             });
-            return {
+            const normalized = {
               success: true,
               text: doubaoVisionResult.text,
               entities: doubaoVisionResult.entities,
@@ -1349,8 +1505,17 @@ const processMedicalImage = async (imageUrl) => {
               provider: doubaoVisionResult.provider || 'doubao_pdf_vision',
               pageCount: doubaoVisionResult.pageCount
             };
+            emitPartial(normalized);
+            return normalized;
           } catch (doubaoVisionErr) {
             logger.warn('Doubao PDF vision 路径失败，尝试 Kimi 回退', { error: doubaoVisionErr.message });
+            emitEvent({
+              type: 'provider_fallback',
+              status: 'running',
+              progress: 66,
+              stage: 'fallback_kimi_pdf',
+              message: 'PDF 视觉识别失败，切换到 Kimi PDF'
+            });
           }
         }
       }
@@ -1358,12 +1523,19 @@ const processMedicalImage = async (imageUrl) => {
       // 次选：Kimi File API（fallback）
       if (hasKimiCredential()) {
         try {
+          emitEvent({
+            type: 'provider_attempt',
+            status: 'running',
+            progress: 68,
+            stage: 'provider_kimi_pdf',
+            message: '正在用 Kimi 解析 PDF'
+          });
           const kimiPdfResult = await requestKimiPdf({
             sourceUrl,
             fileKey: source.fileKey
           });
           logger.info('PDF 走 Kimi File API 模式完成', { provider: kimiPdfResult.provider });
-          return {
+          const normalized = {
             success: true,
             text: kimiPdfResult.text,
             entities: kimiPdfResult.entities,
@@ -1371,6 +1543,8 @@ const processMedicalImage = async (imageUrl) => {
             detections: [],
             provider: kimiPdfResult.provider || 'kimi_pdf'
           };
+          emitPartial(normalized);
+          return normalized;
         } catch (kimiPdfErr) {
           logger.warn('Kimi File API 处理 PDF 失败，降级到文本解析', { error: kimiPdfErr.message });
         }
@@ -1389,9 +1563,16 @@ const processMedicalImage = async (imageUrl) => {
       // 有文本则优先用 Doubao 文本模式结构化
       if (text && hasDoubaoCredential()) {
         try {
+          emitEvent({
+            type: 'provider_attempt',
+            status: 'running',
+            progress: 70,
+            stage: 'provider_doubao_text',
+            message: '正在用 Doubao 结构化 PDF 文本'
+          });
           const doubaoResult = await requestDoubaoText(text);
           logger.info('PDF 走 Doubao 文本模式结构化完成');
-          return {
+          const normalized = {
             success: true,
             text: doubaoResult.text || text,
             entities: doubaoResult.entities,
@@ -1399,17 +1580,33 @@ const processMedicalImage = async (imageUrl) => {
             detections: [],
             provider: doubaoResult.provider || 'pdf_doubao_text'
           };
+          emitPartial(normalized);
+          return normalized;
         } catch (doubaoTextErr) {
           logger.warn('PDF Doubao 文本模式失败，尝试 Kimi 文本模式回退', { error: doubaoTextErr.message });
+          emitEvent({
+            type: 'provider_fallback',
+            status: 'running',
+            progress: 74,
+            stage: 'fallback_kimi_text',
+            message: 'Doubao 文本结构化失败，切换到 Kimi'
+          });
         }
       }
 
       // 次选：Kimi 文本模式（fallback）
       if (text && hasKimiCredential()) {
         try {
+          emitEvent({
+            type: 'provider_attempt',
+            status: 'running',
+            progress: 76,
+            stage: 'provider_kimi_text',
+            message: '正在用 Kimi 结构化 PDF 文本'
+          });
           const kimiResult = await requestKimiText(text);
           logger.info('PDF 走 Kimi 文本模式结构化完成');
-          return {
+          const normalized = {
             success: true,
             text: kimiResult.text || text,
             entities: kimiResult.entities,
@@ -1417,6 +1614,8 @@ const processMedicalImage = async (imageUrl) => {
             detections: [],
             provider: kimiResult.provider || 'pdf_kimi_text'
           };
+          emitPartial(normalized);
+          return normalized;
         } catch (kimiErr) {
           logger.warn('PDF Kimi 文本模式失败，降级到规则抽取', { error: kimiErr.message });
         }
@@ -1424,7 +1623,7 @@ const processMedicalImage = async (imageUrl) => {
 
       // 最终兜底：规则抽取（对空文本几乎无效，但不抛错）
       const entities = extractMedicalEntities(text);
-      return {
+      const normalized = {
         success: true,
         text,
         entities,
@@ -1432,14 +1631,17 @@ const processMedicalImage = async (imageUrl) => {
         detections: [],
         provider: 'pdf_rule'
       };
+      emitPartial(normalized);
+      return normalized;
     }
 
     const result = await recognizeGeneral({
       imageUrl: sourceUrl,
       fileKey: source.fileKey,
-      mimeType: source.mimeType
+      mimeType: source.mimeType,
+      emitEvent
     });
-    return {
+    const normalized = {
       success: true,
       text: result.text,
       entities: result.entities,
@@ -1447,6 +1649,8 @@ const processMedicalImage = async (imageUrl) => {
       detections: result.detections,
       provider: result.provider || 'image'
     };
+    emitPartial(normalized);
+    return normalized;
   } catch (error) {
     logger.error('医疗图片处理失败:', error);
     throw error;

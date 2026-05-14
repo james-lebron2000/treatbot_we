@@ -5,6 +5,7 @@ const { BusinessError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
+const ocrEvents = require('../services/ocrEvents');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
 // PRD-2026Q4 T0-10：转化漏斗埋点
 const funnelTracker = require('../services/funnelTracker');
@@ -414,6 +415,132 @@ const getParseStatus = async (req, res, next) => {
 
     res.json(success(buildParseStatusEntry(record)));
   } catch (err) {
+    next(err);
+  }
+};
+
+const parseAfterSeq = (req) => {
+  const querySeq = Number(req.query.afterSeq || 0);
+  if (Number.isFinite(querySeq) && querySeq > 0) {
+    return querySeq;
+  }
+  const headerSeq = Number(req.headers['last-event-id'] || 0);
+  return Number.isFinite(headerSeq) && headerSeq > 0 ? headerSeq : 0;
+};
+
+/**
+ * Server-Sent Events：实时推送 OCR 解析阶段事件。
+ *
+ * v1 只推业务阶段与终态结果，不做 LLM token 级 streaming；旧客户端继续使用
+ * /medical/parse-status 轮询。
+ */
+const streamParseStatus = async (req, res, next) => {
+  let unsubscribe = null;
+  let heartbeatTimer = null;
+  let closed = false;
+
+  const close = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+    if (!res.writableEnded) {
+      res.end();
+    }
+  };
+
+  try {
+    const { fileId } = req.query;
+    if (!fileId) {
+      throw new BusinessError('缺少 fileId 参数', 400);
+    }
+
+    const record = await MedicalRecord.findOne({
+      where: { id: fileId, user_id: req.userId, deleted_at: null }
+    });
+
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+
+    req.on('close', close);
+
+    if (!record) {
+      ocrEvents.writeSseEvent(res, {
+        recordId: fileId,
+        seq: 0,
+        type: 'not_found',
+        status: 'not_found',
+        progress: 0,
+        stage: 'not_found',
+        message: '记录不存在或已被删除',
+        createdAt: new Date().toISOString()
+      });
+      close();
+      return;
+    }
+
+    const afterSeq = parseAfterSeq(req);
+    const historical = ocrEvents.getEventsAfter(record.id, afterSeq);
+    historical.forEach((event) => ocrEvents.writeSseEvent(res, event));
+
+    const lastHistorical = historical[historical.length - 1];
+    if (!lastHistorical) {
+      const snapshot = ocrEvents.buildSnapshotEvent(record, buildParseStatusEntry);
+      if (snapshot) {
+        ocrEvents.writeSseEvent(res, {
+          recordId: record.id,
+          seq: 0,
+          createdAt: new Date().toISOString(),
+          ...snapshot
+        });
+        if (ocrEvents.isTerminal(snapshot)) {
+          close();
+          return;
+        }
+      }
+    } else if (ocrEvents.isTerminal(lastHistorical)) {
+      close();
+      return;
+    }
+
+    const onEvent = (event) => {
+      ocrEvents.writeSseEvent(res, event);
+      if (ocrEvents.isTerminal(event)) {
+        close();
+      }
+    };
+    unsubscribe = ocrEvents.subscribe(record.id, onEvent);
+
+    heartbeatTimer = setInterval(() => {
+      ocrEvents.writeSseEvent(res, {
+        recordId: record.id,
+        type: 'heartbeat',
+        status: record.status === 'completed' ? 'completed' : 'running',
+        progress: undefined,
+        stage: 'heartbeat',
+        message: 'ok',
+        createdAt: new Date().toISOString()
+      });
+    }, 20000);
+  } catch (err) {
+    if (res.headersSent) {
+      close();
+      return;
+    }
     next(err);
   }
 };
@@ -870,6 +997,7 @@ module.exports = {
   handleUpload,
   handleUploadBatch,
   getParseStatus,
+  streamParseStatus,
   getParseStatusBatch,
   getTimeline,
   getRecords,

@@ -25,6 +25,13 @@ const funnelController = require('../controllers/funnel');
 // PRD-2026Q4 T0-7：用户写入路径的 PII 归一化 + 强校验中间件
 const normalizePii = require('../middleware/normalizePii');
 
+const eventStreamAuthMiddleware = (req, res, next) => {
+  if (!req.headers.authorization && req.query && req.query.access_token) {
+    req.headers.authorization = `Bearer ${req.query.access_token}`;
+  }
+  return authMiddleware(req, res, next);
+};
+
 // ===== 公开的「试用演示」接口（免认证） =====
 // 设计约束：只返回 fixtures/demoSamples.json 的只读数据，不触发 OCR，不写 DB。
 router.get('/demo/samples', demoController.listSamples);
@@ -74,6 +81,7 @@ router.post('/medical/upload-batch',
   medicalController.handleUploadBatch
 );
 router.get('/medical/parse-status', authMiddleware, medicalController.getParseStatus);
+router.get('/medical/parse-stream', eventStreamAuthMiddleware, medicalController.streamParseStatus);
 // Phase E.2：批量查询解析状态，单次请求最多 20 个 fileId
 router.get('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
 router.post('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);

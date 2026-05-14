@@ -103,7 +103,15 @@ app.use(cors({
 }));
 
 // 压缩响应
-app.use(compression());
+// SSE 需要及时 flush；压缩层可能缓冲 text/event-stream，导致客户端收不到实时事件。
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path === '/api/medical/parse-stream') {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
 
 // 限流
 app.use(rateLimitMiddleware);

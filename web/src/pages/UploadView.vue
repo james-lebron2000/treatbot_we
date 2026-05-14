@@ -319,9 +319,9 @@ const goManualEntry = () => {
 }
 
 let timer: number | null = null
+let parseStream: { close: () => void } | null = null
 let pollStartTime = 0
 let elapsedTimer: number | null = null
-const POLL_TIMEOUT_MS = 120_000
 const elapsedSeconds = ref(0)
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
@@ -423,6 +423,79 @@ const onFileChange = (event: Event) => {
 const stopPolling = () => {
   if (timer) { window.clearInterval(timer); timer = null }
   if (elapsedTimer) { window.clearInterval(elapsedTimer); elapsedTimer = null }
+  if (parseStream) { parseStream.close(); parseStream = null }
+}
+
+const applyStreamEvent = (event: any): 'pending' | 'completed' | 'failed' => {
+  if (!event || typeof event !== 'object') return 'pending'
+  if (event.status) parseStatus.value = event.status
+  if (typeof event.progress === 'number') parseProgress.value = Math.max(parseProgress.value, Number(event.progress || 0))
+  if (event.partialResult && typeof event.partialResult === 'object') {
+    const normalized = normalizeRecord(event.partialResult)
+    if (Object.keys(normalized).some((key) => normalized[key])) {
+      parsedRecord.value = mergeRecords(parsedRecord.value, normalized)
+    }
+  }
+  if (event.type === 'completed' || event.status === 'completed') {
+    parseStatus.value = 'completed'
+    parseProgress.value = 100
+    if (event.partialResult) parsedRecord.value = normalizeRecord(event.partialResult)
+    return 'completed'
+  }
+  if (event.type === 'failed' || event.status === 'error' || event.type === 'not_found') {
+    parseStatus.value = 'error'
+    uploadError.kind = 'parse'
+    uploadError.message = event.errorMsg || event.message || uploadCopy.error.parse_failed
+    uploadError.retryAfter = 0
+    return 'failed'
+  }
+  return 'pending'
+}
+
+const waitForStreamCompletion = (fid: string) => {
+  return new Promise<void>((resolve, reject) => {
+    let sawEvent = false
+    const firstEventTimer = window.setTimeout(() => {
+      if (!sawEvent) {
+        if (parseStream) { parseStream.close(); parseStream = null }
+        reject(new Error('parse_stream_no_event'))
+      }
+    }, 5000)
+
+    try {
+      parseStream = api.openParseStream(fid, {
+        onEvent: (event) => {
+          sawEvent = true
+          window.clearTimeout(firstEventTimer)
+          const state = applyStreamEvent(event)
+          if (state === 'completed') {
+            if (parseStream) { parseStream.close(); parseStream = null }
+            resolve()
+          } else if (state === 'failed') {
+            if (parseStream) { parseStream.close(); parseStream = null }
+            reject(new Error(uploadError.message || uploadCopy.error.parse_failed))
+          }
+        },
+        onError: () => {
+          window.clearTimeout(firstEventTimer)
+          if (parseStream) { parseStream.close(); parseStream = null }
+          reject(new Error('parse_stream_error'))
+        }
+      })
+    } catch (err) {
+      window.clearTimeout(firstEventTimer)
+      reject(err)
+    }
+  })
+}
+
+const waitForSinglePollingCompletion = async () => {
+  while (true) {
+    await pollStatus()
+    if (parseStatus.value === 'completed' || Object.keys(parsedRecord.value).length) return
+    if (parseStatus.value === 'error') throw new Error(uploadError.message || uploadCopy.error.parse_failed)
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+  }
 }
 
 const retryParse = async () => {
@@ -460,14 +533,6 @@ const retryParse = async () => {
 
 const pollStatus = async () => {
   if (!fileId.value) return
-  if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
-    stopPolling()
-    uploadError.kind = 'parse'
-    uploadError.message = uploadCopy.error.parse_failed
-    uploadError.retryAfter = 0
-    parseStatus.value = 'error'
-    return
-  }
   const status = await api.getParseStatus(fileId.value)
   parseStatus.value = status.status || 'parsing'
   parseProgress.value = Number(status.progress || 0)
@@ -496,22 +561,6 @@ const mergeRecords = (base: Record<string, unknown>, extra: Record<string, unkno
     }
   }
   return merged
-}
-
-const waitForCompletion = (fid: string): Promise<Record<string, unknown>> => {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    const check = async () => {
-      if (Date.now() - start > POLL_TIMEOUT_MS) return reject(new Error('识别超时'))
-      try {
-        const status = await api.getParseStatus(fid)
-        if (status.status === 'completed') return resolve(normalizeRecord(status.result || status.record || status))
-        if (status.status === 'error') return reject(new Error(status.message || '识别失败'))
-        setTimeout(check, 2000)
-      } catch { setTimeout(check, 2000) }
-    }
-    check()
-  })
 }
 
 // Q3-红线 §A.2.1：consent 状态 + 弹窗
@@ -642,18 +691,29 @@ const uploadAndParse = async () => {
       showToast(`${uploadRes.total - uploadRes.successCount} 份上传失败，其余 ${uploadRes.successCount} 份继续解析`)
     }
 
-    // Step 2：批量轮询
+    // Step 2：单文件优先 SSE streaming；失败或环境不支持时回退轮询。批量继续用 batch polling。
     parseStatus.value = 'running'
     parseProgress.value = 5
 
-    const startedAt = Date.now()
-    // 单文件 90s；批量 = 90s + (n-1) * 20s，封顶 180s
-    const timeoutMs = Math.min(180_000, 90_000 + Math.max(0, fileIds.value.length - 1) * 20_000)
+    if (fileIds.value.length === 1) {
+      try {
+        await waitForStreamCompletion(fileIds.value[0])
+      } catch (streamErr) {
+        if (parseStatus.value === 'error') throw streamErr
+        await waitForSinglePollingCompletion()
+      }
+      if (Object.keys(parsedRecord.value).length) {
+        track('upload_success', {
+          recordId: recordId.value,
+          fileCount: files.value.length,
+          successCount: 1,
+          errorCount: 0
+        })
+      }
+      return
+    }
 
     while (true) {
-      if (Date.now() - startedAt > timeoutMs) {
-        throw new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`)
-      }
       const { done, mergedResult, firstError } = await pollBatchOnce()
       if (done) {
         if (Object.keys(mergedResult).length) {

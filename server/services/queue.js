@@ -1,6 +1,7 @@
 const Queue = require('bull');
 const logger = require('../utils/logger');
 const { processMedicalImage } = require('./ocr');
+const ocrEvents = require('./ocrEvents');
 const { MedicalRecord, OcrJobFailure } = require('../models');
 // Q3-红线 §A.3：Sentry 软依赖（DSN 未配置时退化为 noop）
 let _sentry = null;
@@ -95,17 +96,34 @@ const runOcrTask = async (data, opts = {}) => {
   const { recordId, imageUrl, mimeType, fileKey, userId } = data;
   const { jobId } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
+  const emitEvent = (event) => ocrEvents.publish(recordId, event);
 
   try {
+    emitEvent({
+      type: 'started',
+      status: 'running',
+      progress: 10,
+      stage: 'started',
+      message: 'OCR 任务已开始',
+      meta: { jobId: jobId || 'inproc' }
+    });
     await MedicalRecord.update(
       { status: 'running' },
       { where: { id: recordId } }
     );
+    emitEvent({
+      type: 'stage',
+      status: 'running',
+      progress: 18,
+      stage: 'loading_source',
+      message: '正在读取病历文件'
+    });
 
     const result = await processMedicalImage({
       sourceUrl: imageUrl,
       mimeType,
-      fileKey
+      fileKey,
+      emitEvent
     });
 
     if (!hasMeaningfulOcrResult(result)) {
@@ -137,6 +155,27 @@ const runOcrTask = async (data, opts = {}) => {
       }
     }, {
       where: { id: recordId }
+    });
+    emitEvent({
+      type: 'completed',
+      status: 'completed',
+      progress: 100,
+      stage: 'completed',
+      message: '解析完成',
+      partialResult: {
+        id: recordId,
+        recordId,
+        diagnosis: result.entities.diagnosis,
+        stage: result.entities.stage,
+        geneMutation: result.entities.geneMutation,
+        treatment: result.entities.treatment,
+        confidence: result.confidence,
+        rawText: result.text ? `${result.text}`.substring(0, 500) : ''
+      },
+      meta: {
+        provider: result.provider || 'unknown',
+        pageCount: result.pageCount || null
+      }
     });
 
     // 完成通知（best-effort：通知队列也要 Redis，挂掉不影响主流程）
@@ -174,8 +213,26 @@ const runOcrTask = async (data, opts = {}) => {
       }, {
         where: { id: recordId }
       });
+      emitEvent({
+        type: 'failed',
+        status: 'error',
+        progress: 0,
+        stage: 'failed',
+        message: '解析失败',
+        errorMsg: error.message,
+        meta: { jobId: jobId || 'inproc' }
+      });
     } catch (dbErr) {
       logger.error('OCR 失败状态回写失败:', { recordId, error: dbErr.message });
+      emitEvent({
+        type: 'failed',
+        status: 'error',
+        progress: 0,
+        stage: 'failed',
+        message: '解析失败',
+        errorMsg: error.message,
+        meta: { dbWriteFailed: true, jobId: jobId || 'inproc' }
+      });
     }
 
     throw error;
@@ -253,6 +310,14 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
     ]);
 
     logger.info('OCR任务已添加:', { recordId, jobId: job.id });
+    ocrEvents.publish(recordId, {
+      type: 'queued',
+      status: 'queued',
+      progress: 5,
+      stage: 'queued',
+      message: 'OCR 任务已入队',
+      meta: { jobId: job.id }
+    });
     return job.id;
   } catch (queueErr) {
     // Bull 入队失败（多半是 Redis 不可达 / connectTimeout 触发 / enableOfflineQueue=false 直接抛）
@@ -260,6 +325,14 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
     logger.warn('Bull 入队失败，转入进程内 OCR 兜底（不阻塞 HTTP 请求）', {
       recordId,
       error: queueErr.message
+    });
+    ocrEvents.publish(recordId, {
+      type: 'queued',
+      status: 'queued',
+      progress: 5,
+      stage: 'inproc_queued',
+      message: 'OCR 任务已进入本进程兜底队列',
+      meta: { queueError: queueErr.message }
     });
     setImmediate(() => {
       runOcrTask(taskData).catch((err) => {
@@ -377,5 +450,5 @@ module.exports = {
   addOCRTask,
   getJobStatus,
   retryFailure,
-  __testables: { handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY }
+  __testables: { handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY, runOcrTask }
 };

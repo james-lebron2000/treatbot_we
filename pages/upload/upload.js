@@ -498,6 +498,10 @@ Page({
       clearTimeout(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.parseStreamSub && typeof this.parseStreamSub.close === 'function') {
+      this.parseStreamSub.close()
+      this.parseStreamSub = null
+    }
   },
 
   clearProgressTimer() {
@@ -854,8 +858,68 @@ Page({
     this.pollMaxIntervalMs = 10000
     this.pollingActive = true
 
+    if (!this.data.isBatchParse && this.data.fileId) {
+      this.startParseStream(this.data.fileId)
+    }
+
     this.checkParseStatus()
     this.scheduleNextPoll()
+  },
+
+  startParseStream(fileId) {
+    if (!api.subscribeParseStream || this.parseStreamSub) {
+      return
+    }
+    let sawEvent = false
+    const firstEventTimer = setTimeout(() => {
+      if (!sawEvent && this.parseStreamSub) {
+        this.parseStreamSub.close()
+        this.parseStreamSub = null
+      }
+    }, 5000)
+    this.parseStreamSub = api.subscribeParseStream(fileId, {
+      onEvent: (event) => {
+        sawEvent = true
+        clearTimeout(firstEventTimer)
+        if (!event || typeof event !== 'object') return
+        const status = event.status || ''
+        const progress = Number(event.progress || 0)
+        if (status || progress > 0) {
+          this.setProgressTarget(status || 'analyzing', progress)
+        }
+        if (event.partialResult && typeof event.partialResult === 'object') {
+          this.pendingCompletedResult = {
+            ...(this.pendingCompletedResult || {}),
+            ...event.partialResult,
+            id: event.partialResult.id || fileId,
+            recordId: event.partialResult.recordId || fileId
+          }
+        }
+        if ((event.type === 'completed' || status === 'completed') && event.partialResult) {
+          const result = {
+            ...event.partialResult,
+            id: event.partialResult.id || fileId,
+            recordId: event.partialResult.recordId || fileId
+          }
+          this.pendingCompletedResult = result
+          if (!this.completionHandled) {
+            this.handleCompletedResult(result)
+          }
+        }
+        if (event.type === 'failed' || status === 'error' || event.type === 'not_found') {
+          this.handleParseFailure({
+            errorMsg: event.errorMsg || event.message || '解析失败，请重试'
+          })
+        }
+      },
+      onError: () => {
+        clearTimeout(firstEventTimer)
+        if (this.parseStreamSub) {
+          this.parseStreamSub.close()
+          this.parseStreamSub = null
+        }
+      }
+    })
   },
 
   scheduleNextPoll() {

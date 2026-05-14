@@ -889,6 +889,75 @@ const getParseStatusBatch = async (fileIds) => {
   }
 }
 
+const decodeChunk = (arrayBuffer) => {
+  try {
+    if (typeof TextDecoder !== 'undefined') {
+      return new TextDecoder('utf-8').decode(arrayBuffer)
+    }
+  } catch (error) {
+    // fall through
+  }
+  return ''
+}
+
+const subscribeParseStream = (fileId, handlers = {}) => {
+  if (!fileId || typeof wx.request !== 'function') {
+    return null
+  }
+  const token = wx.getStorageSync('token')
+  const baseUrl = getRuntimeBaseUrl()
+  let buffer = ''
+  const task = wx.request({
+    url: `${baseUrl}/api/medical/parse-stream?fileId=${encodeURIComponent(fileId)}`,
+    method: 'GET',
+    enableChunked: true,
+    timeout: 600000,
+    header: {
+      Accept: 'text/event-stream',
+      Authorization: token ? `Bearer ${token}` : ''
+    },
+    success: () => {},
+    fail: (err) => {
+      if (handlers.onError) handlers.onError(err)
+    }
+  })
+
+  const consume = (text) => {
+    buffer += text
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    frames.forEach((frame) => {
+      const data = frame
+        .split(/\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.replace(/^data:\s?/, ''))
+        .join('\n')
+      if (!data) return
+      try {
+        const event = JSON.parse(data)
+        if (handlers.onEvent) handlers.onEvent(event)
+      } catch (error) {
+        // ignore malformed frames
+      }
+    })
+  }
+
+  if (task && typeof task.onChunkReceived === 'function') {
+    task.onChunkReceived((res) => {
+      const text = decodeChunk(res && res.data)
+      if (text) consume(text)
+    })
+  }
+
+  return {
+    close: () => {
+      if (task && typeof task.abort === 'function') {
+        task.abort()
+      }
+    }
+  }
+}
+
 /**
  * Phase E.3：跨多份病历的「疾病发展 + 治疗经过」时间线。
  * server 返回 { timeline, recordCount, sourceRecordIds }；timeline 至少含 events[] / patientSummary。
@@ -1452,6 +1521,7 @@ module.exports = {
   softDeleteMedicalRecord,
   uploadMedicalRecord,
   getParseStatus,
+  subscribeParseStream,
   // Phase E.2/E.3：批量上传 + 批量轮询 + 时间线
   getParseStatusBatch,
   getMedicalTimeline,

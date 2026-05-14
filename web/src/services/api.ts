@@ -195,6 +195,48 @@ const buildIdempotencyKey = (payload: { trialId: string }) => {
   return `web_apply_${payload.trialId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
 }
 
+export type ParseStreamEvent = {
+  recordId?: string;
+  seq?: number;
+  type?: string;
+  status?: string;
+  progress?: number;
+  stage?: string;
+  message?: string;
+  partialResult?: any;
+  errorMsg?: string;
+  createdAt?: string;
+}
+
+const buildParseStreamUrl = (fileId: string, afterSeq?: number, includeToken = false) => {
+  const base = `${http.defaults.baseURL || ''}`.replace(/\/+$/, '')
+  const query = new URLSearchParams()
+  query.set('fileId', fileId)
+  const token = localStorage.getItem('token')
+  if (includeToken && token) query.set('access_token', token)
+  if (afterSeq && afterSeq > 0) query.set('afterSeq', String(afterSeq))
+  return `${base}/api/medical/parse-stream?${query.toString()}`
+}
+
+const consumeSseText = (state: { buffer: string }, text: string, onEvent: (event: ParseStreamEvent) => void) => {
+  state.buffer += text
+  const frames = state.buffer.split(/\n\n/)
+  state.buffer = frames.pop() || ''
+  frames.forEach((frame) => {
+    const data = frame
+      .split(/\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.replace(/^data:\s?/, ''))
+      .join('\n')
+    if (!data) return
+    try {
+      onEvent(JSON.parse(data) as ParseStreamEvent)
+    } catch {
+      // ignore malformed SSE frames
+    }
+  })
+}
+
 export const api = {
   async adminLogin(payload: { username: string; key: string }) {
     const { data } = await http.post<ApiResponse<{
@@ -253,6 +295,70 @@ export const api = {
   async getParseStatus(fileId: string) {
     const { data } = await http.get<ApiResponse<any>>(`/api/medical/parse-status?fileId=${fileId}`)
     return unwrap<any>(data)
+  },
+  openParseStream(fileId: string, handlers: {
+    onEvent: (event: ParseStreamEvent) => void;
+    onError?: (error: Event) => void;
+  }, afterSeq?: number) {
+    const token = localStorage.getItem('token')
+    if (typeof fetch === 'function' && typeof ReadableStream !== 'undefined') {
+      const controller = new AbortController()
+      const state = { buffer: '' }
+      fetch(buildParseStreamUrl(fileId, afterSeq), {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        signal: controller.signal
+      }).then(async (response) => {
+        if (!response.ok || !response.body) {
+          throw new Error(`parse_stream_http_${response.status}`)
+        }
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          if (value) consumeSseText(state, decoder.decode(value, { stream: true }), handlers.onEvent)
+        }
+        const tail = decoder.decode()
+        if (tail) consumeSseText(state, tail, handlers.onEvent)
+      }).catch((error) => {
+        if (controller.signal.aborted) return
+        if (handlers.onError) handlers.onError(error as Event)
+      })
+      return { close: () => controller.abort() }
+    }
+
+    if (typeof EventSource === 'undefined') {
+      throw new Error('EventSource/fetch stream 不可用')
+    }
+    const source = new EventSource(buildParseStreamUrl(fileId, afterSeq, true))
+    const eventTypes = [
+      'queued',
+      'started',
+      'stage',
+      'provider_attempt',
+      'provider_fallback',
+      'partial_result',
+      'completed',
+      'failed',
+      'not_found',
+      'heartbeat'
+    ]
+    const parse = (evt: MessageEvent) => {
+      try {
+        handlers.onEvent(JSON.parse(evt.data) as ParseStreamEvent)
+      } catch {
+        // ignore malformed SSE frames
+      }
+    }
+    eventTypes.forEach((type) => source.addEventListener(type, parse))
+    source.onerror = (event) => {
+      if (handlers.onError) handlers.onError(event)
+    }
+    return source
   },
   // Phase E.2：批量查询解析状态（POST 体；最多 20 个 fileId）
   async getParseStatusBatch(fileIds: string[]) {
