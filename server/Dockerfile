@@ -17,10 +17,20 @@
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 
+ARG APT_DEBIAN_MIRROR=
+ARG APT_SECURITY_MIRROR=
+
 # 安装原生 npm 模块编译工具链（仅 deps 阶段，最终镜像不会保留）
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 build-essential \
- && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    if [ -n "$APT_SECURITY_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian-security|$APT_SECURITY_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -n "$APT_DEBIAN_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|$APT_DEBIAN_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends python3 build-essential; \
+    rm -rf /var/lib/apt/lists/*
 
 # 复制 package 清单并安装生产依赖
 COPY server/package*.json ./
@@ -31,17 +41,34 @@ RUN npm ci --omit=dev
 FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 
+ARG APT_DEBIAN_MIRROR=
+ARG APT_SECURITY_MIRROR=
+ARG PIP_INDEX_URL=
+ARG PIP_DEFAULT_TIMEOUT=120
+ARG PIP_RETRIES=8
+
 # 运行时需要 python3 + markitdown[pdf]（文本 PDF）+ poppler-utils/pdftoppm（扫描 PDF 拆页）
 # markitdown 锁 0.1.5：当前最新稳定版（2026-02-20），有 [pdf] extras（pdfminer-six + pdfplumber）。
 # 不锁版本 → 服务器无缓存时 pip 会回溯所有历史版本 17min 后 ResolutionImpossible。
 # python3-requests 预装 requests 依赖族（含 charset-normalizer），避免生产网络偶发 PyPI
 # charset-normalizer 索引不可见导致 markitdown 解析失败。
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils \
- && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5' \
- && apt-get purge -y python3-pip \
- && apt-get autoremove -y \
- && rm -rf /var/lib/apt/lists/* /root/.cache
+RUN set -eux; \
+    if [ -n "$APT_SECURITY_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian-security|$APT_SECURITY_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -n "$APT_DEBIAN_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|$APT_DEBIAN_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils; \
+    PIP_INSTALL_ARGS="--no-cache-dir --break-system-packages --retries ${PIP_RETRIES} --timeout ${PIP_DEFAULT_TIMEOUT}"; \
+    if [ -n "$PIP_INDEX_URL" ]; then \
+      PIP_INSTALL_ARGS="$PIP_INSTALL_ARGS -i $PIP_INDEX_URL"; \
+    fi; \
+    pip3 install $PIP_INSTALL_ARGS 'markitdown[pdf]==0.1.5'; \
+    apt-get purge -y python3-pip; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/* /root/.cache
 
 # 从 deps 阶段拷贝已编译好的 node_modules
 COPY --from=deps /app/node_modules ./node_modules

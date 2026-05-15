@@ -489,12 +489,10 @@ jobs:
           # 第二选择：GHCR layer pull（build-api job 已 push 到 ghcr.io，跨境只下载新增层；
           #   prod 国内出口对 ghcr.io 波动很大，timeout 60m 留足余量）
           # 第三选择：/tmp/server-src.tar.gz 源码 + 服务器本地 docker build
-          #   ── apt-get + pip install markitdown 在国内出口实测 ~25 min ± 10 min，
-          #   ── 历史多次 25m timeout 命中失败（run 25251563623 / 25251742589 / 25255963801），
-          #   ── 故降级为兜底；timeout 放宽到 45m。
+          #   ── 生产服务器出境访问 PyPI/GHCR 波动大，兜底 build 显式使用腾讯云镜像源；
+          #   ── timeout 45m 用来兜住冷缓存 apt/pip/npm。
           # 第四选择：/tmp/treatbot-api.tar.gz tarball（人工 docker save → scp，不作为默认链路）。
           IMAGE_READY=0
-          BACKEND_SWAP_SKIPPED=0
           SHA_TAG="treatbot-api:${SHA}"
           if docker image inspect "$SHA_TAG" >/dev/null 2>&1; then
             echo "  ✓ Image $SHA_TAG already in local docker — skip build & pull"
@@ -543,6 +541,13 @@ jobs:
           BUILD_DIR=/tmp/treatbot-server-build.${TS}
           if [ "$IMAGE_READY" != "1" ] && [ -f "$SOURCE_TARBALL" ]; then
             echo "  Building image locally from source tarball: $SOURCE_TARBALL"
+            LOCAL_BUILD_ARGS=(
+              --build-arg "APT_DEBIAN_MIRROR=http://mirrors.cloud.tencent.com/debian"
+              --build-arg "APT_SECURITY_MIRROR=http://mirrors.cloud.tencent.com/debian-security"
+              --build-arg "PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple"
+              --build-arg "PIP_DEFAULT_TIMEOUT=180"
+              --build-arg "PIP_RETRIES=10"
+            )
             rm -rf "$BUILD_DIR"
             mkdir -p "$BUILD_DIR"
             tar -xzf "$SOURCE_TARBALL" -C "$BUILD_DIR"
@@ -550,9 +555,9 @@ jobs:
             if [ ! -f "$BUILD_DIR/server/Dockerfile" ]; then
               echo "  ⚠ source tarball extracted but server/Dockerfile is missing; falling back"
             elif command -v timeout >/dev/null 2>&1; then
-              timeout 45m docker build -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
+              timeout 45m docker build "${LOCAL_BUILD_ARGS[@]}" -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
             else
-              docker build -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
+              docker build "${LOCAL_BUILD_ARGS[@]}" -t "$SHA_TAG" -f "$BUILD_DIR/server/Dockerfile" "$BUILD_DIR" && IMAGE_READY=1 || IMAGE_READY=0
             fi
             rm -rf "$BUILD_DIR"
             if [ "$IMAGE_READY" = "1" ]; then
@@ -566,13 +571,9 @@ jobs:
 
           if [ "$IMAGE_READY" != "1" ]; then
             if [ ! -f "$TARBALL" ]; then
-              if docker inspect treatbot-api >/dev/null 2>&1; then
-                echo "  ⚠ GHCR/local build unavailable and API tarball $TARBALL is missing"
-                echo "  ⚠ Existing treatbot-api is healthy enough to keep serving; skipping backend swap"
-                BACKEND_SWAP_SKIPPED=1
-              else
-                echo "  ❌ GHCR image unavailable, API tarball $TARBALL is missing, and no existing container can serve"; exit 1
-              fi
+              echo "  ❌ API image is not ready: GHCR pull failed, local docker build failed or timed out, and API tarball $TARBALL is missing"
+              echo "  ❌ Refusing to mark deploy successful while treatbot-api would keep serving the previous image"
+              exit 1
             else
               TARBALL_SIZE=$(stat -c '%s' "$TARBALL" 2>/dev/null || stat -f '%z' "$TARBALL")
               echo "  ✓ tarball size: $((TARBALL_SIZE / 1024 / 1024)) MB"
@@ -581,16 +582,10 @@ jobs:
             fi
           fi
 
-          if [ "$BACKEND_SWAP_SKIPPED" != "1" ] && ! docker image inspect "treatbot-api:${SHA}" >/dev/null 2>&1; then
+          if ! docker image inspect "treatbot-api:${SHA}" >/dev/null 2>&1; then
             echo "  ❌ image prepare completed but treatbot-api:${SHA} is missing"; exit 1
           fi
-          if [ "$BACKEND_SWAP_SKIPPED" != "1" ]; then
-            echo "  ✓ Image treatbot-api:${SHA} ready in local daemon"
-          fi
-
-          if [ "$BACKEND_SWAP_SKIPPED" = "1" ]; then
-            echo "  ⚠ Backend container swap skipped; continuing with schema repair, migrations, web promote, and smoke"
-          else
+          echo "  ✓ Image treatbot-api:${SHA} ready in local daemon"
 
           # A.2 备份旧镜像 + 旧 env 到独立 tag/file，永久保留
           OLD_IMG=$(docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "")
@@ -712,7 +707,12 @@ jobs:
 
           echo "  ✅ Backend deployed. Rollback cmd:"
           echo "     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-${TS} treatbot-api && docker start treatbot-api"
+
+          RUNNING_IMAGE=$(docker inspect treatbot-api -f '{{.Config.Image}}')
+          if [ "$RUNNING_IMAGE" != "$SHA_TAG" ]; then
+            echo "  ❌ Backend container is running '$RUNNING_IMAGE', expected '$SHA_TAG'"; exit 1
           fi
+          echo "  ✓ Backend container image verified: $RUNNING_IMAGE"
           echo "::endgroup::"
 
           ###############################################
