@@ -271,7 +271,7 @@ jobs:
           -f ./server/Dockerfile \
           -t treatbot-api:${{ github.sha }} \
           --load .
-        docker save treatbot-api:${{ github.sha }} | gzip -1 > treatbot-api.tar.gz
+        docker save treatbot-api:${{ github.sha }} | gzip -9 > treatbot-api.tar.gz
         ls -lh treatbot-api.tar.gz
 
     - name: Upload API image tarball artifact
@@ -280,6 +280,7 @@ jobs:
         name: api-image
         path: treatbot-api.tar.gz
         retention-days: 3
+        compression-level: 0
 
     - name: Logout from GHCR
       if: always()
@@ -318,7 +319,7 @@ jobs:
     needs: [build-api, build-web]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    timeout-minutes: 45
+    timeout-minutes: 100
     permissions:
       contents: write   # 需要回写 docs/deploy-state-server-dump.md 到 main
       packages: read    # deploy job 的 GITHUB_TOKEN 需要能读 GHCR 镜像
@@ -355,9 +356,9 @@ jobs:
 
     # 上传 release 制品。API 镜像优先使用 CI 侧 tarball，避免生产服务器拉 GHCR
     # 或现场 pip/npm 构建受网络影响。
-    # timeout 给到 30m：API tarball 通常数百 MB，跨境 SCP 需要足够余量。
+    # 2026-05-15 实测 262MB API tarball 跨境 SCP 30m 超时；给到 75m，避免半发布。
     - name: Upload release control files to server
-      timeout-minutes: 30
+      timeout-minutes: 75
       env:
         SERVER_HOST: ${{ secrets.SERVER_HOST }}
         SERVER_USER: ${{ secrets.SERVER_USER }}

@@ -154,9 +154,9 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 
 1. `fast`：安装后端依赖，跑 ESLint、mock-only Jest、`JWT_SECRET` 生产守卫。
 2. `slow`：用 GitHub service container 启动 MySQL 8 + Redis 7，创建隔离 schema，跑集成测试；失败会告警，但不阻塞部署。
-3. `build-api`：在 GitHub runner 构建 API 镜像，推送 GHCR，同时导出 `treatbot-api.tar.gz` artifact，供服务器直接 `docker load`。
+3. `build-api`：在 GitHub runner 构建 API 镜像，推送 GHCR，同时导出高压缩 `treatbot-api.tar.gz` artifact，供服务器直接 `docker load`。
 4. `build-web`：构建 H5 `web/dist`，作为 `web-dist` artifact。
-5. `deploy`：通过 SSH 上传 `web-dist.tar.gz`、`server-src.tar.gz`、`treatbot-api.tar.gz` 和反代配置到服务器；服务器优先使用上传的镜像 tarball，GHCR pull / 本地 docker build 只是兜底。
+5. `deploy`：通过 SSH 上传 `web-dist.tar.gz`、`server-src.tar.gz`、`treatbot-api.tar.gz` 和反代配置到服务器；服务器优先使用上传的镜像 tarball，GHCR pull / 本地 docker build 只是兜底。API 镜像包约数百 MB，跨境 SCP 已给 75 分钟预算。
 6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 H5、执行 smoke。
 7. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
 
