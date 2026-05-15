@@ -148,6 +148,29 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 | 本地测试 / `npm test` | 测试 fixture + 临时 `process.env`（jest setup） | CI runner |
 | 生产容器 (`treatbot-api`) | GitHub Actions Secrets → `docker run -e ...` | 每次 `git push main` 触发 deploy workflow |
 
+### 生产部署链路（GitHub Actions → 服务器）
+
+生产部署由 `.github/workflows/deploy.yml` 完成，入口是 `git push origin HEAD:main`，不再手工 `docker-compose up`。
+
+1. `fast`：安装后端依赖，跑 ESLint、mock-only Jest、`JWT_SECRET` 生产守卫。
+2. `slow`：用 GitHub service container 启动 MySQL 8 + Redis 7，创建隔离 schema，跑集成测试；失败会告警，但不阻塞部署。
+3. `build-api`：在 GitHub runner 构建 API 镜像，推送 GHCR，同时导出 `treatbot-api.tar.gz` artifact，供服务器直接 `docker load`。
+4. `build-web`：构建 H5 `web/dist`，作为 `web-dist` artifact。
+5. `deploy`：通过 SSH 上传 `web-dist.tar.gz`、`server-src.tar.gz`、`treatbot-api.tar.gz` 和反代配置到服务器；服务器优先使用上传的镜像 tarball，GHCR pull / 本地 docker build 只是兜底。
+6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 H5、执行 smoke。
+7. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
+
+生产 smoke 最小检查：
+
+```bash
+curl -fsS https://inseq.top/health
+curl -i -sS 'https://inseq.top/api/medical/parse-status-stream?recordIds=rec_smoke'
+H5_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
+  BASE_URL=https://inseq.top ./server/scripts/smoke.sh
+```
+
+期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 H5 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
+
 **所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
 
 | Secret | 用途 |
@@ -504,20 +527,23 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 
 ## 部署前操作清单（生产 checklist）
 
-每次版本升级 / 环境迁移前在目标服务器执行：
+每次版本升级 / 环境迁移前确认 GitHub Actions Secrets 与生产 smoke：
 
 ```bash
 # 1. 生成强 JWT 秘钥（48 字节 = 96 hex 字符，远超 32 字符底线）
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-# 粘贴到 /opt/treatbot/.env 的 JWT_SECRET=
+# 写入 GitHub Actions Secret: JWT_SECRET
 
 # 2. 验证启动时会真的做校验（用空值启动应当立即 crash）
 docker run --rm -e NODE_ENV=production treatbot-api:latest node -e "require('./utils/jwtSecret')"
 # 期望输出：[FATAL] JWT_SECRET 未设置...
 
 # 3. 发布（换 JWT 秘钥会使所有已登录 token 失效，选低峰期，发布公告）
-docker-compose up -d
-curl https://inseq.top/health/detailed | jq .
+git push origin HEAD:main
+gh run list --branch main --limit 5
+
+# 4. 生产 smoke
+BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 ```
 
 关键环境变量清单：

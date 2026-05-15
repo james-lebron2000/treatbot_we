@@ -263,6 +263,24 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    # 生产服务器跨境拉 GHCR / 现场 docker build 都可能受网络影响；
+    # 同一个 runner 已经有稳定的 BuildKit cache，因此再导出一份 tarball 给 deploy 直传。
+    - name: Build API image tarball for direct upload
+      run: |
+        docker buildx build --platform linux/amd64 \
+          -f ./server/Dockerfile \
+          -t treatbot-api:${{ github.sha }} \
+          --load .
+        docker save treatbot-api:${{ github.sha }} | gzip -1 > treatbot-api.tar.gz
+        ls -lh treatbot-api.tar.gz
+
+    - name: Upload API image tarball artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-image
+        path: treatbot-api.tar.gz
+        retention-days: 3
+
     - name: Logout from GHCR
       if: always()
       run: docker logout ghcr.io || true
@@ -318,6 +336,12 @@ jobs:
         name: web-dist
         path: web-dist
 
+    - name: Download API image tarball
+      uses: actions/download-artifact@v4
+      with:
+        name: api-image
+        path: api-image
+
     - name: Pack web dist as tarball
       run: |
         ls -la web-dist | head
@@ -329,11 +353,11 @@ jobs:
         git archive --format=tar HEAD server shared .dockerignore | gzip -1 > server-src.tar.gz
         ls -lh server-src.tar.gz
 
-    # 只上传小文件。API 镜像不再通过 SCP/GHCR 跨境搬运大制品，改由服务器本地构建。
-    # timeout 从 5 提到 10：4MB server-src + 350K web-dist 跨境 scp 实测正好踩边 5min
-    # （run 25251563623 在 4m57s 完成 scp 后被步骤 timeout 切掉）。
+    # 上传 release 制品。API 镜像优先使用 CI 侧 tarball，避免生产服务器拉 GHCR
+    # 或现场 pip/npm 构建受网络影响。
+    # timeout 给到 30m：API tarball 通常数百 MB，跨境 SCP 需要足够余量。
     - name: Upload release control files to server
-      timeout-minutes: 10
+      timeout-minutes: 30
       env:
         SERVER_HOST: ${{ secrets.SERVER_HOST }}
         SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -357,11 +381,13 @@ jobs:
 
         cp web-dist.tar.gz release-upload/web-dist.tar.gz
         cp server-src.tar.gz release-upload/server-src.tar.gz
+        cp api-image/treatbot-api.tar.gz release-upload/treatbot-api.tar.gz
         cp deploy/Caddyfile release-upload/deploy/Caddyfile
         cp deploy/nginx-patch.conf release-upload/deploy/nginx-patch.conf
 
         echo "Web tarball: $(du -h web-dist.tar.gz | cut -f1)"
         echo "Server source tarball: $(du -h server-src.tar.gz | cut -f1)"
+        echo "API image tarball: $(du -h api-image/treatbot-api.tar.gz | cut -f1)"
 
         ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
           'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/treatbot-upload/deploy /tmp/deploy'
@@ -369,6 +395,7 @@ jobs:
         echo "Uploading release control files..."
         scp "${SSH_OPTS[@]}" release-upload/web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/web-dist.tar.gz"
         scp "${SSH_OPTS[@]}" release-upload/server-src.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/server-src.tar.gz"
+        scp "${SSH_OPTS[@]}" release-upload/treatbot-api.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/treatbot-api.tar.gz"
         scp "${SSH_OPTS[@]}" release-upload/deploy/Caddyfile "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/Caddyfile"
         scp "${SSH_OPTS[@]}" release-upload/deploy/nginx-patch.conf "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/nginx-patch.conf"
 
@@ -378,10 +405,11 @@ jobs:
         cd /tmp/treatbot-upload
         mv web-dist.tar.gz /tmp/web-dist.tar.gz
         mv server-src.tar.gz /tmp/server-src.tar.gz
+        mv treatbot-api.tar.gz /tmp/treatbot-api.tar.gz
         mv deploy/Caddyfile /tmp/deploy/Caddyfile
         mv deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
         rm -rf /tmp/treatbot-upload
-        ls -lh /tmp/web-dist.tar.gz /tmp/server-src.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
+        ls -lh /tmp/web-dist.tar.gz /tmp/server-src.tar.gz /tmp/treatbot-api.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
         REMOTE
 
     # ---- Step 2: SSH 进服务器执行替换 ----
@@ -526,6 +554,20 @@ jobs:
             fi
           fi
 
+          TARBALL=/tmp/treatbot-api.tar.gz
+          if [ "$IMAGE_READY" != "1" ] && [ -f "$TARBALL" ]; then
+            TARBALL_SIZE=$(stat -c '%s' "$TARBALL" 2>/dev/null || stat -f '%z' "$TARBALL")
+            echo "  Loading API image tarball: $((TARBALL_SIZE / 1024 / 1024)) MB"
+            gunzip -c "$TARBALL" | docker load
+            rm -f "$TARBALL"
+            if docker image inspect "$SHA_TAG" >/dev/null 2>&1; then
+              IMAGE_READY=1
+              echo "  ✓ API image tarball loaded as $SHA_TAG"
+            else
+              echo "  ⚠ API image tarball loaded but $SHA_TAG is missing; falling back"
+            fi
+          fi
+
           SOURCE_TARBALL=/tmp/server-src.tar.gz
           BUILD_DIR=/tmp/treatbot-server-build.${TS}
           if [ "$IMAGE_READY" != "1" ] && [ -f "$SOURCE_TARBALL" ]; then
@@ -551,7 +593,6 @@ jobs:
             echo "  ⚠ source tarball $SOURCE_TARBALL missing; checking tarball fallback"
           fi
 
-          TARBALL=/tmp/treatbot-api.tar.gz
           if [ "$IMAGE_READY" != "1" ]; then
             if [ ! -f "$TARBALL" ]; then
               if docker inspect treatbot-api >/dev/null 2>&1; then
