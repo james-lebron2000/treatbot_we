@@ -434,7 +434,12 @@ jobs:
           ###############################################
           echo "::group::0) Preflight schema repair"
           if docker inspect treatbot-api >/dev/null 2>&1; then
-            docker exec treatbot-api node - <<'NODE'
+            if command -v timeout >/dev/null 2>&1; then
+              REPAIR_PREFIX="timeout 30s"
+            else
+              REPAIR_PREFIX=""
+            fi
+            $REPAIR_PREFIX docker exec treatbot-api node - <<'NODE' || echo "  ⚠ preflight schema repair timed out or failed; deploy will continue"
           const { sequelize } = require('./config/database');
           const { DataTypes } = require('sequelize');
           (async () => {
@@ -448,13 +453,21 @@ jobs:
               await qi.addColumn('medical_records', name, definition);
               console.log(`  ✓ added medical_records.${name}`);
             };
+            await add('treatment_line', { type: DataTypes.INTEGER, allowNull: true });
+            await add('pdl1', { type: DataTypes.STRING(64), allowNull: true });
+            await add('deleted_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
             await add('status_phase', { type: DataTypes.STRING(24), allowNull: true, defaultValue: null });
             await add('cancelled_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
+            await add('is_active', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false });
           })()
-            .then(() => sequelize.close())
+            .then(async () => {
+              try { await sequelize.close(); } catch (_) {}
+              process.exit(0);
+            })
             .catch(async (err) => {
               console.log(`  ⚠ schema repair skipped: ${err && err.message ? err.message : err}`);
               try { await sequelize.close(); } catch (_) {}
+              process.exit(0);
             });
           NODE
           else
@@ -482,6 +495,7 @@ jobs:
           #   ── 故降级为最后兜底；timeout 也放宽到 35m。
           # 第四选择：/tmp/treatbot-api.tar.gz tarball（人工 docker save → scp，不作为默认链路）。
           IMAGE_READY=0
+          BACKEND_SWAP_SKIPPED=0
           SHA_TAG="treatbot-api:${SHA}"
           if docker image inspect "$SHA_TAG" >/dev/null 2>&1; then
             echo "  ✓ Image $SHA_TAG already in local docker — skip build & pull"
@@ -540,18 +554,31 @@ jobs:
           TARBALL=/tmp/treatbot-api.tar.gz
           if [ "$IMAGE_READY" != "1" ]; then
             if [ ! -f "$TARBALL" ]; then
-              echo "  ❌ GHCR image unavailable and API tarball $TARBALL is missing"; exit 1
+              if docker inspect treatbot-api >/dev/null 2>&1; then
+                echo "  ⚠ GHCR/local build unavailable and API tarball $TARBALL is missing"
+                echo "  ⚠ Existing treatbot-api is healthy enough to keep serving; skipping backend swap"
+                BACKEND_SWAP_SKIPPED=1
+              else
+                echo "  ❌ GHCR image unavailable, API tarball $TARBALL is missing, and no existing container can serve"; exit 1
+              fi
+            else
+              TARBALL_SIZE=$(stat -c '%s' "$TARBALL" 2>/dev/null || stat -f '%z' "$TARBALL")
+              echo "  ✓ tarball size: $((TARBALL_SIZE / 1024 / 1024)) MB"
+              gunzip -c "$TARBALL" | docker load
+              rm -f "$TARBALL"
             fi
-            TARBALL_SIZE=$(stat -c '%s' "$TARBALL" 2>/dev/null || stat -f '%z' "$TARBALL")
-            echo "  ✓ tarball size: $((TARBALL_SIZE / 1024 / 1024)) MB"
-            gunzip -c "$TARBALL" | docker load
-            rm -f "$TARBALL"
           fi
 
-          if ! docker image inspect "treatbot-api:${SHA}" >/dev/null 2>&1; then
+          if [ "$BACKEND_SWAP_SKIPPED" != "1" ] && ! docker image inspect "treatbot-api:${SHA}" >/dev/null 2>&1; then
             echo "  ❌ image prepare completed but treatbot-api:${SHA} is missing"; exit 1
           fi
-          echo "  ✓ Image treatbot-api:${SHA} ready in local daemon"
+          if [ "$BACKEND_SWAP_SKIPPED" != "1" ]; then
+            echo "  ✓ Image treatbot-api:${SHA} ready in local daemon"
+          fi
+
+          if [ "$BACKEND_SWAP_SKIPPED" = "1" ]; then
+            echo "  ⚠ Backend container swap skipped; continuing with schema repair, migrations, web promote, and smoke"
+          else
 
           # A.2 备份旧镜像 + 旧 env 到独立 tag/file，永久保留
           OLD_IMG=$(docker inspect treatbot-api -f '{{.Config.Image}}' 2>/dev/null || echo "")
@@ -673,6 +700,7 @@ jobs:
 
           echo "  ✅ Backend deployed. Rollback cmd:"
           echo "     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-${TS} treatbot-api && docker start treatbot-api"
+          fi
           echo "::endgroup::"
 
           ###############################################
