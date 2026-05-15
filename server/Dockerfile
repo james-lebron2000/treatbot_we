@@ -34,8 +34,10 @@ WORKDIR /app
 # 运行时需要 python3 + markitdown[pdf]（文本 PDF）+ poppler-utils/pdftoppm（扫描 PDF 拆页）
 # markitdown 锁 0.1.5：当前最新稳定版（2026-02-20），有 [pdf] extras（pdfminer-six + pdfplumber）。
 # 不锁版本 → 服务器无缓存时 pip 会回溯所有历史版本 17min 后 ResolutionImpossible。
+# python3-requests 预装 requests 依赖族（含 charset-normalizer），避免生产网络偶发 PyPI
+# charset-normalizer 索引不可见导致 markitdown 解析失败。
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pip poppler-utils \
+ && apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils \
  && pip3 install --no-cache-dir --break-system-packages 'markitdown[pdf]==0.1.5' \
  && apt-get purge -y python3-pip \
  && apt-get autoremove -y \
