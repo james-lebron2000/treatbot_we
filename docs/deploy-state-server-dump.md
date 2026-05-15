@@ -3,20 +3,20 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 25915294453
-- **Commit**: `b1be6116d7812c4f0d9b16bcd046b009d20dd5ff`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25915294453
-- **Generated at**: 2026-05-15T11:42:01Z
+- **Run**: 25916007610
+- **Commit**: `64ea01e85ae3fc293a8b2618bfcb2de1977a32c3`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/25916007610
+- **Generated at**: 2026-05-15T11:59:03Z
 
 ---
 
 ```
-===== Deploy 20260515-193457 — SHA=b1be6116d7812c4f0d9b16bcd046b009d20dd5ff =====
+===== Deploy 20260515-195023 — SHA=64ea01e85ae3fc293a8b2618bfcb2de1977a32c3 =====
 ::group::0) Preflight schema repair
 ::endgroup::
 ::group::A) Backend container replace
-  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff
-b1be6116d7812c4f0d9b16bcd046b009d20dd5ff: Pulling from james-lebron2000/treatbot-api
+  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3
+64ea01e85ae3fc293a8b2618bfcb2de1977a32c3: Pulling from james-lebron2000/treatbot-api
 ff86ea2e5edc: Already exists
 e54aec64c365: Already exists
 804d4d68057c: Already exists
@@ -33,7 +33,6 @@ c175d00dcf8e: Pulling fs layer
 19f0b2276b62: Waiting
 c175d00dcf8e: Waiting
 d6b304cb229e: Waiting
-2777179321ed: Verifying Checksum
 2777179321ed: Download complete
 2777179321ed: Pull complete
 context canceled
@@ -52,7 +51,7 @@ context canceled
 #3 CACHED
 
 #4 [internal] load metadata for docker.io/library/node:20-bookworm-slim
-#4 DONE 0.8s
+#4 DONE 0.7s
 
 #5 [internal] load .dockerignore
 #5 transferring context: 380B done
@@ -65,74 +64,49 @@ context canceled
 #7 transferring context: 7.70MB 0.1s done
 #7 DONE 0.1s
 
-#8 [deps 2/5] WORKDIR /app
+#8 [runtime 4/8] COPY --from=deps /app/node_modules ./node_modules
 #8 CACHED
 
-#9 [deps 3/5] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 build-essential;     rm -rf /var/lib/apt/lists/*
+#9 [runtime 3/8] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils;     PIP_INSTALL_ARGS="--no-cache-dir --break-system-packages --retries 10 --timeout 180";     if [ -n "https://mirrors.cloud.tencent.com/pypi/simple" ]; then       PIP_INSTALL_ARGS="$PIP_INSTALL_ARGS -i https://mirrors.cloud.tencent.com/pypi/simple";     fi;     pip3 install $PIP_INSTALL_ARGS 'markitdown[pdf]==0.1.5';     apt-get purge -y python3-pip;     apt-get autoremove -y;     rm -rf /var/lib/apt/lists/* /root/.cache
 #9 CACHED
 
-#10 [deps 4/5] COPY server/package*.json ./
-#10 DONE 0.1s
+#10 [deps 2/5] WORKDIR /app
+#10 CACHED
 
-#11 [deps 5/5] RUN npm ci --omit=dev
-#11 3.990 npm warn deprecated request@2.88.2: request has been deprecated, see https://github.com/request/request/issues/3142
-#11 4.744 npm warn deprecated multer@1.4.5-lts.2: Multer 1.x is impacted by a number of vulnerabilities, which have been patched in 2.x. You should upgrade to the latest 2.x version.
-#11 6.442 npm warn deprecated har-validator@5.1.5: this library is no longer supported
-#11 11.72 npm warn deprecated uuid@3.4.0: Please upgrade  to version 7 or higher.  Older versions may use Math.random() in certain circumstances, which is known to be problematic.  See https://v8.dev/blog/math-random for details.
-#11 39.79 
-#11 39.79 added 313 packages, and audited 314 packages in 39s
-#11 39.79 
-#11 39.79 43 packages are looking for funding
-#11 39.79   run `npm fund` for details
-#11 39.84 
-#11 39.84 14 vulnerabilities (7 moderate, 4 high, 3 critical)
-#11 39.84 
-#11 39.84 To address issues that do not require attention, run:
-#11 39.84   npm audit fix
-#11 39.84 
-#11 39.84 To address all issues (including breaking changes), run:
-#11 39.84   npm audit fix --force
-#11 39.84 
-#11 39.84 Run `npm audit` for details.
-#11 39.84 npm notice
-#11 39.84 npm notice New major version of npm available! 10.8.2 -> 11.14.1
-#11 39.84 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.14.1
-#11 39.84 npm notice To update run: npm install -g npm@11.14.1
-#11 39.84 npm notice
-#11 DONE 40.2s
+#11 [deps 4/5] COPY server/package*.json ./
+#11 CACHED
 
-#12 [runtime 3/8] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils;     PIP_INSTALL_ARGS="--no-cache-dir --break-system-packages --retries 10 --timeout 180";     if [ -n "https://mirrors.cloud.tencent.com/pypi/simple" ]; then       PIP_INSTALL_ARGS="$PIP_INSTALL_ARGS -i https://mirrors.cloud.tencent.com/pypi/simple";     fi;     pip3 install $PIP_INSTALL_ARGS 'markitdown[pdf]==0.1.5';     apt-get purge -y python3-pip;     apt-get autoremove -y;     rm -rf /var/lib/apt/lists/* /root/.cache
+#12 [deps 3/5] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 build-essential;     rm -rf /var/lib/apt/lists/*
 #12 CACHED
 
-#13 [runtime 4/8] COPY --from=deps /app/node_modules ./node_modules
-#13 DONE 3.8s
+#13 [runtime 6/8] COPY shared /shared
+#13 CACHED
 
 #14 [runtime 5/8] COPY server/ ./
-#14 DONE 0.1s
+#14 CACHED
 
-#15 [runtime 6/8] COPY shared /shared
-#15 DONE 0.0s
+#15 [runtime 7/8] RUN mkdir -p logs
+#15 CACHED
 
-#16 [runtime 7/8] RUN mkdir -p logs
-#16 DONE 0.4s
+#16 [deps 5/5] RUN npm ci --omit=dev
+#16 CACHED
 
 #17 [runtime 8/8] RUN chown -R node:node /app
-#17 DONE 43.5s
+#17 CACHED
 
 #18 exporting to image
-#18 exporting layers
-#18 exporting layers 2.1s done
+#18 exporting layers done
 #18 writing image sha256:ceaf58c609b8e0b0cd0f7986be31cac78cbdac321edb15fb07c3b1fb6f57e937 done
-#18 naming to docker.io/library/treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff done
-#18 DONE 2.2s
-  ✓ Image treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff built locally
-  ✓ Image treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff ready in local daemon
-  ✓ Old image 'treatbot-api:b25a7eacfe043da6eadccd82c144e4c5606f54e0' backed up as treatbot-api:rollback-20260515-193457
-  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260515-193457.env (107 vars)
+#18 naming to docker.io/library/treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3 done
+#18 DONE 0.0s
+  ✓ Image treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3 built locally
+  ✓ Image treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3 ready in local daemon
+  ✓ Old image 'treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff' backed up as treatbot-api:rollback-20260515-195023
+  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260515-195023.env (121 vars)
 treatbot-api
   Cleaning old prev containers:
-treatbot-api-prev-20260503-185735
-  ✓ Old container renamed to treatbot-api-prev-20260515-193457
+treatbot-api-prev-20260509-171036
+  ✓ Old container renamed to treatbot-api-prev-20260515-195023
   OCR env override:
     ✓ KIMI_API_KEY (len=51)
     ✓ KIMI_VISION_MODEL=moonshot-v1-128k-vision-preview
@@ -149,18 +123,18 @@ treatbot-api-prev-20260503-185735
     ✓ ADMIN_LOGIN_KEY_HASH configured (sha256)
     ✓ ADMIN_LOGIN_TOKEN_TTL=3600
     ✓ ADMIN_LOGIN_CAN_REVEAL=true
-74aa04fe1a66f2fd959a49f8529db1e084ea76d303c18528ebb6671251588ae3
+c29e5b88d8e110f400f62adf05a7b7cf5c8ad4e2e682880b87849fab99c679ef
   ✓ Healthy after 3s
   ✅ Backend deployed. Rollback cmd:
-     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260515-193457 treatbot-api && docker start treatbot-api
-  ✓ Backend container image verified: treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff
+     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260515-195023 treatbot-api && docker start treatbot-api
+  ✓ Backend container image verified: treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3
 ::endgroup::
 ::group::A.6) DB migrations (idempotent)
   ✅ Migrations done
 ::endgroup::
 ::group::B) Web frontend promote
   ✓ Tarball extracted (2 entries)
-  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260515-193457
+  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260515-195023
   ✅ Web promoted to /var/www/treatbot-web (index.html OK, base=/treatbot/)
 ::endgroup::
 ::group::C) Reverse-proxy discovery (read-only)
@@ -171,15 +145,15 @@ unknown
     caddy: active=active, enabled=enabled
   ===== 2. Listening sockets (top relevant ports) =====
     State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                                  
-    LISTEN 0      4096         0.0.0.0:3000       0.0.0.0:*    users:(("docker-proxy",pid=724014,fd=4))                
+    LISTEN 0      4096         0.0.0.0:3000       0.0.0.0:*    users:(("docker-proxy",pid=734277,fd=4))                
     LISTEN 0      4096       127.0.0.1:2019       0.0.0.0:*    users:(("caddy",pid=303834,fd=6))                       
     LISTEN 0      4096               *:443              *:*    users:(("caddy",pid=303834,fd=7))                       
     LISTEN 0      4096               *:80               *:*    users:(("caddy",pid=303834,fd=11))                      
     LISTEN 0      511                *:5101             *:*    users:(("MainThread",pid=3237127,fd=21))                
-    LISTEN 0      4096            [::]:3000          [::]:*    users:(("docker-proxy",pid=724020,fd=4))                
+    LISTEN 0      4096            [::]:3000          [::]:*    users:(("docker-proxy",pid=734286,fd=4))                
   ===== 3. Docker containers + ports =====
     NAMES            IMAGE                                                   PORTS                                                  STATUS
-    treatbot-api     treatbot-api:b1be6116d7812c4f0d9b16bcd046b009d20dd5ff   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 20 seconds (healthy)
+    treatbot-api     treatbot-api:64ea01e85ae3fc293a8b2618bfcb2de1977a32c3   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 6 seconds (healthy)
     treatbot-redis   redis:7-alpine                                          0.0.0.0:6379->6379/tcp, :::6379->6379/tcp              Up 2 months (healthy)
     treatbot-mysql   mysql:8.0                                               0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp   Up 2 months (healthy)
   ===== 4. /etc/caddy/Caddyfile (full) =====
@@ -849,33 +823,33 @@ unknown
     drwxr-xr-x 14 root   root   4096 Feb 26 16:26 ..
     drwxr-xr-x  2 root   root   4096 Mar 25 16:46 clinicalmatch-home
     drwxr-xr-x  2 root   root   4096 Feb 26 16:26 html
-    drwxr-xr-x  3 ubuntu ubuntu 4096 May 15 19:28 treatbot-web
+    drwxr-xr-x  3 ubuntu ubuntu 4096 May 15 19:45 treatbot-web
   ===== 11. Backup nginx tree (NOT removing) =====
-    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260515-193457.tar.gz (16K)
+    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260515-195023.tar.gz (16K)
   ===== 12. Backup current Caddyfile =====
-    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260515-193457
+    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260515-195023
 ::group::C.5) Apply new Caddyfile + retire nginx
   ✓ New Caddyfile uploaded (114 lines)
-  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260515-193457
+  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260515-195023
   --- diff (current → new) ---
   --- end diff ---
   --- validate (rc=0) ---
-    {"level":"info","ts":1778845306.9515052,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
-    {"level":"warn","ts":1778845306.9537656,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9537816,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9544013,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9544148,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9544954,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9545436,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9546518,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1778845306.9546623,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"info","ts":1778845306.9567308,"msg":"adapted config to JSON","adapter":"caddyfile"}
-    {"level":"warn","ts":1778845306.956745,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":23}
-    {"level":"info","ts":1778845306.957433,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc0005b8e00"}
-    {"level":"info","ts":1778845306.9592643,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1778845306.9592774,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1778845306.95928,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
-    {"level":"info","ts":1778845306.9685724,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc0005b8e00"}
+    {"level":"info","ts":1778846327.999839,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
+    {"level":"warn","ts":1778846328.0010333,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0010488,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0013225,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0013351,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0014153,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0014393,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0015626,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1778846328.0015733,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"info","ts":1778846328.0025208,"msg":"adapted config to JSON","adapter":"caddyfile"}
+    {"level":"warn","ts":1778846328.0025346,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":23}
+    {"level":"info","ts":1778846328.0032525,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc0005cd080"}
+    {"level":"info","ts":1778846328.0034397,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1778846328.0034544,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
+    {"level":"info","ts":1778846328.003458,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+    {"level":"info","ts":1778846328.005655,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc0005cd080"}
     Valid configuration
   --- end validate ---
   ✅ Caddy swapped + reloaded
@@ -886,12 +860,12 @@ unknown
   nginx: active=inactive
 unknown enabled=disabled
 unknown
-  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260515-193457.tar.gz
+  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260515-195023.tar.gz
   ✓ nginx already disabled
 ::endgroup::
 ::group::D) Smoke tests
   /health (container):
-{"status":"ok","timestamp":"2026-05-15T11:41:50.111Z","version":"1.0.0","environment":"production"}
+{"status":"ok","timestamp":"2026-05-15T11:58:51.109Z","version":"1.0.0","environment":"production"}
   / (via nginx):
     HTTP 200
   /api/demo/samples (via nginx):
@@ -902,5 +876,5 @@ unknown
     HTTP 200
 ::endgroup::
 Total reclaimed space: 0B
-===== ✅ Deploy 20260515-193457 done =====
+===== ✅ Deploy 20260515-195023 done =====
 ```
