@@ -326,13 +326,13 @@ jobs:
 
     - name: Pack server source as tarball
       run: |
-        git archive --format=tar HEAD server shared .dockerignore | gzip -1 > server-src.tar.gz
+        git archive --format=tar HEAD server shared .dockerignore | gzip -9 > server-src.tar.gz
         ls -lh server-src.tar.gz
 
     # 只上传小文件。API 镜像走服务器 GHCR pull；如果 GHCR 失败，再用 server-src 本地构建。
     # 2026-05-15 实测 230-262MB API tarball 跨境 SCP 75m 仍超时，不能作为主链路。
     - name: Upload release control files to server
-      timeout-minutes: 10
+      timeout-minutes: 15
       env:
         SERVER_HOST: ${{ secrets.SERVER_HOST }}
         SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -418,7 +418,7 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
-        command_timeout: 110m  # GHCR pull (≤60m) + local build fallback (≤45m) + restart cushion
+        command_timeout: 65m  # opportunistic GHCR pull (≤8m) + local build fallback (≤45m) + restart cushion
         script: |
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
@@ -486,8 +486,8 @@ jobs:
           # A.1 准备新镜像。优先级（2026-05-03 重排，源码本地构建放最后）：
           # 第一选择：本地缓存命中（走过 build/pull 后 docker images 里直接有 treatbot-api:${SHA}）
           #   ── 重新部署同一 SHA 时 0 流量、0 编译，秒切。
-          # 第二选择：GHCR layer pull（build-api job 已 push 到 ghcr.io，跨境只下载新增层；
-          #   prod 国内出口对 ghcr.io 波动很大，timeout 60m 留足余量）
+          # 第二选择：GHCR layer pull（build-api job 已 push 到 ghcr.io）；
+          #   prod 国内出口对 ghcr.io 波动很大，把 GHCR 当机会性快路径，短超时后进入本地 build。
           # 第三选择：/tmp/server-src.tar.gz 源码 + 服务器本地 docker build
           #   ── 生产服务器出境访问 PyPI/GHCR 波动大，兜底 build 显式使用腾讯云镜像源；
           #   ── timeout 45m 用来兜住冷缓存 apt/pip/npm。
@@ -504,7 +504,7 @@ jobs:
               echo "  Pulling image from GHCR: $GHCR_IMAGE"
               if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
                 if command -v timeout >/dev/null 2>&1; then
-                  timeout 60m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                  timeout 8m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
                 else
                   docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
                 fi
