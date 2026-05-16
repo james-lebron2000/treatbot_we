@@ -14,6 +14,8 @@
 const mockCreate = jest.fn();
 const mockFindByPk = jest.fn();
 const mockQueueAdd = jest.fn();
+const mockRecordUpdate = jest.fn().mockResolvedValue([1]);
+const mockPublish = jest.fn().mockResolvedValue(true);
 
 jest.mock('../models', () => ({
   OcrJobFailure: {
@@ -21,7 +23,7 @@ jest.mock('../models', () => ({
     findByPk: (...args) => mockFindByPk(...args)
   },
   MedicalRecord: {
-    update: jest.fn().mockResolvedValue([1])
+    update: (...args) => mockRecordUpdate(...args)
   }
 }));
 
@@ -45,6 +47,10 @@ jest.mock('../services/ocr', () => ({
   processMedicalImage: jest.fn()
 }));
 
+jest.mock('../services/recordEvents', () => ({
+  publishRecordEvent: (...args) => mockPublish(...args)
+}));
+
 // 引入被测模块（必须在 mock 之后 require）
 const queueService = require('../services/queue');
 
@@ -53,9 +59,13 @@ describe('PRD-2026Q2 §3.2 OCR DLQ failed handler', () => {
     mockCreate.mockReset();
     mockFindByPk.mockReset();
     mockQueueAdd.mockReset();
+    mockRecordUpdate.mockReset();
+    mockRecordUpdate.mockResolvedValue([1]);
+    mockPublish.mockReset();
+    mockPublish.mockResolvedValue(true);
   });
 
-  test('attempts 耗尽 → 写入 ocr_job_failures', async () => {
+  test('attempts 耗尽 → 写 record error + 推送失败事件 + 写入 ocr_job_failures', async () => {
     mockCreate.mockResolvedValueOnce({ id: 1 });
 
     const job = {
@@ -71,6 +81,18 @@ describe('PRD-2026Q2 §3.2 OCR DLQ failed handler', () => {
     const err = new Error('OCR timeout 30s');
 
     await queueService.__testables.handleOcrJobFailed(job, err);
+
+    expect(mockRecordUpdate).toHaveBeenCalledWith({
+      status: 'error',
+      status_phase: null,
+      structured: { error: 'OCR timeout 30s' }
+    }, {
+      where: { id: 'rec_abc' }
+    });
+    expect(mockPublish).toHaveBeenCalledWith('rec_abc', {
+      status: 'error',
+      errorMsg: 'OCR timeout 30s'
+    });
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const insertArgs = mockCreate.mock.calls[0][0];
@@ -93,6 +115,8 @@ describe('PRD-2026Q2 §3.2 OCR DLQ failed handler', () => {
 
     await queueService.__testables.handleOcrJobFailed(job, err);
 
+    expect(mockRecordUpdate).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
@@ -125,6 +149,10 @@ describe('PRD-2026Q2 §3.2 retryFailure', () => {
     mockCreate.mockReset();
     mockFindByPk.mockReset();
     mockQueueAdd.mockReset();
+    mockRecordUpdate.mockReset();
+    mockRecordUpdate.mockResolvedValue([1]);
+    mockPublish.mockReset();
+    mockPublish.mockResolvedValue(true);
   });
 
   test('读一条 failure → ocrQueue.add → retried + last_retried_at 更新', async () => {
@@ -146,6 +174,7 @@ describe('PRD-2026Q2 §3.2 retryFailure', () => {
     const [payload, opts] = mockQueueAdd.mock.calls[0];
     expect(payload.recordId).toBe('rec_retry');
     expect(opts.attempts).toBe(5);
+    expect(opts.timeout).toBe(queueService.__testables.OCR_JOB_TIMEOUT_MS);
     expect(opts.removeOnFail).toBe(false);
 
     expect(updateSpy).toHaveBeenCalledTimes(1);

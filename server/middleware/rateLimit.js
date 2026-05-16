@@ -50,12 +50,14 @@ const createRateLimiter = (options = {}) => {
     windowMs = 15 * 60 * 1000,  // 15 分钟
     max = 100,  // 最多 100 次
     keyPrefix = 'rl:',
-    message = '请求过于频繁，请稍后再试'
+    message = '请求过于频繁，请稍后再试',
+    skip
   } = options;
   
   return rateLimit({
     windowMs,
     max,
+    skip,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
@@ -79,8 +81,25 @@ const createRateLimiter = (options = {}) => {
   });
 };
 
+const parseStatusPaths = new Set([
+  '/api/medical/parse-status',
+  '/api/medical/parse-status-batch',
+  '/api/medical/parse-status-stream'
+]);
+
+const isParseStatusPath = (req = {}) => {
+  const rawPath = req.path || `${req.originalUrl || ''}`.split('?')[0];
+  const normalized = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath;
+  return parseStatusPaths.has(normalized);
+};
+
 // 默认限流：100 请求/15分钟
-const defaultLimiter = createRateLimiter();
+//
+// 解析状态接口是长轮询/SSE 主路径。app.js 的全局 limiter 在 authMiddleware 之前执行，
+// 此时 req.userId 还不存在，只能按 IP 计数；8 份病历轮询会把同一出口 IP 的全局桶打满，
+// 进而误伤登录、profile、matches 等其它 API。因此这里从全局桶排除，改在 routes 层
+// 挂 parseStatusLimiter，等 authMiddleware 注入 userId 后按用户计数。
+const defaultLimiter = createRateLimiter({ skip: isParseStatusPath });
 
 // 严格限流：20 请求/15分钟 - 用于敏感操作（登录、报名等）
 const strictLimiter = createRateLimiter({
@@ -98,7 +117,23 @@ const uploadLimiter = createRateLimiter({
   message: '上传过于频繁，请稍后再试'
 });
 
+// 解析状态轮询限流：认证后按用户计数。默认 3600/15min，覆盖：
+// - 批量 8 文件每 2s 查询一次：约 450/15min；
+// - 旧客户端 8 个单文件状态各自每 2s 查询一次：约 3600/15min。
+// 它不再占用全局 IP 桶，也不会误伤同一出口下的其它用户。
+const parseStatusLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.PARSE_STATUS_RATE_LIMIT_MAX || '3600', 10),
+  keyPrefix: 'rl:parse-status:',
+  message: '解析状态查询过于频繁，请稍后再试'
+});
+
 module.exports = defaultLimiter;
 module.exports.strictLimiter = strictLimiter;
 module.exports.uploadLimiter = uploadLimiter;
+module.exports.parseStatusLimiter = parseStatusLimiter;
 module.exports.redisClient = redisClient;
+module.exports.__testables = {
+  createRateLimiter,
+  isParseStatusPath
+};

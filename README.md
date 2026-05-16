@@ -196,6 +196,9 @@ env:
   ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
   ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
   ARK_TIMEOUT_MS: '180000'
+  OCR_JOB_TIMEOUT_MS: '900000'                 # Bull worker 防僵尸兜底，不是客户端等待上限
+  OCR_STRUCTURED_STREAM_TIMEOUT_MS: '45000'    # 二次流式结构化超时，失败用主 OCR 结果兜底
+  PARSE_STATUS_RATE_LIMIT_MAX: '3600'          # 解析状态轮询单独按用户限流
   KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
   OCR_QUEUE_CONCURRENCY: '2'
 ```

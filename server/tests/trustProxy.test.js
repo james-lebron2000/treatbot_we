@@ -33,6 +33,23 @@ describe('app.js — trust proxy is enabled in production', () => {
     expect(routesSrc).toMatch(/'\/auth\/send-code'\s*,\s*strictLimiter/);
     expect(routesSrc).toMatch(/'\/auth\/refresh'\s*,\s*strictLimiter/);
   });
+
+  test('parse-status 从全局 IP 限流排除，并在 auth 后使用独立用户限流', () => {
+    const rateLimitSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'middleware', 'rateLimit.js'),
+      'utf8'
+    );
+    const routesSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'routes', 'index.js'),
+      'utf8'
+    );
+
+    expect(rateLimitSrc).toMatch(/const defaultLimiter = createRateLimiter\(\{ skip: isParseStatusPath \}\)/);
+    expect(rateLimitSrc).toMatch(/const parseStatusLimiter = createRateLimiter/);
+    expect(rateLimitSrc).toMatch(/PARSE_STATUS_RATE_LIMIT_MAX/);
+    expect(routesSrc).toMatch(/'\/medical\/parse-status'\s*,\s*authMiddleware,\s*parseStatusLimiter/);
+    expect(routesSrc).toMatch(/'\/medical\/parse-status-batch'\s*,\s*authMiddleware,\s*parseStatusLimiter/);
+  });
 });
 
 describe('Express trust proxy behavior — runtime sanity check', () => {

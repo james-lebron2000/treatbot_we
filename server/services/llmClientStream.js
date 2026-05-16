@@ -3,7 +3,9 @@
  *
  * 与 llmClient.chatJson 的关系：
  *   - 同一个 PROVIDER_REGISTRY，同一个 schema 校验语义；
- *   - 流式失败（网络/解析/schema）一律 fallback 到非流式 chatJson，调用方拿到等价结果；
+ *   - 默认：流式失败（网络/解析/schema）fallback 到非流式 chatJson，调用方拿到等价结果；
+ *   - opts.fallbackToChatJson === false 时：流式失败直接 reject，供上层用本地 OCR 结果兜底，
+ *     避免一次 OCR 链路里额外追加 1-2 个完整非流式 LLM timeout。
  *   - onFieldGroup 是流式专属能力：每凑齐一个分组就回调一次，调用方串接 publishRecordEvent。
  *
  * 不依赖 npm 'partial-json'：内置 parsePartialObject——基于"找最后一个安全逗号"的简单策略，
@@ -138,17 +140,23 @@ const extractDeltaContents = (buffer) => {
  * @param {Array} args.messages OpenAI 风格 messages（已 PII 脱敏）
  * @param {import('zod').ZodTypeAny} args.schema 最终 zod 校验
  * @param {(group: string, fields: object, progress: number) => void} [args.onFieldGroup]
- * @param {object} [args.opts] 透传给 axios（如 timeoutMs）
+ * @param {object} [args.opts] 透传给 axios（如 timeoutMs、fallbackToChatJson）
  * @returns {Promise<any>} schema 校验通过的最终对象
  */
 const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts = {} }) => {
   if (!schema || typeof schema.safeParse !== 'function') {
     throw new Error('streamChatJson: schema 必须是 zod schema')
   }
+  const fallbackToChatJson = opts.fallbackToChatJson !== false
 
   const cfg = PROVIDER_REGISTRY[provider] && PROVIDER_REGISTRY[provider]()
   if (!cfg || !cfg.apiKey) {
     // 直接降级：没凭证根本流不起来
+    if (!fallbackToChatJson) {
+      const err = new Error(`streamChatJson provider ${provider} not configured`)
+      err.code = 'STREAM_PROVIDER_NOT_CONFIGURED'
+      throw err
+    }
     return chatJson(provider, messages, schema, opts)
   }
 
@@ -176,9 +184,12 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
       }
     )
   } catch (err) {
-    logger.warn('streamChatJson 建连失败，降级到非流式 chatJson', {
+    logger.warn(fallbackToChatJson
+      ? 'streamChatJson 建连失败，降级到非流式 chatJson'
+      : 'streamChatJson 建连失败，交给上层兜底', {
       provider, error: err.message
     })
+    if (!fallbackToChatJson) throw err
     return chatJson(provider, messages, schema, opts)
   }
 
@@ -198,10 +209,13 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
     // settled 一旦为 true 就吞掉后续的兜底路径；Promise 也只 resolve/reject 一次。
     let settled = false
     const safeResolve = (v) => { if (!settled) { settled = true; resolve(v) } }
-    // 注：失败路径全部走 fallbackChatJson（即便流式整条挂掉也兜底到非流式），
-    // 所以这里不暴露 safeReject —— 任何"想 reject"的位置都应改成 fallbackChatJson。
-    const fallbackChatJson = () => {
+    const safeReject = (err) => { if (!settled) { settled = true; reject(err) } }
+    const fallbackChatJson = (err) => {
       if (settled) return
+      if (!fallbackToChatJson) {
+        safeReject(err || new Error('streamChatJson failed'))
+        return
+      }
       settled = true
       chatJson(provider, messages, schema, opts).then(resolve, reject)
     }
@@ -259,26 +273,37 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
         finalObj = null
       }
       if (!finalObj) {
-        logger.warn('streamChatJson 最终内容无法 JSON.parse，降级到 chatJson')
-        fallbackChatJson()
+        logger.warn(fallbackToChatJson
+          ? 'streamChatJson 最终内容无法 JSON.parse，降级到 chatJson'
+          : 'streamChatJson 最终内容无法 JSON.parse，交给上层兜底')
+        const parseErr = new Error('streamChatJson_unparseable')
+        parseErr.code = 'STREAM_JSON_PARSE_FAILED'
+        fallbackChatJson(parseErr)
         return
       }
       const valid = schema.safeParse(finalObj)
       if (valid.success) {
         safeResolve(valid.data)
       } else {
-        logger.warn('streamChatJson 最终 schema 校验失败，降级到 chatJson', {
+        logger.warn(fallbackToChatJson
+          ? 'streamChatJson 最终 schema 校验失败，降级到 chatJson'
+          : 'streamChatJson 最终 schema 校验失败，交给上层兜底', {
           provider,
           issues: (valid.error.issues || []).slice(0, 3)
         })
-        fallbackChatJson()
+        const schemaErr = new Error('streamChatJson_schema_invalid')
+        schemaErr.code = 'STREAM_SCHEMA_INVALID'
+        schemaErr.issues = valid.error.issues || []
+        fallbackChatJson(schemaErr)
       }
     })
 
     response.data.on('error', (err) => {
       if (settled) return
-      logger.warn('streamChatJson 流式异常，降级到 chatJson', { provider, error: err.message })
-      fallbackChatJson()
+      logger.warn(fallbackToChatJson
+        ? 'streamChatJson 流式异常，降级到 chatJson'
+        : 'streamChatJson 流式异常，交给上层兜底', { provider, error: err.message })
+      fallbackChatJson(err)
     })
   })
 }

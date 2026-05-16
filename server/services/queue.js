@@ -25,6 +25,13 @@ const captureException = (_sentry && _sentry.captureException)
 const OCR_JOB_ATTEMPTS = 5;
 const OCR_JOB_BACKOFF_DELAY = 8000;
 const OCR_JOB_BACKOFF_MAX = 90000;
+const readPositiveIntEnv = (name, fallback) => {
+  const value = parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+// Bull 的 timeout 只做 zombie protection。生产真实链路包含 PDF/vision OCR + 二次结构化，
+// 8 分钟会在复杂文件上误杀任务；默认放宽到 15 分钟，同时允许运维按环境覆盖。
+const OCR_JOB_TIMEOUT_MS = Math.max(60000, readPositiveIntEnv('OCR_JOB_TIMEOUT_MS', 900000));
 // Plan §Phase 1.1：默认并发 2 → 4。上游 Doubao/Kimi 配额已确认可放开；token bucket
 // （services/llmRateLimiter）兜底，永远不会撞 LLM provider 端的配额上限。
 // 仍可通过 OCR_QUEUE_CONCURRENCY 环境变量覆盖（运维灰度回退用）。
@@ -387,7 +394,7 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
   try {
     // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
     // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
-    // Track D（2026-05-03）：每次 attempt 8 分钟硬上限，zombie protection。
+    // Track D（2026-05-03）：每次 attempt 服务端硬上限，zombie protection。
     //   - Doubao 单次 HTTP timeout 已是 180s（llmClient.js）；正常 88-180s 完成。
     //   - 加这条只为防御 worker 内部死锁 / HTTP socket 不释放等极端情况；
     //     触发后 Bull 会发 'failed' 事件，handleOcrJobFailed 写 status='error'，
@@ -401,7 +408,7 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
           type: 'ocrExponential',
           delay: OCR_JOB_BACKOFF_DELAY
         },
-        timeout: 480000,
+        timeout: OCR_JOB_TIMEOUT_MS,
         removeOnComplete: 10,
         removeOnFail: false
       }),
@@ -484,9 +491,18 @@ const classifyError = (err = {}) => {
   return 'other';
 };
 
+const safeOcrErrorMessage = (err) => {
+  const raw = `${err?.message || err || 'OCR任务失败'}`;
+  return raw
+    .replace(/https?:\/\/\S+/g, '[redacted-url]')
+    .slice(0, 500);
+};
+
 const handleOcrJobFailed = async (job, err) => {
   const attemptsMade = job?.attemptsMade || 0;
   const maxAttempts = job?.opts?.attempts || 0;
+  const recordId = job?.data?.recordId || '';
+  const errorMsg = safeOcrErrorMessage(err);
 
   logger.error('任务失败:', {
     jobId: job?.id,
@@ -500,10 +516,32 @@ const handleOcrJobFailed = async (job, err) => {
     return;
   }
 
+  if (recordId) {
+    try {
+      await MedicalRecord.update({
+        status: 'error',
+        status_phase: null,
+        structured: { error: errorMsg }
+      }, {
+        where: { id: recordId }
+      });
+      await publishRecordEventSafe(recordId, {
+        status: 'error',
+        errorMsg
+      });
+    } catch (recordErr) {
+      logger.error('Bull 最终失败后回写 OCR 终态失败:', {
+        jobId: job?.id,
+        recordId,
+        error: recordErr.message
+      });
+    }
+  }
+
   try {
     await OcrJobFailure.create({
       job_id: String(job.id),
-      record_id: job.data?.recordId || '',
+      record_id: recordId,
       error_type: classifyError(err),
       error_message: err?.message ? err.message.slice(0, 2000) : null,
       payload: job.data || null,
@@ -534,6 +572,7 @@ const retryFailure = async (failureId) => {
   const job = await ocrQueue.add(payload, {
     attempts: OCR_JOB_ATTEMPTS,
     backoff: { type: 'ocrExponential', delay: OCR_JOB_BACKOFF_DELAY },
+    timeout: OCR_JOB_TIMEOUT_MS,
     removeOnComplete: 10,
     removeOnFail: false
   });
@@ -579,7 +618,8 @@ module.exports = {
   retryFailure,
   getQueueDepth,
   __testables: {
-    handleOcrJobFailed, classifyError, OCR_QUEUE_CONCURRENCY, getQueueDepth,
+    handleOcrJobFailed, classifyError, safeOcrErrorMessage,
+    OCR_QUEUE_CONCURRENCY, OCR_JOB_TIMEOUT_MS, getQueueDepth,
     // Plan §Phase 3.1 单测入口
     runOcrTask, OcrCancelledError, assertNotCancelled
   }

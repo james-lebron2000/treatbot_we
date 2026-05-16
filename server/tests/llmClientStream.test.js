@@ -31,7 +31,7 @@ const stream = require('stream')
 const mockAxios = {
   post: jest.fn()
 }
-jest.mock('axios', () => mockAxios, { virtual: true })
+jest.mock('axios', () => mockAxios)
 
 // chatJson 是 fallback 路径，stream 失败时被调；测试单独 mock 它便于断言
 jest.mock('../services/llmClient', () => ({
@@ -249,8 +249,25 @@ describe('streamChatJson 集成（mock stream）', () => {
     delete process.env.ARK_API_KEY
   })
 
+  test('fallbackToChatJson=false 时建连失败 → 直接 reject，不再追加非流式 chatJson', async () => {
+    mockAxios.post.mockRejectedValue(new Error('connection refused'))
+
+    process.env.ARK_API_KEY = 'test-key'
+    await expect(streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      opts: { fallbackToChatJson: false, timeoutMs: 1234 }
+    })).rejects.toThrow('connection refused')
+
+    expect(mockChatJson).not.toHaveBeenCalled()
+    expect(mockAxios.post.mock.calls[0][2].timeout).toBe(1234)
+    delete process.env.ARK_API_KEY
+  })
+
   test('流中途 error → 降级到 chatJson', async () => {
     const fakeStream = new stream.Readable({ read() {} })
+    fakeStream.on('error', () => {})
     mockAxios.post.mockResolvedValue({ data: fakeStream })
     mockChatJson.mockResolvedValue({ recovered: true })
 
@@ -271,6 +288,28 @@ describe('streamChatJson 集成（mock stream）', () => {
     delete process.env.ARK_API_KEY
   })
 
+  test('fallbackToChatJson=false 时流中途 error → 直接 reject', async () => {
+    const fakeStream = new stream.Readable({ read() {} })
+    fakeStream.on('error', () => {})
+    mockAxios.post.mockResolvedValue({ data: fakeStream })
+
+    setImmediate(() => {
+      fakeStream.push(Buffer.from(buildSseLine('{"age": 6')))
+      fakeStream.emit('error', new Error('socket reset'))
+    })
+
+    process.env.ARK_API_KEY = 'test-key'
+    await expect(streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      opts: { fallbackToChatJson: false }
+    })).rejects.toThrow('socket reset')
+
+    expect(mockChatJson).not.toHaveBeenCalled()
+    delete process.env.ARK_API_KEY
+  })
+
   test('无 apiKey → 立刻降级到 chatJson', async () => {
     delete process.env.ARK_API_KEY
     mockChatJson.mockResolvedValue({ skipped: true })
@@ -284,6 +323,20 @@ describe('streamChatJson 集成（mock stream）', () => {
     expect(mockAxios.post).not.toHaveBeenCalled()
     expect(mockChatJson).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ skipped: true })
+  })
+
+  test('fallbackToChatJson=false 且无 apiKey → 直接 reject', async () => {
+    delete process.env.ARK_API_KEY
+
+    await expect(streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      opts: { fallbackToChatJson: false }
+    })).rejects.toMatchObject({ code: 'STREAM_PROVIDER_NOT_CONFIGURED' })
+
+    expect(mockAxios.post).not.toHaveBeenCalled()
+    expect(mockChatJson).not.toHaveBeenCalled()
   })
 
   test('schema 校验失败 → 降级到 chatJson', async () => {

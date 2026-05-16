@@ -4,7 +4,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const { requireAdminToken, requireRole } = require('../middleware/adminAuth');
 const { idempotencyMiddleware } = require('../middleware/idempotency');
-const { strictLimiter, uploadLimiter } = require('../middleware/rateLimit');
+const { strictLimiter, uploadLimiter, parseStatusLimiter } = require('../middleware/rateLimit');
 // PRD-2026Q2 §2.3：Admin 操作审计日志中间件
 const { logAdmin } = require('../middleware/auditLog');
 
@@ -79,10 +79,10 @@ router.post('/medical/upload-batch',
 // 与 /medical/upload[-batch] 双轨并存；老客户端仍走 multipart 路径。
 router.get('/medical/upload-sts', authMiddleware, uploadLimiter, medicalController.handleStsIssue);
 router.post('/medical/upload-finalize', authMiddleware, uploadLimiter, medicalController.handleFinalize);
-router.get('/medical/parse-status', authMiddleware, medicalController.getParseStatus);
+router.get('/medical/parse-status', authMiddleware, parseStatusLimiter, medicalController.getParseStatus);
 // Phase E.2：批量查询解析状态，单次请求最多 20 个 fileId
-router.get('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
-router.post('/medical/parse-status-batch', authMiddleware, medicalController.getParseStatusBatch);
+router.get('/medical/parse-status-batch', authMiddleware, parseStatusLimiter, medicalController.getParseStatusBatch);
+router.post('/medical/parse-status-batch', authMiddleware, parseStatusLimiter, medicalController.getParseStatusBatch);
 // Plan §Phase 2.3 + PRD-2026Q4 流式 OCR：SSE 解析状态推送（主路径）+ 客户端 10s 内 fallback 轮询。
 //   - text/event-stream long poll；无 rate limit（同一用户最多 20 个 record）
 //   - 终态自动 end；Redis 不可用立即吐 noredis 让客户端切回轮询

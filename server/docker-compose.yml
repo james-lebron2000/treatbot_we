@@ -47,6 +47,9 @@ services:
       - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       - ARK_VISION_MODEL=${ARK_VISION_MODEL:-doubao-seed-1-6-vision-250815}
       - ARK_TIMEOUT_MS=${ARK_TIMEOUT_MS:-180000}
+      - OCR_JOB_TIMEOUT_MS=${OCR_JOB_TIMEOUT_MS:-900000}
+      - OCR_STRUCTURED_STREAM_TIMEOUT_MS=${OCR_STRUCTURED_STREAM_TIMEOUT_MS:-45000}
+      - PARSE_STATUS_RATE_LIMIT_MAX=${PARSE_STATUS_RATE_LIMIT_MAX:-3600}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.treatbot.example.com}
     volumes:
       - ./logs:/app/logs

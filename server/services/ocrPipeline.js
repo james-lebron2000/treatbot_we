@@ -20,8 +20,8 @@
  *
  * 失败降级：
  *   - processMedicalImage 直接抛错 → orchestrator 抛错（emit error）
- *   - streamChatJson 失败 → 内部 fallback chatJson；仍失败 → 用 processMedicalImage 已经抽好的 entities
- *     作为最终结果（前端不会看到 field_group 事件，但会拿到 completed）
+ *   - streamChatJson 失败 → 直接用 processMedicalImage 已经抽好的 entities 作为最终结果，
+ *     不再额外追加非流式 chatJson，避免复杂 OCR 链路超过 Bull 外层 timeout。
  *
  * Emit 协议：调用方传 `emit({ stage, ...payload })`；orchestrator 不知 recordId（由调用方注入）。
  */
@@ -39,6 +39,16 @@ const {
 } = require('../../shared/streaming/fieldGroups')
 
 const PII_SCRUBBED_TEXT_LIMIT = 6000   // 与 requestKimiText / requestDoubaoText 量级一致
+const readPositiveIntEnv = (name, fallback) => {
+  const value = parseInt(process.env[name] || '', 10)
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+// 二次结构化只是为了增量字段 UX。主 OCR 已经有一份结构化结果，故这里用短 timeout，
+// 且关闭内部 chatJson fallback；失败后本模块用 ocr.js 的 entities 兜底。
+const OCR_STRUCTURED_STREAM_TIMEOUT_MS = Math.max(
+  10000,
+  readPositiveIntEnv('OCR_STRUCTURED_STREAM_TIMEOUT_MS', 45000)
+)
 
 /**
  * 把 ocr.js 已抽到的 entities 形状归一为 OcrExtractionSchema 接受的形状（部分别名兼容）。
@@ -148,6 +158,11 @@ const runStreamingPipeline = async ({ source, emit }) => {
           fields: restored,
           progress
         }))
+      },
+      opts: {
+        timeoutMs: OCR_STRUCTURED_STREAM_TIMEOUT_MS,
+        fallbackToChatJson: false,
+        operation: 'ocr_structured_stream'
       }
     })
     // 最终对象 PII 还原（restoreFromLlm 自带递归）
@@ -187,6 +202,7 @@ const runStreamingPipeline = async ({ source, emit }) => {
 module.exports = {
   runStreamingPipeline,
   __internals: {
-    entitiesToSchemaShape
+    entitiesToSchemaShape,
+    OCR_STRUCTURED_STREAM_TIMEOUT_MS
   }
 }
