@@ -149,7 +149,9 @@ const onCancel = () => {
   border-radius: 16px;
   padding: 22px 20px 18px;
   max-width: 460px;
-  width: 100%;
+  width: min(100%, 460px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
@@ -178,6 +180,7 @@ const onCancel = () => {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  min-width: 0;
   font-size: 0.9rem;
   color: #1f2937;
   line-height: 1.55;
@@ -185,8 +188,17 @@ const onCancel = () => {
 }
 
 .consent-list input[type='checkbox'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   margin-top: 4px;
-  flex-shrink: 0;
+  padding: 0;
+}
+
+.consent-list span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .consent-promise {
@@ -247,5 +259,19 @@ const onCancel = () => {
 
 .consent-actions .btn {
   min-width: 96px;
+}
+
+@media (max-width: 420px) {
+  .consent-modal {
+    padding: 18px 16px 16px;
+  }
+
+  .consent-actions {
+    flex-direction: column-reverse;
+  }
+
+  .consent-actions .btn {
+    width: 100%;
+  }
 }
 </style>

@@ -339,7 +339,6 @@ const goManualEntry = () => {
 let timer: number | null = null
 let pollStartTime = 0
 let elapsedTimer: number | null = null
-const POLL_TIMEOUT_MS = 120_000
 const elapsedSeconds = ref(0)
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
@@ -490,14 +489,6 @@ const retryParse = async () => {
 
 const pollStatus = async () => {
   if (!fileId.value) return
-  if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
-    stopPolling()
-    uploadError.kind = 'parse'
-    uploadError.message = uploadCopy.error.parse_failed
-    uploadError.retryAfter = 0
-    parseStatus.value = 'error'
-    return
-  }
   const status = await api.getParseStatus(fileId.value)
   parseStatus.value = status.status || 'parsing'
   parseProgress.value = Number(status.progress || 0)
@@ -526,22 +517,6 @@ const mergeRecords = (base: Record<string, unknown>, extra: Record<string, unkno
     }
   }
   return merged
-}
-
-const waitForCompletion = (fid: string): Promise<Record<string, unknown>> => {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    const check = async () => {
-      if (Date.now() - start > POLL_TIMEOUT_MS) return reject(new Error('识别超时'))
-      try {
-        const status = await api.getParseStatus(fid)
-        if (status.status === 'completed') return resolve(normalizeRecord(status.result || status.record || status))
-        if (status.status === 'error') return reject(new Error(status.message || '识别失败'))
-        setTimeout(check, 2000)
-      } catch { setTimeout(check, 2000) }
-    }
-    check()
-  })
 }
 
 // Q3-红线 §A.2.1：consent 状态 + 弹窗
@@ -689,17 +664,10 @@ const uploadAndParse = async () => {
     streamRawText.value = ''
     currentStage.value = 'received'
 
-    const startedAt = Date.now()
-    const timeoutMs = Math.min(180_000, 90_000 + Math.max(0, fileIds.value.length - 1) * 20_000)
-
     await new Promise<void>((resolve, reject) => {
       let settled = false
       const safeResolve = () => { if (!settled) { settled = true; resolve() } }
       const safeReject = (e: Error) => { if (!settled) { settled = true; reject(e) } }
-      let timeoutTimer: number | null = window.setTimeout(() => {
-        safeReject(new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`))
-      }, timeoutMs)
-      const clearTimer = () => { if (timeoutTimer) { window.clearTimeout(timeoutTimer); timeoutTimer = null } }
 
       // 兜底：进入轮询直到所有 record 都是终态（与原 while 循环等价）
       let pollingActive = false
@@ -710,9 +678,6 @@ const uploadAndParse = async () => {
         if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
         console.warn('parse-stream fallback to polling:', reason)
         while (true) {
-          if (Date.now() - startedAt > timeoutMs) {
-            return safeReject(new Error(`解析超过 ${Math.round(timeoutMs / 1000)} 秒还没完成，可能服务暂时繁忙`))
-          }
           try {
             const { done, mergedResult, firstError } = await pollBatchOnce()
             if (done) {
@@ -720,14 +685,11 @@ const uploadAndParse = async () => {
                 parseStatus.value = 'completed'
                 currentStage.value = 'completed'
                 if (batchStats.completedCount >= 2) await fetchTimeline()
-                clearTimer()
                 return safeResolve()
               }
-              clearTimer()
               return safeReject(new Error(firstError || '所有文件解析均失败'))
             }
           } catch (err: any) {
-            clearTimer()
             return safeReject(err)
           }
           await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
@@ -795,13 +757,11 @@ const uploadAndParse = async () => {
             parseStatus.value = 'completed'
             currentStage.value = 'completed'
             if (batchStats.completedCount >= 2) {
-              fetchTimeline().finally(() => { clearTimer(); safeResolve() })
+              fetchTimeline().finally(() => { safeResolve() })
             } else {
-              clearTimer()
               safeResolve()
             }
           } else {
-            clearTimer()
             safeReject(new Error(evt.errorMsg || '所有文件解析均失败'))
           }
         }

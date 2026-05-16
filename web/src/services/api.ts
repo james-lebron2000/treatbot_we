@@ -228,7 +228,11 @@ export const api = {
     formData.append('file', file)
     formData.append('type', type)
     formData.append('remark', remark)
-    const { data } = await http.post<ApiResponse<{ fileId: string; recordId?: string }>>('/api/medical/upload', formData)
+    const { data } = await http.post<ApiResponse<{ fileId: string; recordId?: string }>>(
+      '/api/medical/upload',
+      formData,
+      { timeout: 120_000 }
+    )
     return unwrap<{ fileId: string; recordId?: string }>(data)
   },
   // Phase E.2：H5 端原生支持 multi-FormData（<input multiple>），所以这里直接命中
@@ -248,13 +252,14 @@ export const api = {
     // 以避免 NaN 渗到 UI。仅在 onUploadProgress 存在时拼装 config，最小化 baseline 改动。
     const config = onUploadProgress
       ? {
+          timeout: 120_000,
           onUploadProgress: (evt: { loaded: number; total?: number }) => {
             const total = evt.total || 0
             const percent = total > 0 ? Math.min(100, Math.round((evt.loaded / total) * 100)) : 0
             try { onUploadProgress(percent) } catch { /* never let UI callbacks break upload */ }
           }
         }
-      : undefined
+      : { timeout: 120_000 }
     const { data } = await http.post<ApiResponse<{
       total: number;
       successCount: number;

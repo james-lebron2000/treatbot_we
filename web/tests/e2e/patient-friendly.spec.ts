@@ -225,35 +225,111 @@ test.describe('患者满意度测试 - 60 岁病人女儿视角', () => {
 
   test('④ ConsentModal 三条勾选项都说人话（≤ 30 字），无术语堆叠', async ({ page }) => {
     const errors = collectPageErrors(page)
-    await installCommonMocks(page)
-    // 让 consent 接口返回"未同意"，这样 UploadView 会弹 modal
-    await page.route('**/api/me/consent', (r) =>
-      fulfillJson(r, envelope({ list: [] }))
-    )
+    await installApiMocks(page, {
+      '/api/me/consent': (r) => {
+        if (r.request().method() === 'GET') return fulfillJson(r, envelope({ list: [] }))
+        return fulfillJson(r, envelope({ ok: true }))
+      },
+      '/api/medical/upload-batch': (r) =>
+        fulfillJson(
+          r,
+          envelope({
+            total: 8,
+            successCount: 8,
+            fileIds: Array.from({ length: 8 }, (_, i) => `f${i + 1}`),
+            records: Array.from({ length: 8 }, (_, i) => ({
+              fileId: `f${i + 1}`,
+              recordId: `r${i + 1}`,
+              status: 'queued',
+              ocrQueued: true,
+              originalName: `fake-report-${i + 1}.pdf`
+            }))
+          })
+        ),
+      '/api/medical/parse-status-stream': (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(envelope(null, 'mock non-sse; force polling fallback'))
+        }),
+      '/api/medical/parse-status-batch': (r) =>
+        fulfillJson(
+          r,
+          envelope({
+            total: 8,
+            completedCount: 8,
+            erroredCount: 0,
+            done: true,
+            entries: Array.from({ length: 8 }, (_, i) => ({
+              fileId: `f${i + 1}`,
+              recordId: `r${i + 1}`,
+              status: 'completed',
+              progress: 100,
+              result: {
+                diagnosis: '非小细胞肺癌',
+                stage: 'IV',
+                geneMutation: 'EGFR L858R'
+              }
+            }))
+          })
+        ),
+      '/api/medical/timeline': (r) =>
+        fulfillJson(r, envelope({ timeline: null, recordCount: 8, sourceRecordIds: [] })),
+      '/api/track': (r) => fulfillJson(r, envelope({ accepted: true }))
+    })
     await primeAuthAndOnboarded(page)
 
     await page.goto('/treatbot/upload')
     await page.waitForLoadState('networkidle')
+    await page.locator('input[type="file"]').setInputFiles(
+      Array.from({ length: 8 }, (_, i) => ({
+        name: `fake-report-${i + 1}.pdf`,
+        mimeType: 'application/pdf',
+        buffer: Buffer.from(`%PDF-1.4 fake content ${i + 1}`)
+      }))
+    )
+    await page.getByRole('button', { name: /开始批量解析 8 份/ }).click()
 
     // ConsentModal 出现时应包含「全程免费」承诺，且每条 label 短而朴素
     const modalRoot = page.locator('[role="dialog"]').filter({ hasText: /同意|授权|继续/ }).first()
-    if (await modalRoot.count()) {
-      await expect(modalRoot).toBeVisible()
-      await expect(modalRoot.getByText(/全程免费/)).toBeVisible()
+    await expect(modalRoot).toBeVisible()
+    await expect(modalRoot.getByText(/全程免费/)).toBeVisible()
+    await expect(modalRoot.getByRole('button', { name: /我同意，开始上传/ })).toBeVisible()
 
-      // 取所有 label 文本，断言每条 ≤ 30 字
-      const labels = await modalRoot.locator('label').allTextContents()
-      for (const l of labels) {
-        const t = l.replace(/\s+/g, '').trim()
-        if (!t) continue
-        expect(t.length, `consent label too long: "${t}"`).toBeLessThanOrEqual(40)
-      }
-    } else {
-      test.info().annotations.push({
-        type: 'note',
-        description: 'ConsentModal 未弹出（可能逻辑变更），跳过本断言但保留覆盖'
-      })
+    // 取所有 label 文本，断言每条 ≤ 30 字
+    const labels = await modalRoot.locator('label').allTextContents()
+    for (const l of labels) {
+      const t = l.replace(/\s+/g, '').trim()
+      if (!t) continue
+      expect(t.length, `consent label too long: "${t}"`).toBeLessThanOrEqual(40)
     }
+
+    // 回归：全局 input { width:100% } 曾把 checkbox 撑满，挤压文案并把确认按钮顶出屏幕。
+    const checkboxBoxes = await modalRoot.locator('input[type="checkbox"]').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const rect = (node as HTMLElement).getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      })
+    )
+    expect(checkboxBoxes).toHaveLength(3)
+    for (const box of checkboxBoxes) {
+      expect(box.width, `checkbox width should stay compact: ${box.width}`).toBeLessThanOrEqual(24)
+      expect(box.height, `checkbox height should stay compact: ${box.height}`).toBeLessThanOrEqual(24)
+    }
+
+    const agreeButtonBox = await modalRoot.getByRole('button', { name: /我同意，开始上传/ }).boundingBox()
+    const viewport = page.viewportSize()
+    expect(agreeButtonBox).not.toBeNull()
+    if (agreeButtonBox && viewport) {
+      expect(agreeButtonBox.y + agreeButtonBox.height).toBeLessThanOrEqual(viewport.height)
+    }
+
+    const checkboxes = modalRoot.locator('input[type="checkbox"]')
+    for (let i = 0; i < await checkboxes.count(); i += 1) {
+      await checkboxes.nth(i).check()
+    }
+    await modalRoot.getByRole('button', { name: /我同意，开始上传/ }).click()
+    await expect(page.getByRole('button', { name: /看看为家人找到的可能性/ })).toBeVisible({ timeout: 10_000 })
 
     expect(errors, errors.join('\n')).toEqual([])
   })
