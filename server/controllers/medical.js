@@ -381,6 +381,40 @@ const handleUpload = async (req, res, next) => {
 // 用户 30/h × 9 ≈ 270 份/h 的上限仍受 uploadLimiter 总速率门控；要再大请显式调 ENV。
 const BATCH_UPLOAD_MAX = parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10);
 
+// PRD-2026Q4 followup（B5）：批量上传并发上限。
+// 此前 `Promise.allSettled(files.map(processOne))` 是无界并发 —— 9 份文件触发 9 个
+// 并发 COS sliceUploadFile（每个内部还分片并发），峰值入站带宽 + 文件句柄数能轻松击穿
+// 单进程上限；且 9 份 calculateMD5Stream 同时跑会争 Node 主线程 IO。
+// 默认 3：经验值 —— 与 cos-nodejs-sdk-v5 默认 ChunkParallelLimit 持平，且不会把单进程的
+// libuv 线程池（默认 4）打满。要再大请显式调 ENV。
+const BATCH_UPLOAD_CONCURRENCY = Math.max(
+  1,
+  parseInt(process.env.BATCH_UPLOAD_CONCURRENCY || '3', 10)
+);
+
+/**
+ * 内联并发池：以固定 concurrency 跑 task(item, idx)，返回 Promise.allSettled 形状的结果数组（顺序与 items 对齐）。
+ * 不引第三方 p-limit —— 避免新依赖；逻辑可在测试里独立断言。
+ */
+const runWithConcurrency = async (items, concurrency, task) => {
+  const results = new Array(items.length);
+  let nextIdx = 0;
+  const worker = async () => {
+    while (nextIdx < items.length) {
+      const i = nextIdx++;
+      try {
+        const value = await task(items[i], i);
+        results[i] = { status: 'fulfilled', value };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  const pool = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(pool);
+  return results;
+};
+
 const handleUploadBatch = async (req, res, next) => {
   try {
     const files = Array.isArray(req.files) ? req.files : [];
@@ -443,7 +477,11 @@ const handleUploadBatch = async (req, res, next) => {
       return leaderPromise;
     };
 
-    const settled = await Promise.allSettled(files.map(processOne));
+    // PRD-2026Q4 followup（B5）：用 BATCH_UPLOAD_CONCURRENCY 上限替代无界并发。
+    // 旧行为：`Promise.allSettled(files.map(processOne))` —— 9 份 ⇒ 9 路并发 COS 上传，
+    //         内存峰值 + 文件句柄 + libuv 线程池都吃紧。
+    // 新行为：池化跑（默认 3 路），返回形状仍是 PromiseSettledResult[]，下游 .map 不动。
+    const settled = await runWithConcurrency(files, BATCH_UPLOAD_CONCURRENCY, processOne);
     const records = settled.map((res, idx) => {
       const file = files[idx];
       if (res.status === 'fulfilled') return res.value;
@@ -1402,6 +1440,23 @@ const handleParseStatusStream = async (req, res, next) => {
       }
     };
 
+    // PRD-2026Q4 followup（B4）：SSE 心跳兜底。
+    // 背景：OCR 长任务 90-180s 内可能没有 stage 事件（视觉调用本身是单次 HTTP），
+    // nginx 默认 `proxy_read_timeout 60s` 会把空闲 SSE 连接砍掉 → 客户端永远收不到 done。
+    // 用 SSE 注释帧 `:keepalive\n\n` 每 20s 戳一下：浏览器/小程序自动丢弃注释行，不污染 onmessage；
+    // 但 TCP 层会被识别为活跃，nginx/中间代理就不会断开。
+    const HEARTBEAT_INTERVAL_MS = Math.max(
+      5000,
+      parseInt(process.env.SSE_HEARTBEAT_INTERVAL_MS || '20000', 10)
+    );
+    const heartbeatTimer = setInterval(() => {
+      if (res.writableEnded) return;
+      try { res.write(':keepalive\n\n'); } catch (_e) { /* socket 已断，下一次 close 兜底 */ }
+    }, HEARTBEAT_INTERVAL_MS);
+    // setInterval 单独不会阻塞 process exit（res.end 触发 close 后我们会 clearInterval），
+    // 但保险起见 unref 一下 —— SSE handler 是 per-request 生命周期，进程退出时它不该撑住事件循环。
+    if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+
     const TERMINAL = new Set(['completed', 'error', 'cancelled']);
 
     const ownedIds = records.map((r) => String(r.id));
@@ -1414,6 +1469,7 @@ const handleParseStatusStream = async (req, res, next) => {
 
     if (allTerminal) {
       writeFrame('done', { reason: 'all_terminal' });
+      clearInterval(heartbeatTimer);
       try { res.end(); } catch (e) { /* noop */ }
       return;
     }
@@ -1424,6 +1480,7 @@ const handleParseStatusStream = async (req, res, next) => {
     const finishStream = (reason) => {
       if (ended) return;
       ended = true;
+      clearInterval(heartbeatTimer);
       writeFrame('done', { reason });
       try { res.end(); } catch (e) { /* noop */ }
       // 异步触发 unsubscribe；mock 与真实实现都返回 Promise，
@@ -1468,14 +1525,16 @@ const handleParseStatusStream = async (req, res, next) => {
 
     if (!unsubscribe) {
       writeFrame('noredis', { reason: 'redis_unavailable' });
+      clearInterval(heartbeatTimer);
       try { res.end(); } catch (e) { /* noop */ }
       return;
     }
 
-    // 客户端断开 → 立即清理（防 zombie 订阅）
+    // 客户端断开 → 立即清理（防 zombie 订阅 + 防心跳 timer 泄漏）
     req.on('close', () => {
       if (ended) return;
       ended = true;
+      clearInterval(heartbeatTimer);
       if (typeof unsubscribe === 'function') {
         try { Promise.resolve(unsubscribe()).catch(() => {}); }
         catch (e) { /* noop */ }
