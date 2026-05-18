@@ -17,6 +17,7 @@
       { "value": ".idea", "type": "folder" },
       { "value": "tests", "type": "folder" },
       { "value": "test", "type": "folder" },
+      { "value": "__tests__", "type": "folder" },
       { "value": "coverage", "type": "folder" },
       { "value": "dist", "type": "folder" },
       { "value": "build", "type": "folder" },
@@ -47,6 +48,7 @@
 
       { "value": "md", "type": "suffix" },
       { "value": "sh", "type": "suffix" },
+      { "value": "test.js", "type": "suffix" },
       { "value": "log", "type": "suffix" },
       { "value": "tmp", "type": "suffix" },
       { "value": "bak", "type": "suffix" },
