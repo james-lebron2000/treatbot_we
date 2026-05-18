@@ -1568,5 +1568,9 @@ module.exports = {
   activateRecord,
   // Plan §Phase 1.3 测试钩子（仅供 tests/medicalParseStatus.test.js 直查纯函数）
   __mapParseStatus: mapParseStatus,
-  __buildParseStatusEntry: buildParseStatusEntry
+  __buildParseStatusEntry: buildParseStatusEntry,
+  // PRD-2026Q4 followup（B5）：暴露给 streamingResilienceContract.test.js 锁住并发池行为，
+  // 不让未来重构悄悄退化回 `Promise.allSettled(files.map(...))`。
+  __runWithConcurrency: runWithConcurrency,
+  __BATCH_UPLOAD_CONCURRENCY: BATCH_UPLOAD_CONCURRENCY
 };

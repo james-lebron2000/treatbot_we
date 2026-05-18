@@ -162,26 +162,10 @@ describe('streamingResilienceContract — B4 & B5', () => {
   // B5：runWithConcurrency 行为契约（内联等价实现 + 集成断言）
   // -------------------------------------------------------------------
   describe('B5: runWithConcurrency 行为契约', () => {
-    // 该函数是 medical.js 模块私有，未导出。下方为 1:1 等价副本 —— 如果将来导出，
-    // 换成 require('../controllers/medical').__internals.runWithConcurrency 即可。
-    const runWithConcurrency = async (items, concurrency, task) => {
-      const results = new Array(items.length);
-      let nextIdx = 0;
-      const worker = async () => {
-        while (nextIdx < items.length) {
-          const i = nextIdx++;
-          try {
-            const value = await task(items[i], i);
-            results[i] = { status: 'fulfilled', value };
-          } catch (reason) {
-            results[i] = { status: 'rejected', reason };
-          }
-        }
-      };
-      const pool = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
-      await Promise.all(pool);
-      return results;
-    };
+    // 直接调真实生产函数（通过 __runWithConcurrency 钩子暴露），
+    // 防止内联副本与生产实现悄悄漂移（独立 reviewer 提的 W1）。
+    // 注意：必须在 jest.mock(...) 之后 require，否则模块内的依赖会绑到真模块。
+    const { __runWithConcurrency: runWithConcurrency } = require('../controllers/medical');
 
     test('任意时刻并发不超过 concurrency=3', async () => {
       let inflight = 0;
