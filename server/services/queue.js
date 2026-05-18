@@ -153,10 +153,41 @@ const runOcrTask = async (data, opts = {}) => {
   //  - field_group（每分组凑齐就 emit 一次） → 折成 { statusPhase:'streaming', progress, fieldGroup, fields }，
   //    SSE 帧里 fields 是这一组刚写好的字段，前端可逐组渲染骨架→实体。
   //  - completed / error / received → 全部丢弃，由 queue.js 主循环自己最后发终态（避免重复推 + 顺序漂移）。
+  // PRD-2026Q4 followup（B6）：流式 OCR 期间的中段取消闸。
+  // 此前只有"OCR 起步前"和"OCR 整体跑完"两个 cancel 闸；中间 60-180s 的视觉调用 + 流式
+  // 结构化期间用户点取消，要等整段跑完才被识别 —— 用户体感"卡死"，且白烧 LLM 费用。
+  // 这里在 emit adapter 里挂一个 5s 节流的 assertNotCancelled：每次 fieldGroup/ocr_text
+  // 阶段事件到达时检查一次（最坏延迟 = 一条 fieldGroup 到下一条的间隔，通常 ≤5s）。
+  // 节流避免对 MedicalRecord 做高频 SELECT —— 5s 一次足够触发上游 streamChatJson 的
+  // AbortController + 让 runStreamingPipeline 抛 OcrCancelledError 走 catch 分支。
+  const CANCEL_CHECK_THROTTLE_MS = 5000;
+  // 初始化为"现在"而非 0：worker 入口处 assertNotCancelled 刚跑完，下一次 emit
+  // 必然在 1~2s 内到达（runStreamingPipeline 的 OCR_TEXT 阶段），再 SELECT 一次
+  // 就是浪费 —— 等 5s 后真正进入流式结构化时再开始查 cancelled_at 更划算。
+  // 这同时保证了 runOcrTaskCancel 测试里"入口未取消 → OCR 后取消"路径仍只有
+  // 2 次 findOne（emit 期间的中段查询会被节流跳过）。
+  let lastCancelCheckTs = Date.now();
   const emit = async (evt) => {
     if (!evt || !evt.stage) return;
     if (evt.stage === STAGE.RECEIVED || evt.stage === STAGE.PREPROCESS) return;
     if (evt.stage === STAGE.COMPLETED || evt.stage === STAGE.ERROR) return;
+    // 中段取消闸（节流）—— 抛 OcrCancelledError 会冒泡到 runOcrTask 的 catch，
+    // 走 cancelled 分支（不写 error、不进 Sentry、不入 Bull DLQ）。
+    const now = Date.now();
+    if (now - lastCancelCheckTs >= CANCEL_CHECK_THROTTLE_MS) {
+      lastCancelCheckTs = now;
+      try {
+        await assertNotCancelled(recordId);
+      } catch (cancelErr) {
+        // 仅 OCR_CANCELLED 重抛；其他 DB 临时错误不应该中断 OCR 主流程
+        if (cancelErr && (cancelErr.code === 'OCR_CANCELLED' || cancelErr instanceof OcrCancelledError)) {
+          throw cancelErr;
+        }
+        logger.warn('mid-stream assertNotCancelled 抛非取消异常（忽略）', {
+          recordId, error: cancelErr && cancelErr.message
+        });
+      }
+    }
     const payload = { status: 'running', statusPhase: 'streaming' };
     if (typeof evt.progress === 'number') payload.progress = evt.progress;
     if (evt.fieldGroup) payload.fieldGroup = evt.fieldGroup;
