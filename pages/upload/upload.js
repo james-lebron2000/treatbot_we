@@ -2,6 +2,11 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const schema = require('../../utils/schema')
 const parseTask = require('../../utils/parse-task')
+// PRD-2026Q4 followup（B2）：服务端早就部署了 SSE（/medical/parse-status-stream），
+// 但小程序端历来只走 3s 轮询。结果是「视觉调用刚拿到 rawText（5s）→ 用户要等 3 个轮询
+// 周期才看到 analyzing 文案」。这里把 SSE 作为快路径，第一帧到达就更新进度；
+// SSE 任何失败/超时/服务端 noredis → 自动 fallback 到原有 startPolling()。
+const { openParseStatusStream } = require('../../utils/parse-status-stream')
 // Plan §Phase 2.1：客户端直传 COS（用户最痛点的解药）。本地 mode / 全部 PUT 失败时回落 legacy。
 const cosDirectUploader = require('../../utils/cosDirectUploader')
 // Q3-红线 §B.2：upload_start / upload_success 漏斗事件
@@ -644,6 +649,10 @@ Page({
       clearTimeout(this.pollTimer)
       this.pollTimer = null
     }
+    // PRD-2026Q4 followup（B2）：clearPollTimer 是页面"停止解析感知"的单一关闸点。
+    // SSE 流也挂在这里关，避免 zombie 流（onHide/onUnload/handleCompletedResult/handleParseFailure
+    // 都已经调 clearPollTimer，无需四处再加 closeStatusStream 调用）。
+    if (typeof this.closeStatusStream === 'function') this.closeStatusStream()
   },
 
   clearProgressTimer() {
@@ -1071,7 +1080,9 @@ Page({
         })
       }
       this.setProgressTarget('parsing', Math.max(12, Number(this.data.parseProgress || 0)))
-      this.startPolling()
+      // PRD-2026Q4 followup（B2）：SSE 优先，失败 fallback 到原 startPolling。
+      // 历史上这里直接调 startPolling()，导致服务端 SSE 推送对小程序用户完全失效。
+      this.startStatusStream()
     } catch (error) {
       console.error('上传失败:', error)
       // PRD-2026Q2 §3.7：按三类错误（rate_limit / parse / network）+ unknown 映射到 shared copy
@@ -1083,6 +1094,116 @@ Page({
       this.clearProgressTimer()
       this.setData({ currentStep: 1 })
     }
+  },
+
+  /**
+   * PRD-2026Q4 followup（B2）：状态推送主路径 —— SSE 优先，失败 fallback 到轮询。
+   *
+   * 设计要点：
+   *   - SSE 帧只用于"快进度反馈"（status / statusPhase / progress / fieldGroup）—— 真正的
+   *     完成态字段读取仍走原有 checkParseStatus 主路径（避免重写整套 batch merge / single sync 逻辑）。
+   *   - 任何"打不开 / open_timeout / noredis / request_fail / 服务端 error 帧"都立即
+   *     转 startPolling()，老逻辑接管 —— 用户感知与之前一致，只是少了"前 0~3s 没动静"的体感。
+   *   - 服务端发 done 帧时，触发一次立即 checkParseStatus()，把最终 result 取回；
+   *     之后再 startPolling() 兜底（极端情况：done 帧到达但 checkParseStatus 因网络抖动失败）。
+   *   - 缓存命中场景：服务端会推 `{ status:'completed', fromCache:true }`，等同 done，
+   *     走同一条立即拉取路径。
+   *   - 单连接：开新流前 close 旧流（页面 unload / 重复进 step2 时不留 zombie 流）。
+   */
+  startStatusStream() {
+    this.closeStatusStream()
+    this.clearProgressTimer()
+
+    // 出于稳健性，无论 SSE 是否成功开通，都开 startPolling() 作为安全网；
+    // SSE 帧主要负责"前置文案/进度"快感反馈，轮询是真正的终态终止条件来源。
+    // 反过来：如果 SSE 走得通，轮询的网络请求其实大多在拿"已是完成态的快照"——
+    // 服务端的 ETag/304 + 客户端 syncActive* 内部去重，让这条冗余成本可忽略。
+    this.startPolling()
+
+    const activeBatch = parseTask.getActiveParseBatch && parseTask.getActiveParseBatch()
+    const activeTask = parseTask.getActiveParseTask && parseTask.getActiveParseTask()
+    const fileIds = (activeBatch && Array.isArray(activeBatch.fileIds) && activeBatch.fileIds.length)
+      ? activeBatch.fileIds.slice()
+      : (activeTask && activeTask.fileId ? [activeTask.fileId] : [])
+
+    if (!fileIds.length) return
+
+    // SSE 主路径：拼 URL + token，调 openParseStatusStream。
+    // openParseStatusStream 自己已经做了「SDK 不支持 → 返回 null」的判断，这里直接 null-check。
+    let baseUrl = ''
+    try { baseUrl = (api && typeof api.getRuntimeBaseUrl === 'function') ? api.getRuntimeBaseUrl() : '' }
+    catch (_e) { baseUrl = '' }
+    if (!baseUrl) return
+
+    let token = ''
+    try { token = wx.getStorageSync('token') || '' } catch (_e) { token = '' }
+
+    // 路径与服务端 routes/medical.js 对齐：GET /api/medical/parse-status-stream?recordIds=...
+    const url = `${baseUrl}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(fileIds.join(','))}`
+
+    const handle = openParseStatusStream({
+      fileIds,
+      url,
+      token,
+      onState: (payload) => this.handleStreamState(payload),
+      onDone: () => this.handleStreamDone(),
+      onError: (reason) => this.handleStreamError(reason),
+      openTimeoutMs: 10000
+    })
+
+    if (!handle) {
+      // SDK 不支持 onChunkReceived（基础库 < 2.20）→ 保持轮询作为唯一路径，无声 fallback。
+      return
+    }
+    this.statusStreamHandle = handle
+  },
+
+  closeStatusStream() {
+    if (this.statusStreamHandle && typeof this.statusStreamHandle.close === 'function') {
+      try { this.statusStreamHandle.close() } catch (_e) { /* noop */ }
+    }
+    this.statusStreamHandle = null
+  },
+
+  // SSE state 帧仅做 advisory 进度/文案更新；真正的完成态由轮询触发完成回调。
+  // 这样我们不用把 parse-task.js 里 batch merge 的逻辑复制到这里。
+  handleStreamState(payload) {
+    if (!payload || this.completionHandled) return
+    const status = `${payload.status || ''}`.toLowerCase()
+    const progress = Number(payload.progress)
+    // 进度只往上不往下（轮询 + SSE 双源时，SSE 早到的 progress 不能被轮询的旧值覆盖回去）
+    if (Number.isFinite(progress) && progress > Number(this.data.parseProgress || 0)) {
+      // 文案映射保持与 mapParseStatus 的客户端镜像一致：
+      // 'running' + statusPhase=streaming → analyzing；其它（如 completed/error/cancelled）让轮询走 handleCompletedResult 主路径
+      const uiStatus = (status === 'completed' || status === 'error' || status === 'cancelled')
+        ? status
+        : 'analyzing'
+      this.setProgressTarget(uiStatus, Math.min(99, progress))
+    }
+    // 字段组 advisory：服务端用 fieldGroup 标记本帧附带哪一组（basic/diagnosis/treatment/timeline）字段；
+    // 这里仅暂存到 instance 上供未来的 streamingPartial UI 使用（当前不渲染，避免与最终结果撞）。
+    if (payload.fieldGroup && payload.fields && typeof payload.fields === 'object') {
+      this.streamingPartial = Object.assign({}, this.streamingPartial || {}, payload.fields)
+    }
+  },
+
+  handleStreamDone() {
+    // 服务端发 done 帧（所有 record 已 terminal）→ 立即触发一次 checkParseStatus 拉最终结果。
+    // 不直接 setData 终态：parseTask.syncActive* 内的合并/失败分支才是单一真相。
+    this.closeStatusStream()
+    // 轮询是开着的，但等下一周期太慢；这里手动 kick 一次。
+    if (typeof this.checkParseStatus === 'function' && !this.completionHandled) {
+      this.checkParseStatus()
+    }
+  },
+
+  handleStreamError(reason) {
+    // SSE 任何失败都不弹错 —— 轮询永远开着，用户感知与之前没有 SSE 时一致。
+    // 仅本地记录便于排查（小程序 console 在 IDE / vConsole 可见）。
+    try {
+      console.warn('[upload] SSE 失败，fallback 到轮询：', reason && reason.code)
+    } catch (_e) { /* noop */ }
+    this.closeStatusStream()
   },
 
   startPolling() {
@@ -1662,7 +1783,8 @@ Page({
         isBatchParse: activeBatch.fileIds.length > 1,
         hasPdfUpload: !!activeBatch.hasPdfUpload
       })
-      this.startPolling()
+      // PRD-2026Q4 followup（B2）：恢复处理中会话同样走 SSE 主路径。
+      this.startStatusStream()
       return
     }
 
@@ -1678,6 +1800,6 @@ Page({
       isBatchParse: false,
       hasPdfUpload: !!activeTask.hasPdfUpload
     })
-    this.startPolling()
+    this.startStatusStream()
   }
 })
