@@ -456,6 +456,88 @@
   line-height: 1.55;
 }
 
+/* streaming partial card (PRD-2026Q4 followup, 边解析边出字段) ----------
+   出现条件：currentStep === 2 且 SSE 通道收到了 fieldGroup 帧。
+   设计基线：和最终结果卡用同一套圆角/留白，但底色更浅、字段值更弱，
+   暗示"这是临时显示，正在被补全"。step 3 切换瞬间整张卡 wx:if 失效消失。 */
+.streaming-partial-card {
+  border-radius: 24rpx;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), rgba(255, 255, 255, 0.9));
+  border: 1rpx solid rgba(37, 99, 235, 0.18);
+  padding: 28rpx 30rpx;
+  margin-bottom: 24rpx;
+}
+
+.streaming-partial-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  margin-bottom: 18rpx;
+}
+
+.streaming-partial-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.streaming-partial-sub {
+  font-size: 24rpx;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.streaming-partial-group {
+  margin-top: 18rpx;
+}
+
+.streaming-partial-group:first-of-type {
+  margin-top: 0;
+}
+
+.streaming-partial-group-title {
+  display: block;
+  font-size: 24rpx;
+  font-weight: 500;
+  color: #2563eb;
+  margin-bottom: 10rpx;
+  letter-spacing: 0.5rpx;
+}
+
+.streaming-partial-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.streaming-partial-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 10rpx 0;
+  border-bottom: 1rpx dashed rgba(37, 99, 235, 0.12);
+}
+
+.streaming-partial-item:last-child {
+  border-bottom: none;
+}
+
+.streaming-partial-label {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  min-width: 200rpx;
+  flex-shrink: 0;
+}
+
+.streaming-partial-value {
+  font-size: 28rpx;
+  color: var(--text-strong);
+  font-weight: 500;
+  flex: 1;
+  word-break: break-all;
+}
+
 /* parse step cards ---------------------------------------------------- */
 .parse-steps {
   display: flex;

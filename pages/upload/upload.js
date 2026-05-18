@@ -349,7 +349,12 @@ Page({
     //   null = 服务端没回 / Redis 异常 → 不显示；
     //   0 = 队列已空 → 也不显示（没必要让用户知道"前面还有 0 份"，等价无信息）；
     //   >0 = 显示"前面还有 N 份在处理"。
-    queueAhead: null
+    queueAhead: null,
+    // PRD-2026Q4 followup（"边解析边出字段"）：SSE fieldGroup 事件累积出的实时分组列表。
+    // 形状：[{ groupKey, title, items: [{ label, value }] }]，按 GROUP_META.order 排序。
+    // 仅在 currentStep === 2 且 SSE 通道有 fieldGroup 帧到达时填充；step 3 切换瞬间由
+    // applyParsedPresentation 清空（最终结果卡接管），避免与正式结果撞。
+    streamingPartialGroups: []
   },
 
   onLoad() {
@@ -813,7 +818,10 @@ Page({
       // 重置时清空避免下一次会话误用上一份的占位猜测。
       placeholderHints: [],
       // Plan §Phase 3.4：队列深度只在本次会话有意义，重置时清掉避免下一次显示陈旧数字
-      queueAhead: null
+      queueAhead: null,
+      // PRD-2026Q4 followup：上一次会话的"实时解析中"分组也要清，否则新一次解析的进度条空跑
+      //   时用户会看到上一次的字段挂在那
+      streamingPartialGroups: []
     })
     // Track C-3：模拟器内部状态也一起清掉，避免下次开始时被旧值干扰
     this.simulationStartedAt = 0
@@ -823,6 +831,8 @@ Page({
     this._initialGapTotal = 0
     this.pendingCompletedResult = null
     this.completionHandled = false
+    // 累积流式字段的 instance bucket 也清掉，配 streamingPartialGroups 双清
+    this.streamingPartial = {}
   },
 
   async uploadFiles() {
@@ -1181,10 +1191,49 @@ Page({
       this.setProgressTarget(uiStatus, Math.min(99, progress))
     }
     // 字段组 advisory：服务端用 fieldGroup 标记本帧附带哪一组（basic/diagnosis/treatment/timeline）字段；
-    // 这里仅暂存到 instance 上供未来的 streamingPartial UI 使用（当前不渲染，避免与最终结果撞）。
+    // 累积到 instance 上的 streamingPartial，并按 GROUP_META 分组刷到 data.streamingPartialGroups —— wxml
+    // 在 step 2 渲染这份"实时解析中"卡，让用户在 50→90% 这一段就能看到字段陆续浮现，而不是等到 100%。
+    // completionHandled / currentStep===3 时不再 setData：最终结果卡是单一真相，避免双卡片闪烁。
     if (payload.fieldGroup && payload.fields && typeof payload.fields === 'object') {
       this.streamingPartial = Object.assign({}, this.streamingPartial || {}, payload.fields)
+      if (!this.completionHandled && this.data.currentStep !== 3) {
+        const groups = this.buildStreamingPartialGroups(this.streamingPartial)
+        if (groups.length) this.setData({ streamingPartialGroups: groups })
+      }
     }
+  },
+
+  // 把累积的 streamingPartial 对象按 schema.GROUP_META 重新整理成 wxml 友好的形状。
+  // 跳过空值（'', null, undefined）—— 用户最在意的是"已识别到什么"，待补字段留给最终结果卡。
+  // 跳过 confidence / sourceRecordIds / erroredFileIds 这些非展示型 meta key。
+  buildStreamingPartialGroups(partial) {
+    if (!partial || typeof partial !== 'object') return []
+    const GROUP_META = (schema && schema.GROUP_META) || {}
+    const FIELD_SCHEMAS = (schema && schema.FIELD_SCHEMAS) || []
+    if (!FIELD_SCHEMAS.length) return []
+
+    const bucket = {}
+    FIELD_SCHEMAS.forEach((field) => {
+      const raw = partial[field.key]
+      if (raw === undefined || raw === null) return
+      const text = `${raw}`.trim()
+      if (!text) return
+      const groupKey = field.group || 'other'
+      if (!bucket[groupKey]) bucket[groupKey] = []
+      bucket[groupKey].push({ label: field.label || field.key, value: text })
+    })
+
+    return Object.keys(bucket)
+      .sort((a, b) => {
+        const oa = (GROUP_META[a] && GROUP_META[a].order) || 99
+        const ob = (GROUP_META[b] && GROUP_META[b].order) || 99
+        return oa - ob
+      })
+      .map((groupKey) => ({
+        groupKey,
+        title: (GROUP_META[groupKey] && GROUP_META[groupKey].title) || groupKey,
+        items: bucket[groupKey]
+      }))
   },
 
   handleStreamDone() {
@@ -1583,7 +1632,9 @@ Page({
 
     this.setData({
       currentStep: 3,
-      uploading: false
+      uploading: false,
+      // PRD-2026Q4 followup：进入 step 3 后，最终结果卡接管渲染；清掉"实时解析中"分组避免双卡同屏
+      streamingPartialGroups: []
     })
 
     if (this.data.hasPdfUpload && !this.data.pdfQualityHintShown) {

@@ -145,6 +145,25 @@
         </view>
       </view>
 
+      <!-- PRD-2026Q4 followup：边解析边出字段 —— SSE 通道的 fieldGroup 帧累积成 streamingPartialGroups，
+           50→90% 这一段里字段陆续浮现，让用户在等 LLM 收尾的时候就有反馈，而不是盯着进度条。
+           step 3 切换时由 applyParsedPresentation 清空，最终结果卡接管。 -->
+      <view class="streaming-partial-card" wx:if="{{streamingPartialGroups.length > 0}}">
+        <view class="streaming-partial-head">
+          <text class="streaming-partial-title">已经看到这些</text>
+          <text class="streaming-partial-sub">还在继续识别，下面会一点点补齐</text>
+        </view>
+        <view class="streaming-partial-group" wx:for="{{streamingPartialGroups}}" wx:key="groupKey">
+          <text class="streaming-partial-group-title">{{item.title}}</text>
+          <view class="streaming-partial-items">
+            <view class="streaming-partial-item" wx:for="{{item.items}}" wx:for-item="entry" wx:key="label">
+              <text class="streaming-partial-label">{{entry.label}}</text>
+              <text class="streaming-partial-value">{{entry.value}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <view class="parse-steps">
         <view
           class="parse-step-card {{parseStep > index ? 'completed' : ''}} {{parseStep === index ? 'current' : ''}}"

@@ -90,7 +90,9 @@ const buildCtx = (overrides = {}) => {
   }
   return Object.assign({
     data,
-    setData(patch) { Object.assign(this.data, patch) },
+    // PRD-2026Q4 followup（"边解析边出字段"）：S5/S5b/S5c 需要断言 setData 调用次数与 patch 形状，
+    // 所以 setData 必须是 jest.fn（同时仍然把 patch merge 进 data，保留原 ctx 语义）。
+    setData: jest.fn(function setData(patch) { Object.assign(this.data, patch) }),
     startPolling: jest.fn(),
     clearProgressTimer: jest.fn(),
     setProgressTarget: jest.fn(function setProgressTarget(_status, minFloor) {
@@ -108,7 +110,11 @@ const buildCtx = (overrides = {}) => {
     startStatusStream: pageOptions.startStatusStream,
     handleStreamState: pageOptions.handleStreamState,
     handleStreamDone: pageOptions.handleStreamDone,
-    handleStreamError: pageOptions.handleStreamError
+    handleStreamError: pageOptions.handleStreamError,
+    // PRD-2026Q4 followup（"边解析边出字段"）：handleStreamState 在 fieldGroup 帧到达时
+    // 会调 this.buildStreamingPartialGroups 把累积字段刷到 data —— ctx 必须暴露这个方法，
+    // 否则 S5 测试在调 handleStreamState 时会抛 "this.buildStreamingPartialGroups is not a function"。
+    buildStreamingPartialGroups: pageOptions.buildStreamingPartialGroups
   }, overrides.ctx)
 }
 
@@ -241,14 +247,17 @@ describe('handleStreamState — monotonic progress contract', () => {
     expect(ctx.setProgressTarget).not.toHaveBeenCalled()
   })
 
-  test('S5: fieldGroup advisory 字段被合并到 streamingPartial（不直接 setData，避免与最终结果撞）', () => {
-    const ctx = buildCtx({ data: { parseProgress: 0 } })
+  test('S5: fieldGroup 字段累积到 streamingPartial 并 setData(streamingPartialGroups) 实时刷 UI', () => {
+    // PRD-2026Q4 followup（"边解析边出字段"）：原本只把字段塞到 instance var，UI 不渲染；
+    // 现在改成：在 currentStep !== 3 且 !completionHandled 时，把累积字段按 GROUP_META 分组刷到
+    // data.streamingPartialGroups —— wxml 立即把"已经看到这些"卡画出来，让用户在 50→90% 段就有反馈。
+    const ctx = buildCtx({ data: { parseProgress: 0, currentStep: 2 } })
 
     pageOptions.handleStreamState.call(ctx, {
       status: 'running',
       progress: 40,
       fieldGroup: 'basic',
-      fields: { age: 65, sex: 'M' }
+      fields: { age: 65, gender: '男' }
     })
     pageOptions.handleStreamState.call(ctx, {
       status: 'running',
@@ -257,11 +266,58 @@ describe('handleStreamState — monotonic progress contract', () => {
       fields: { diagnosis: '非小细胞肺癌' }
     })
 
+    // 1) instance var 仍然累积（其他消费方/调试日志可读）
     expect(ctx.streamingPartial).toEqual({
       age: 65,
-      sex: 'M',
+      gender: '男',
       diagnosis: '非小细胞肺癌'
     })
+
+    // 2) setData 被调过，最后一次的 streamingPartialGroups 至少包含 basic 组的 3 个字段
+    const dataCalls = ctx.setData.mock.calls
+      .map((c) => c[0])
+      .filter((p) => p && Array.isArray(p.streamingPartialGroups))
+    expect(dataCalls.length).toBeGreaterThan(0)
+    const lastGroups = dataCalls[dataCalls.length - 1].streamingPartialGroups
+    expect(Array.isArray(lastGroups)).toBe(true)
+    expect(lastGroups.length).toBeGreaterThanOrEqual(1)
+    const basic = lastGroups.find((g) => g.groupKey === 'basic')
+    expect(basic).toBeTruthy()
+    const labels = basic.items.map((i) => i.label)
+    expect(labels).toEqual(expect.arrayContaining(['临床诊断', '年龄（岁）', '性别']))
+  })
+
+  test('S5b: completionHandled=true 时 fieldGroup 不再 setData(streamingPartialGroups)（最终结果卡接管）', () => {
+    const ctx = buildCtx({ data: { parseProgress: 0, currentStep: 2 } })
+    ctx.completionHandled = true
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 40,
+      fieldGroup: 'basic',
+      fields: { age: 65 }
+    })
+
+    const dataCalls = ctx.setData.mock.calls
+      .map((c) => c[0])
+      .filter((p) => p && Array.isArray(p.streamingPartialGroups))
+    expect(dataCalls.length).toBe(0)
+  })
+
+  test('S5c: currentStep===3 时 fieldGroup 不再 setData（结果卡已经在画）', () => {
+    const ctx = buildCtx({ data: { parseProgress: 0, currentStep: 3 } })
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 40,
+      fieldGroup: 'basic',
+      fields: { age: 65 }
+    })
+
+    const dataCalls = ctx.setData.mock.calls
+      .map((c) => c[0])
+      .filter((p) => p && Array.isArray(p.streamingPartialGroups))
+    expect(dataCalls.length).toBe(0)
   })
 
   test('S6: payload=null / undefined → no-op，不抛', () => {
