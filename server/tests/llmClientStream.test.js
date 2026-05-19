@@ -39,6 +39,12 @@ jest.mock('../services/llmClient', () => ({
 }))
 const { chatJson: mockChatJson } = require('../services/llmClient')
 
+jest.mock('../services/llmRateLimiter', () => ({
+  acquire: jest.fn().mockResolvedValue(),
+  release: jest.fn()
+}))
+const mockRateLimiter = require('../services/llmRateLimiter')
+
 const { __internals, streamChatJson } = require('../services/llmClientStream')
 const { parsePartialObject, extractDeltaContents } = __internals
 
@@ -157,6 +163,7 @@ describe('extractDeltaContents', () => {
 describe('streamChatJson 集成（mock stream）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockRateLimiter.acquire.mockResolvedValue()
     // 默认让 fallback 抛出，避免任何意外触发
     mockChatJson.mockRejectedValue(new Error('fallback should not be called'))
   })
@@ -217,6 +224,8 @@ describe('streamChatJson 集成（mock stream）', () => {
     expect(mockAxios.post).toHaveBeenCalledTimes(1)
     // fallback 没被调（streaming 完整跑通）
     expect(mockChatJson).not.toHaveBeenCalled()
+    expect(mockRateLimiter.acquire).toHaveBeenCalledWith('doubao', undefined)
+    expect(mockRateLimiter.release).toHaveBeenCalledWith('doubao')
 
     // 4 个 group 都凑齐 → 都应 emit（顺序：basic, diagnosis, treatment, timeline）
     const groups = emitted.map((e) => e.group)
@@ -245,6 +254,7 @@ describe('streamChatJson 集成（mock stream）', () => {
     })
 
     expect(mockChatJson).toHaveBeenCalledTimes(1)
+    expect(mockRateLimiter.release).toHaveBeenCalledWith('doubao')
     expect(result).toEqual({ age: 60 })
     delete process.env.ARK_API_KEY
   })
@@ -262,6 +272,30 @@ describe('streamChatJson 集成（mock stream）', () => {
 
     expect(mockChatJson).not.toHaveBeenCalled()
     expect(mockAxios.post.mock.calls[0][2].timeout).toBe(1234)
+    expect(mockRateLimiter.release).toHaveBeenCalledWith('doubao')
+    delete process.env.ARK_API_KEY
+  })
+
+  test('provider 满载排队时透传 onWait 给 rate limiter', async () => {
+    const fakeStream = new stream.Readable({ read() {} })
+    mockAxios.post.mockResolvedValue({ data: fakeStream })
+    setImmediate(() => {
+      fakeStream.push(Buffer.from(buildSseLine('{"age":60}')))
+      fakeStream.push(Buffer.from('data: [DONE]\n\n'))
+      fakeStream.push(null)
+    })
+
+    process.env.ARK_API_KEY = 'test-key'
+    const onWait = jest.fn()
+    await streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      opts: { onWait }
+    })
+
+    expect(mockRateLimiter.acquire).toHaveBeenCalledWith('doubao', onWait)
+    expect(mockRateLimiter.release).toHaveBeenCalledWith('doubao')
     delete process.env.ARK_API_KEY
   })
 

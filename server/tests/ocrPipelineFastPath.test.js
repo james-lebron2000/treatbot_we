@@ -14,6 +14,7 @@
 
 const mockProcessMedicalImage = jest.fn();
 const mockStreamChatJson = jest.fn();
+const LONG_OCR_TEXT = '诊断：肺腺癌。EGFR 19del 阳性。IV期。既往一线吉非替尼治疗，现评估后需要进一步治疗。'.repeat(3);
 
 jest.mock('../utils/logger', () => ({
   info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn()
@@ -37,7 +38,7 @@ describe('ocrPipeline §F4 fast path', () => {
 
   test('核心字段齐 + 默认开启 → 跳过 streamChatJson，按组 emit field_group', async () => {
     mockProcessMedicalImage.mockResolvedValueOnce({
-      text: '诊断：肺腺癌。EGFR 19del 阳性。一线吉非替尼。',
+      text: LONG_OCR_TEXT,
       provider: 'doubao-vision',
       entities: {
         diagnosis: '肺腺癌',
@@ -60,6 +61,9 @@ describe('ocrPipeline §F4 fast path', () => {
     expect(result.entities.geneMutation).toBe('EGFR 19del');
     expect(result.provider).toBe('doubao-vision');
     expect(result.text).toContain('诊断');
+    expect(mockProcessMedicalImage.mock.calls[0][1]).toEqual(expect.objectContaining({
+      onProviderWait: expect.any(Function)
+    }));
     // 4 个 RENDERABLE_GROUPS 都应该 emit
     const fieldGroupEmits = emitted.filter((e) => e.stage === 'field_group');
     expect(fieldGroupEmits.length).toBeGreaterThanOrEqual(4);
@@ -95,9 +99,9 @@ describe('ocrPipeline §F4 fast path', () => {
   test('OCR_SKIP_SECOND_LLM=0 → fast path 被运维关闭，即使核心字段齐也走 streamChatJson', async () => {
     process.env.OCR_SKIP_SECOND_LLM = '0';
     mockProcessMedicalImage.mockResolvedValueOnce({
-      text: '诊断：肺腺癌',
+      text: LONG_OCR_TEXT,
       provider: 'doubao-vision',
-      entities: { diagnosis: '肺腺癌', confidence: 0.9 }
+      entities: { diagnosis: '肺腺癌', stage: 'IV', confidence: 0.9 }
     });
     mockStreamChatJson.mockResolvedValueOnce({
       rawText: '诊断：肺腺癌',
@@ -114,6 +118,98 @@ describe('ocrPipeline §F4 fast path', () => {
     const { runStreamingPipeline } = require('../services/ocrPipeline');
     await runStreamingPipeline({
       source: { sourceUrl: 'https://x/y.jpg' },
+      emit: () => {}
+    });
+
+    expect(mockStreamChatJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('只有 diagnosis 一个核心字段 → 不跳过二次 LLM', async () => {
+    mockProcessMedicalImage.mockResolvedValueOnce({
+      text: LONG_OCR_TEXT,
+      provider: 'doubao-vision',
+      entities: { diagnosis: '肺腺癌', confidence: 0.9 }
+    });
+    mockStreamChatJson.mockResolvedValueOnce({
+      rawText: LONG_OCR_TEXT,
+      diagnosis: '肺腺癌', stage: 'IV', geneMutation: null, pdl1: null,
+      treatment: null, treatmentLine: null, ecog: null, age: null,
+      weight: null, height: null, comorbidities: [], priorTherapies: [],
+      labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.9,
+      tnmStage: null, pathologyType: null, sex: null, hospital: null,
+      diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
+      timeline: [], molecular: {}, organoidDrugSensitivity: {},
+      imaging: [], tumorMarkers: [], treatmentHistory: []
+    });
+
+    const { runStreamingPipeline } = require('../services/ocrPipeline');
+    await runStreamingPipeline({
+      source: { sourceUrl: 'https://x/y.jpg' },
+      emit: () => {}
+    });
+
+    expect(mockStreamChatJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('低置信度 entities → 不跳过二次 LLM', async () => {
+    mockProcessMedicalImage.mockResolvedValueOnce({
+      text: LONG_OCR_TEXT,
+      provider: 'doubao-vision',
+      entities: {
+        diagnosis: '肺腺癌',
+        stage: 'IV',
+        geneMutation: 'EGFR 19del',
+        confidence: 0.4
+      }
+    });
+    mockStreamChatJson.mockResolvedValueOnce({
+      rawText: LONG_OCR_TEXT,
+      diagnosis: '肺腺癌', stage: 'IV', geneMutation: 'EGFR 19del', pdl1: null,
+      treatment: null, treatmentLine: null, ecog: null, age: null,
+      weight: null, height: null, comorbidities: [], priorTherapies: [],
+      labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.9,
+      tnmStage: null, pathologyType: null, sex: null, hospital: null,
+      diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
+      timeline: [], molecular: {}, organoidDrugSensitivity: {},
+      imaging: [], tumorMarkers: [], treatmentHistory: []
+    });
+
+    const { runStreamingPipeline } = require('../services/ocrPipeline');
+    await runStreamingPipeline({
+      source: { sourceUrl: 'https://x/y.jpg' },
+      emit: () => {}
+    });
+
+    expect(mockStreamChatJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('PDF rawText 过短 → 不跳过二次 LLM', async () => {
+    const shortPdfText = '诊断：肺腺癌。IV期。EGFR 19del。';
+    mockProcessMedicalImage.mockResolvedValueOnce({
+      text: shortPdfText,
+      provider: 'doubao_pdf',
+      entities: {
+        diagnosis: '肺腺癌',
+        stage: 'IV',
+        geneMutation: 'EGFR 19del',
+        confidence: 0.9
+      }
+    });
+    mockStreamChatJson.mockResolvedValueOnce({
+      rawText: shortPdfText,
+      diagnosis: '肺腺癌', stage: 'IV', geneMutation: 'EGFR 19del', pdl1: null,
+      treatment: null, treatmentLine: null, ecog: null, age: null,
+      weight: null, height: null, comorbidities: [], priorTherapies: [],
+      labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.9,
+      tnmStage: null, pathologyType: null, sex: null, hospital: null,
+      diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
+      timeline: [], molecular: {}, organoidDrugSensitivity: {},
+      imaging: [], tumorMarkers: [], treatmentHistory: []
+    });
+
+    const { runStreamingPipeline } = require('../services/ocrPipeline');
+    await runStreamingPipeline({
+      source: { sourceUrl: 'https://x/y.pdf', mimeType: 'application/pdf' },
       emit: () => {}
     });
 

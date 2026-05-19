@@ -200,7 +200,7 @@ env:
   OCR_STRUCTURED_STREAM_TIMEOUT_MS: '45000'    # 二次流式结构化超时，失败用主 OCR 结果兜底
   PARSE_STATUS_RATE_LIMIT_MAX: '3600'          # 解析状态轮询单独按用户限流
   KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
-  OCR_QUEUE_CONCURRENCY: '2'
+  OCR_QUEUE_CONCURRENCY: '3'
 ```
 
 **常见误区**：

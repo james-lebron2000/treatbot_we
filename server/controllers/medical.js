@@ -166,6 +166,15 @@ const normalizeEntities = (value) => {
   return {};
 };
 
+const firstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'string' && value.trim() === '') continue;
+    return value;
+  }
+  return null;
+};
+
 /**
  * Phase E.2：抽出的「单文件 → record」处理函数，被 handleUpload（单）和 handleUploadBatch（批）共用。
  * 返回结构与 handleUpload 早期 res.json 完全一致，调用方决定包裹成单条响应还是数组。
@@ -196,6 +205,21 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
       });
 
       const imageUrl = await ossService.getInternalUrl(existingRecord.file_key);
+      // Wave 3 §1：reparse 前先尝试同 hash 缓存命中（同 fileHash 可能已被其他用户/会话
+      // 解析过并写入了 ocrCache）。命中即跳过 enqueue，直接返回 completed。
+      if (await safeTryHydrateOcrFromCache(existingRecord.id, fileHash, userId)) {
+        return {
+          fileId: existingRecord.id,
+          recordId: existingRecord.id,
+          status: 'completed',
+          uploadedAt: existingRecord.created_at,
+          isDuplicate: true,
+          reparseTriggered: false,
+          ocrQueued: false,
+          cacheHit: true,
+          message: '检测到同文件已被识别，已直接复用结果'
+        };
+      }
       let reparseQueued = true;
       try {
         await queueService.addOCRTask(existingRecord.id, imageUrl, userId, {
@@ -291,31 +315,42 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
   }
 
   const imageUrl = await ossService.getInternalUrl(fileKey);
-  let ocrQueued = true;
-  try {
-    await queueService.addOCRTask(record.id, imageUrl, userId, {
-      mimeType: file.mimetype,
-      fileKey
-    });
-  } catch (queueErr) {
-    ocrQueued = false;
-    logger.warn('OCR队列不可用，任务将稍后重试:', {
-      recordId: record.id,
-      error: queueErr.message
-    });
+
+  // Wave 3 §1：新 record 入队前先做一次同 hash 缓存查询。
+  // 跨用户同文件（同事/家属共享病历、相同导出 PDF）会在此同步水合完成，
+  // 不再经过 Bull 队列 + worker pickup ~100-500ms。
+  const cacheHit = await safeTryHydrateOcrFromCache(record.id, fileHash, userId);
+
+  let ocrQueued = cacheHit;   // 命中时无需 enqueue；不视作"队列失败"
+  if (!cacheHit) {
+    ocrQueued = true;
     try {
-      await record.update({
-        status: 'error',
-        structured: { error: 'OCR队列暂不可用，请稍后重试或手动录入关键信息' }
+      await queueService.addOCRTask(record.id, imageUrl, userId, {
+        mimeType: file.mimetype,
+        fileKey
       });
-    } catch (statusErr) {
-      logger.error('回写 record.status=error 失败:', {
+    } catch (queueErr) {
+      ocrQueued = false;
+      logger.warn('OCR队列不可用，任务将稍后重试:', {
         recordId: record.id,
-        error: statusErr.message
+        error: queueErr.message
       });
+      try {
+        await record.update({
+          status: 'error',
+          structured: { error: 'OCR队列暂不可用，请稍后重试或手动录入关键信息' }
+        });
+      } catch (statusErr) {
+        logger.error('回写 record.status=error 失败:', {
+          recordId: record.id,
+          error: statusErr.message
+        });
+      }
     }
   }
-  logger.info('病历上传成功:', { recordId: record.id, userId, fileKey, fileSize: file.size, ocrQueued });
+  logger.info('病历上传成功:', {
+    recordId: record.id, userId, fileKey, fileSize: file.size, ocrQueued, cacheHit
+  });
 
   // PRD-2026Q4 T0-10：MEDICAL_UPLOADED 埋点。
   // 此处只表示"文件已落库 + 入队成功"，OCR 解析完成事件后续如需独立埋点可加 MEDICAL_PARSED。
@@ -333,11 +368,15 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
   return {
     fileId: record.id,
     recordId: record.id,
-    status: 'pending',
+    // Wave 3 §1：cache 命中时直接报 completed，让客户端轮询第一次拍到就拿结果。
+    status: cacheHit ? 'completed' : 'pending',
     ocrQueued,
     uploadedAt: record.created_at,
     isDuplicate: false,
-    message: ocrQueued ? '上传成功，正在解析中' : '上传成功，解析服务暂时繁忙，将自动重试'
+    cacheHit,
+    message: cacheHit
+      ? '上传成功，已复用历史识别结果'
+      : (ocrQueued ? '上传成功，正在解析中' : '上传成功，解析服务暂时繁忙，将自动重试')
   };
 };
 
@@ -686,6 +725,25 @@ const handleFinalize = async (req, res, next) => {
             structured: null
           });
           const imageUrl = await ossService.getInternalUrl(existing.file_key);
+          // Wave 3 §1：批量 reparse 也先试 cache（跨用户同 hash 直接复用）。
+          const reparseCacheHit = await safeTryHydrateOcrFromCache(existing.id, fileHash, userId);
+          if (reparseCacheHit) {
+            entry = {
+              fileId: existing.id,
+              recordId: existing.id,
+              status: 'completed',
+              ocrQueued: false,
+              isDuplicate: true,
+              reparseTriggered: false,
+              uploadedAt: existing.created_at,
+              cacheHit: true,
+              message: '检测到同文件已被识别，已直接复用结果',
+              originalName
+            };
+            batchHashCache.set(fileHash, entry);
+            records.push(entry);
+            continue;
+          }
           let reparseQueued = true;
           try {
             await queueService.addOCRTask(existing.id, imageUrl, userId, {
@@ -728,6 +786,24 @@ const handleFinalize = async (req, res, next) => {
             remark
           });
           const imageUrl = await ossService.getInternalUrl(fileKey);
+          // Wave 3 §1：批量新 record 入队前也先试 cache。
+          const newCacheHit = await safeTryHydrateOcrFromCache(record.id, fileHash, userId);
+          if (newCacheHit) {
+            entry = {
+              fileId: record.id,
+              recordId: record.id,
+              status: 'completed',
+              ocrQueued: false,
+              isDuplicate: false,
+              cacheHit: true,
+              uploadedAt: record.created_at,
+              message: '上传成功，已复用历史识别结果',
+              originalName
+            };
+            batchHashCache.set(fileHash, entry);
+            records.push(entry);
+            continue;
+          }
           let ocrQueued = true;
           try {
             await queueService.addOCRTask(record.id, imageUrl, userId, {
@@ -798,6 +874,21 @@ const safeGetQueueDepth = async () => {
   }
 };
 
+// Wave 3 §1：upload-time cache hydrate 的安全包装。同 safeGetQueueDepth：
+// 测试桩 / 旧版本 queueService 可能没注册 tryHydrateOcrFromCache，
+// 用 typeof 兜底，绝不让缺方法 throw 把上传链路炸掉。
+const safeTryHydrateOcrFromCache = async (recordId, fileHash, userId) => {
+  if (typeof queueService.tryHydrateOcrFromCache !== 'function') return false;
+  try {
+    return await queueService.tryHydrateOcrFromCache(recordId, fileHash, userId);
+  } catch (e) {
+    logger.warn('upload-time cache hydrate 异常（继续 enqueue）', {
+      recordId, error: e && e.message
+    });
+    return false;
+  }
+};
+
 /**
  * Phase E.2：把单条 record 折成 parse-status 响应。
  * 给 getParseStatus（单）和 getParseStatusBatch（批）共享。
@@ -817,15 +908,22 @@ const buildParseStatusEntry = (record) => {
     updatedAt: record.updated_at
   };
   if (record.status === 'completed' && record.structured) {
+    const structured = normalizeStructured(record.structured);
+    const entities = normalizeEntities(structured.entities);
+    const rawText = firstNonEmpty(structured.text, entities.rawText);
+    const confidence = firstNonEmpty(structured.confidence, entities.confidence, 0.9);
     entry.result = {
+      ...entities,
       id: record.id,
       recordId: record.id,
-      diagnosis: record.diagnosis,
-      stage: record.stage,
-      geneMutation: record.gene_mutation,
-      treatment: record.treatment,
-      confidence: record.structured.confidence || 0.9,
-      rawText: record.structured.text?.substring(0, 500)
+      diagnosis: firstNonEmpty(entities.diagnosis, record.diagnosis),
+      stage: firstNonEmpty(entities.stage, record.stage),
+      geneMutation: firstNonEmpty(entities.geneMutation, entities.gene_mutation, record.gene_mutation),
+      treatment: firstNonEmpty(entities.treatment, record.treatment),
+      treatmentLine: firstNonEmpty(entities.treatmentLine, record.treatment_line),
+      pdl1: firstNonEmpty(entities.pdl1, record.pdl1),
+      confidence: typeof confidence === 'number' ? confidence : Number(confidence) || 0.9,
+      rawText: typeof rawText === 'string' ? rawText.substring(0, 500) : rawText
     };
   }
   if (record.status === 'error' && record.structured?.error) {
@@ -1516,6 +1614,8 @@ const handleParseStatusStream = async (req, res, next) => {
       if (payload.fieldGroup) frame.fieldGroup = payload.fieldGroup;
       if (payload.fields && typeof payload.fields === 'object') frame.fields = payload.fields;
       if (typeof payload.rawText === 'string' && payload.rawText.length) frame.rawText = payload.rawText;
+      if (payload.message) frame.message = payload.message;
+      if (payload.providerWait) frame.providerWait = payload.providerWait;
       writeFrame('state', frame);
       if (TERMINAL.has(status)) finishStream('terminal');
     };

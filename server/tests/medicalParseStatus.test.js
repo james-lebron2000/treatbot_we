@@ -13,7 +13,13 @@
  */
 
 jest.mock('../models', () => ({
-  MedicalRecord: { findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn(), count: jest.fn() },
+  MedicalRecord: {
+    findOne: jest.fn(),
+    findAll: jest.fn(),
+    findAndCountAll: jest.fn(),
+    create: jest.fn(),
+    count: jest.fn()
+  },
   Trial: { findAll: jest.fn().mockResolvedValue([]) }
 }));
 jest.mock('../services/oss', () => ({
@@ -29,7 +35,12 @@ jest.mock('../services/queue', () => ({ addOCRTask: jest.fn() }));
 jest.mock('../services/matchEngine', () => ({ scoreRecordAgainstTrial: () => ({ score: 0 }) }));
 jest.mock('../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-const { __mapParseStatus: mapParseStatus, __buildParseStatusEntry: buildParseStatusEntry } = require('../controllers/medical');
+const { MedicalRecord } = require('../models');
+const {
+  getParseStatusBatch,
+  __mapParseStatus: mapParseStatus,
+  __buildParseStatusEntry: buildParseStatusEntry
+} = require('../controllers/medical');
 
 describe('Phase 1.3 mapParseStatus dispatch', () => {
   describe('terminal states short-circuit (status_phase 不应影响)', () => {
@@ -152,7 +163,18 @@ describe('Phase 1.3 buildParseStatusEntry 透传 statusPhase', () => {
       id: 'rec-3',
       status: 'completed',
       status_phase: 'streaming', // 假装残留了
-      structured: { entities: { diagnosis: '肺腺癌' } },
+      structured: {
+        text: '这是一段原始识别文本',
+        confidence: 0.82,
+        entities: {
+          diagnosis: '肺腺癌',
+          age: 65,
+          pathologyType: '腺癌',
+          geneMutation: 'EGFR 19del',
+          labValues: { ALT: { value: 35, unit: 'U/L' } },
+          treatmentHistory: [{ name: '奥希替尼', response: 'PR' }]
+        }
+      },
       diagnosis: '肺腺癌',
       stage: 'IV',
       gene_mutation: 'EGFR L858R',
@@ -168,5 +190,71 @@ describe('Phase 1.3 buildParseStatusEntry 透传 statusPhase', () => {
     expect(entry.statusPhase).toBe('streaming');
     expect(entry.result).toBeTruthy();
     expect(entry.result.diagnosis).toBe('肺腺癌');
+    expect(entry.result.stage).toBe('IV');
+    expect(entry.result.geneMutation).toBe('EGFR 19del');
+    expect(entry.result.treatment).toBe('奥希替尼');
+    expect(entry.result.age).toBe(65);
+    expect(entry.result.pathologyType).toBe('腺癌');
+    expect(entry.result.labValues.ALT.value).toBe(35);
+    expect(entry.result.treatmentHistory[0].name).toBe('奥希替尼');
+    expect(entry.result.confidence).toBe(0.82);
+    expect(entry.result.rawText).toBe('这是一段原始识别文本');
+  });
+});
+
+describe('parse-status-batch result shape', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('completed entry preserves full structured.entities fields', async () => {
+    MedicalRecord.findAll.mockResolvedValue([
+      {
+        id: 'rec-batch-1',
+        status: 'completed',
+        status_phase: null,
+        diagnosis: '肺腺癌',
+        stage: 'IV期',
+        gene_mutation: 'EGFR L858R',
+        treatment: '奥希替尼',
+        structured: {
+          text: '原始识别文本',
+          confidence: 0.91,
+          entities: {
+            diagnosis: '肺腺癌',
+            age: 61,
+            pathologyType: '腺癌',
+            molecular: { drivers: [{ gene: 'EGFR', variant: 'L858R' }] },
+            imaging: [{ modality: 'CT', findings: '肺部占位' }]
+          }
+        },
+        created_at: new Date('2026-05-08T10:00:00Z'),
+        updated_at: new Date('2026-05-08T10:00:30Z')
+      }
+    ]);
+
+    const req = {
+      method: 'GET',
+      query: { fileIds: 'rec-batch-1' },
+      userId: 'u1'
+    };
+    const res = {
+      json: jest.fn()
+    };
+    const next = jest.fn();
+
+    await getParseStatusBatch(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    const result = payload.data.entries[0].result;
+    expect(result.diagnosis).toBe('肺腺癌');
+    expect(result.stage).toBe('IV期');
+    expect(result.geneMutation).toBe('EGFR L858R');
+    expect(result.age).toBe(61);
+    expect(result.pathologyType).toBe('腺癌');
+    expect(result.molecular.drivers[0].gene).toBe('EGFR');
+    expect(result.imaging[0].modality).toBe('CT');
+    expect(result.confidence).toBe(0.91);
   });
 });

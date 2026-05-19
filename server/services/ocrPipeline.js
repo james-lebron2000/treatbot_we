@@ -58,18 +58,57 @@ const OCR_STRUCTURED_STREAM_TIMEOUT_MS = Math.max(
 // 出问题可设 OCR_SKIP_SECOND_LLM=0 退回原行为。
 const OCR_SKIP_SECOND_LLM = (process.env.OCR_SKIP_SECOND_LLM || '1') !== '0'
 
-// 判断 entities 是否「足够好」可以跳过二次 LLM：至少一个核心字段非空。
-// 与 server/services/queue.js hasMeaningfulOcrResult 同口径。
-const entitiesAreComplete = (entities = {}, rawText = '') => {
+const readPositiveFloatEnv = (name, fallback) => {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+const OCR_FAST_PATH_MIN_CONFIDENCE = readPositiveFloatEnv('OCR_FAST_PATH_MIN_CONFIDENCE', 0.65)
+const OCR_FAST_PATH_MIN_TEXT_CHARS = readPositiveIntEnv('OCR_FAST_PATH_MIN_TEXT_CHARS', 80)
+const OCR_FAST_PATH_PDF_MIN_TEXT_CHARS = readPositiveIntEnv('OCR_FAST_PATH_PDF_MIN_TEXT_CHARS', 200)
+const OCR_FAST_PATH_MIN_FIELD_COUNT = readPositiveIntEnv('OCR_FAST_PATH_MIN_FIELD_COUNT', 4)
+
+const hasValue = (v) => {
+  if (v === null || v === undefined) return false
+  if (Array.isArray(v)) return v.length > 0
+  if (typeof v === 'object') return Object.keys(v).length > 0
+  return `${v}`.trim() !== ''
+}
+
+// 判断 entities 是否「足够好」可以跳过二次 LLM：
+// 1) rawText 足够长，且置信度不低；
+// 2) diagnosis + 至少一个分期/基因/治疗字段，或总字段覆盖达到最低阈值。
+// 这样保留快路径收益，但避免只有一个诊断字段就截断 30+ schema 字段。
+const entitiesAreComplete = (entities = {}, rawText = '', provider = '') => {
   if (!entities || typeof entities !== 'object') return false
   const text = `${rawText || ''}`.trim()
-  if (!text) return false
-  const has = (v) => v !== null && v !== undefined && `${v}`.trim() !== ''
+  const minTextLength = `${provider || ''}`.toLowerCase().includes('pdf')
+    ? OCR_FAST_PATH_PDF_MIN_TEXT_CHARS
+    : OCR_FAST_PATH_MIN_TEXT_CHARS
+  if (text.length < minTextLength) return false
+  if (typeof entities.confidence === 'number' && Number.isFinite(entities.confidence) && entities.confidence < OCR_FAST_PATH_MIN_CONFIDENCE) {
+    return false
+  }
+  const stageOrTreatment = [
+    entities.stage,
+    entities.tnmStage,
+    entities.geneMutation,
+    entities.gene_mutation,
+    entities.treatment,
+    entities.treatmentLine,
+    entities.priorTherapies,
+    entities.treatmentHistory
+  ].some(hasValue)
+  const fieldCoverageKeys = [
+    'diagnosis', 'stage', 'tnmStage', 'geneMutation', 'gene_mutation', 'treatment',
+    'treatmentLine', 'pdl1', 'ecog', 'age', 'sex', 'pathologyType', 'hospital',
+    'diagnosisDate', 'metastasisSites', 'surgicalHistory', 'timeline', 'molecular',
+    'organoidDrugSensitivity', 'imaging', 'tumorMarkers', 'treatmentHistory',
+    'priorTherapies', 'labValues', 'bloodCounts', 'comorbidities'
+  ]
+  const fieldCount = fieldCoverageKeys.reduce((count, key) => count + (hasValue(entities[key]) ? 1 : 0), 0)
   return Boolean(
-    has(entities.diagnosis) ||
-    has(entities.stage) ||
-    has(entities.geneMutation) ||
-    has(entities.treatment)
+    (hasValue(entities.diagnosis) && stageOrTreatment) ||
+    fieldCount >= OCR_FAST_PATH_MIN_FIELD_COUNT
   )
 }
 
@@ -144,9 +183,15 @@ const runStreamingPipeline = async ({ source, emit }) => {
     ocrHeartbeatProgress += 1
     safeEmit(composeEvent(null, STAGE.OCR_TEXT, { progress: ocrHeartbeatProgress }))
   }, 2500)
+  const emitProviderWait = (info) => safeEmit(composeEvent(null, STAGE.OCR_TEXT, {
+    progress: 41,
+    message: 'LLM provider queued',
+    providerWait: info
+  }))
+
   let ocrResult
   try {
-    ocrResult = await processMedicalImage(source)
+    ocrResult = await processMedicalImage(source, { onProviderWait: emitProviderWait })
   } finally {
     clearInterval(ocrHeartbeatInterval)
   }
@@ -171,8 +216,14 @@ const runStreamingPipeline = async ({ source, emit }) => {
   // 这类必填 object 字段，但 ocr.js 的 entities 用 null 表达缺失；safeParse 会失败但下游消费方
   // （queue.js / parseTask）只读核心字段，并不真的需要严格 schema。沿用现有 fallback 兜底路径的
   // 「写啥读啥」契约即可。`entitiesAreComplete` 已经保证至少一个核心字段非空。
-  if (OCR_SKIP_SECOND_LLM && entitiesAreComplete(ocrResult.entities, rawText)) {
-    const fastShape = entitiesToSchemaShape(ocrResult.entities || {}, rawText)
+  const ocrEntities = {
+    ...(ocrResult.entities || {}),
+    confidence: (ocrResult.entities && typeof ocrResult.entities.confidence === 'number')
+      ? ocrResult.entities.confidence
+      : ocrResult.confidence
+  }
+  if (OCR_SKIP_SECOND_LLM && entitiesAreComplete(ocrEntities, rawText, provider)) {
+    const fastShape = entitiesToSchemaShape(ocrEntities, rawText)
     logger.info('ocrPipeline 快路径：视觉 entities 已完整，跳过二次 LLM', { provider })
     // 按组 emit field_group，节奏 ~80ms 一组，模拟流式 UX
     for (const groupName of RENDERABLE_GROUPS) {
@@ -241,7 +292,8 @@ const runStreamingPipeline = async ({ source, emit }) => {
       opts: {
         timeoutMs: OCR_STRUCTURED_STREAM_TIMEOUT_MS,
         fallbackToChatJson: false,
-        operation: 'ocr_structured_stream'
+        operation: 'ocr_structured_stream',
+        onWait: emitProviderWait
       }
     })
     // 最终对象 PII 还原（restoreFromLlm 自带递归）
@@ -282,6 +334,7 @@ module.exports = {
   runStreamingPipeline,
   __internals: {
     entitiesToSchemaShape,
+    entitiesAreComplete,
     OCR_STRUCTURED_STREAM_TIMEOUT_MS
   }
 }

@@ -139,6 +139,75 @@ const publishRecordEventSafe = async (recordId, payload) => {
   }
 };
 
+/**
+ * Wave 3 §1：上传期同步缓存命中 —— 把原本由 worker 拿到任务后才执行的
+ * `ocrCache.get -> buildUpdateArgsFromPayload -> publish completed` 一段，
+ * 整体提前到 upload controller 拿到 fileHash 之后立即跑一次：
+ *   - 命中 → 直接 UPDATE + publish SSE completed + 最佳努力 notify；调用方跳过 addOCRTask；
+ *   - 不命中/任何异常 → 返回 false，调用方继续走原 addOCRTask 流程；
+ *     in-worker 的同一段缓存查询仍然保留作为 race 兜底（不删，参见 runOcrTask）。
+ *
+ * 设计要点：
+ *   1. 不抛错。任何异常（Redis 不可用、UPDATE 失败、recordEvents 抛错）都 swallow + 返回 false，
+ *      绝对不阻塞 upload 关键路径。
+ *   2. 不动 notify 时序。fromCache 通知与 worker 命中分支保持同样的 setImmediate + 2s 超时兜底。
+ *   3. 不动 status_phase 语义。buildUpdateArgsFromPayload 已经把 status_phase 清空 → 客户端轮询
+ *      立刻读到 (completed, 100, fromCache)。
+ *
+ * 返回值：boolean —— true 表示已经把 record 推到 completed，调用方不需要再 enqueue。
+ */
+const tryHydrateOcrFromCache = async (recordId, fileHash, userId) => {
+  if (!recordId || !fileHash) return false;
+  let cached;
+  try {
+    cached = await ocrCache.get(fileHash);
+  } catch (e) {
+    logger.warn('tryHydrateOcrFromCache: ocrCache.get 抛错（视作 miss）', {
+      recordId, fileHash, error: e && e.message
+    });
+    return false;
+  }
+  if (!cached) return false;
+
+  const updateArgs = ocrCache.buildUpdateArgsFromPayload(cached);
+  if (!updateArgs) return false;
+
+  try {
+    await MedicalRecord.update(updateArgs, { where: { id: recordId } });
+  } catch (e) {
+    logger.warn('tryHydrateOcrFromCache: MedicalRecord.update 失败（回退到队列）', {
+      recordId, fileHash, error: e && e.message
+    });
+    return false;
+  }
+
+  // 主链路已经写完，下面的 SSE / notify 都是 best-effort。
+  publishRecordEventSafe(recordId, { status: 'completed', progress: 100, fromCache: true })
+    .catch((e) => {
+      logger.warn('tryHydrateOcrFromCache: publish completed 失败（忽略）', {
+        recordId, error: e && e.message
+      });
+    });
+
+  if (userId) {
+    setImmediate(() => {
+      Promise.race([
+        notificationQueue.add({ type: 'ocr_completed', recordId, userId, fromCache: true }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('notify_add_timeout_2s')), 2000)
+        )
+      ]).catch((notifyErr) => {
+        logger.warn('完成通知入队失败（upload 期 cache hit）', {
+          recordId, error: notifyErr && notifyErr.message
+        });
+      });
+    });
+  }
+
+  logger.info('OCR 缓存命中（upload 期同步水合）', { recordId, fileHash });
+  return true;
+};
+
 const runOcrTask = async (data, opts = {}) => {
   const { recordId, imageUrl, mimeType, fileKey, userId } = data;
   const { jobId } = opts;
@@ -193,6 +262,8 @@ const runOcrTask = async (data, opts = {}) => {
     if (evt.fieldGroup) payload.fieldGroup = evt.fieldGroup;
     if (evt.fields && typeof evt.fields === 'object') payload.fields = evt.fields;
     if (typeof evt.rawText === 'string' && evt.rawText.length) payload.rawText = evt.rawText;
+    if (evt.message) payload.message = evt.message;
+    if (evt.providerWait) payload.providerWait = evt.providerWait;
     await publishRecordEventSafe(recordId, payload);
   };
 
@@ -652,6 +723,8 @@ module.exports = {
   ocrQueue,
   notificationQueue,
   addOCRTask,
+  // Wave 3 §1：upload 期同步缓存水合，把 worker 内 cache 命中分支提前到 controller。
+  tryHydrateOcrFromCache,
   getJobStatus,
   retryFailure,
   getQueueDepth,

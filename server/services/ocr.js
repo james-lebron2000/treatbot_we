@@ -61,11 +61,23 @@ const _ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volce
 const getArkVisionModel = () => process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
 // 大型扫描 PDF + 多页 vision 调用需要 90s+，timeout 默认 180s
 const _ARK_TIMEOUT_MS = parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10);
-// Wave 2 §F6：PDF 文本路径的首跳超时（Doubao 文本结构化）。
-// 之前 PDF 链路所有跳都享受全局 180s timeout —— 如果第一跳因网络抖动卡住，用户要等 3 分钟
-// 才能进入第二跳。这里把首跳收紧到 30s（环境可改），让兜底链路尽快切换。
-// 兜底（vision / kimi / pdf-parse）仍走 _ARK_TIMEOUT_MS，给真实复杂 PDF 留余量。
-const OCR_PDF_FIRSTHOP_TIMEOUT_MS = parseInt(process.env.OCR_PDF_FIRSTHOP_TIMEOUT_MS || '30000', 10);
+const readPositiveIntEnv = (name, fallback) => {
+  const value = parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+// Wave 2 §F6：PDF 文本路径首跳按文本长度分档。
+// 短文本仍 30s 快速失败转 vision；长文本 PDF 的结构化本身更慢，给到 60-90s，避免过早
+// 切到拆页 vision 导致整体更慢。
+const getPdfFirstHopTimeoutMs = (text = '') => {
+  const length = `${text || ''}`.length;
+  if (length >= 6000) {
+    return readPositiveIntEnv('OCR_PDF_FIRSTHOP_LONG_TIMEOUT_MS', 90000);
+  }
+  if (length >= 2500) {
+    return readPositiveIntEnv('OCR_PDF_FIRSTHOP_MEDIUM_TIMEOUT_MS', 60000);
+  }
+  return readPositiveIntEnv('OCR_PDF_FIRSTHOP_TIMEOUT_MS', 30000);
+};
 const hasDoubaoCredential = () => ocrConfig.hasDoubaoCredential();
 const hasDoubaoVisionCredential = () => ocrConfig.hasDoubaoCredential();
 
@@ -354,7 +366,7 @@ const renderPdfPagesToDataUrls = async ({ sourceUrl, fileKey, maxPages = OCR_PDF
  * 使用 Kimi File API 处理 PDF（支持扫描件）
  * 流程：上传 PDF → 引用 file_id 发送消息 → 抽取实体 → 删除文件
  */
-const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
+const requestKimiPdf = async ({ sourceUrl, fileKey }, opts = {}) => {
   if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
@@ -442,23 +454,12 @@ const requestKimiPdf = async ({ sourceUrl, fileKey }) => {
     // Q3-红线 §A.3.2：LLM 调用埋点（PDF File API 模式）
     const parsed = await instrumentLlmCall(
       { provider: 'kimi', model: getKimiModel(), operation: 'ocr_pdf' },
-      () => chatJson('kimi', messages, OcrExtractionSchema)
+      () => chatJson('kimi', messages, OcrExtractionSchema, {
+        onWait: opts.onProviderWait
+      })
     );
 
-    const ecogRaw = parsed.ecog;
-    const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
-    const lineRaw = parsed.treatmentLine;
-    const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
-
-    const entities = {
-      diagnosis: parsed.diagnosis || null,
-      stage: parsed.stage || null,
-      geneMutation: parsed.geneMutation || null,
-      treatment: parsed.treatment || null,
-      ecog: Number.isFinite(ecogValue) && ecogValue >= 0 && ecogValue <= 4 ? ecogValue : null,
-      pdl1: parsed.pdl1 || null,
-      treatmentLine: Number.isFinite(lineValue) && lineValue >= 1 && lineValue <= 10 ? lineValue : null
-    };
+    const entities = parseKimiEntities(parsed);
 
     // Q3-红线 §A.1.1：把 entities 里残留的占位符还原（保险动作；rawText 维持脱敏态）。
     const restoredEntities = restoreFromLlm(entities, mapping);
@@ -715,6 +716,11 @@ const extractMedicalEntities = (text) => {
  * Parse Kimi LLM response into normalized entities object.
  * Shared by requestKimi (vision) and requestKimiText (text mode).
  */
+const asArray = (value) => (Array.isArray(value) ? value.filter((item) => item !== null && item !== undefined && item !== '') : []);
+const asObject = (value, fallback = {}) => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value : fallback
+);
+
 const parseKimiEntities = (parsed) => {
   const ecogRaw = parsed.ecog;
   const ecogValue = ecogRaw != null && ecogRaw !== '' ? Number(ecogRaw) : null;
@@ -722,6 +728,7 @@ const parseKimiEntities = (parsed) => {
   const lineValue = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : null;
   const ageRaw = parsed.age;
   const ageValue = ageRaw != null && ageRaw !== '' ? Number(ageRaw) : null;
+  const confidenceRaw = Number(parsed.confidence);
 
   return {
     diagnosis: parsed.diagnosis || null,
@@ -735,15 +742,31 @@ const parseKimiEntities = (parsed) => {
     age: Number.isFinite(ageValue) && ageValue >= 1 && ageValue <= 120 ? ageValue : null,
     weight: Number.isFinite(Number(parsed.weight)) ? Number(parsed.weight) : null,
     height: Number.isFinite(Number(parsed.height)) ? Number(parsed.height) : null,
-    comorbidities: Array.isArray(parsed.comorbidities) ? parsed.comorbidities.filter(Boolean) : [],
-    priorTherapies: Array.isArray(parsed.priorTherapies) ? parsed.priorTherapies.filter(Boolean) : [],
-    labValues: (parsed.labValues && typeof parsed.labValues === 'object' && !Array.isArray(parsed.labValues)) ? parsed.labValues : {},
-    bloodCounts: (parsed.bloodCounts && typeof parsed.bloodCounts === 'object' && !Array.isArray(parsed.bloodCounts)) ? parsed.bloodCounts : {},
-    fertilityStatus: parsed.fertilityStatus || null
+    comorbidities: asArray(parsed.comorbidities),
+    priorTherapies: asArray(parsed.priorTherapies),
+    labValues: asObject(parsed.labValues, {}),
+    bloodCounts: asObject(parsed.bloodCounts, {}),
+    fertilityStatus: parsed.fertilityStatus || null,
+    confidence: Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : null,
+    // Rich OCR schema fields. These used to be dropped here, so F4 fast path could skip the
+    // second LLM and silently shrink 30+ fields down to the legacy subset.
+    tnmStage: parsed.tnmStage || null,
+    pathologyType: parsed.pathologyType || null,
+    sex: parsed.sex || parsed.gender || null,
+    hospital: parsed.hospital || null,
+    diagnosisDate: parsed.diagnosisDate || null,
+    metastasisSites: asArray(parsed.metastasisSites),
+    surgicalHistory: asArray(parsed.surgicalHistory),
+    timeline: asArray(parsed.timeline),
+    molecular: asObject(parsed.molecular, null),
+    organoidDrugSensitivity: asObject(parsed.organoidDrugSensitivity, null),
+    imaging: asArray(parsed.imaging),
+    tumorMarkers: asArray(parsed.tumorMarkers),
+    treatmentHistory: asArray(parsed.treatmentHistory)
   };
 };
 
-const requestKimi = async (imageRef) => {
+const requestKimi = async (imageRef, opts = {}) => {
   // Q3-红线 §A.1：图片模式没有客户端可见的「原文」，但 LLM 输出仍走 schema 校验。
   // imageRef 是 data URL 或公网 URL，本身不需要脱敏（PII 在像素里，由 provider 处理）。
   // Q3-红线 §B.1：从 prompts/v1/ocr-image.md 读取版本化 prompt。
@@ -762,7 +785,10 @@ const requestKimi = async (imageRef) => {
   // Q3-红线 §A.3.2：LLM 调用埋点（图片/视觉模式）
   const parsed = await instrumentLlmCall(
     { provider: 'kimi', model: getKimiVisionModel(), operation: 'ocr_image' },
-    () => chatJson('kimi', messages, OcrExtractionSchema, { model: getKimiVisionModel() })
+    () => chatJson('kimi', messages, OcrExtractionSchema, {
+      model: getKimiVisionModel(),
+      onWait: opts.onProviderWait
+    })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -785,7 +811,7 @@ const requestKimi = async (imageRef) => {
  * 使用 Kimi 对纯文本（已提取的 PDF 文本）做结构化抽取
  * 不需要图片，直接传文本内容
  */
-const requestKimiText = async (text) => {
+const requestKimiText = async (text, opts = {}) => {
   if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
@@ -833,7 +859,9 @@ const requestKimiText = async (text) => {
   // Q3-红线 §A.3.2：LLM 调用埋点（纯文本/Markdown 抽取模式）
   const parsed = await instrumentLlmCall(
     { provider: 'kimi', model: getKimiModel(), operation: 'ocr_text' },
-    () => chatJson('kimi', messages, OcrExtractionSchema)
+    () => chatJson('kimi', messages, OcrExtractionSchema, {
+      onWait: opts.onProviderWait
+    })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -867,7 +895,7 @@ const requestKimiText = async (text) => {
 // 生产 OCR pipeline 已接入 recognizeGeneral / processMedicalImage。
 // ============================================================================
 
-const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerName = 'doubao') => {
+const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerName = 'doubao', opts = {}) => {
   if (!hasDoubaoVisionCredential()) {
     throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
@@ -892,7 +920,10 @@ const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerN
 
   const parsed = await instrumentLlmCall(
     { provider: 'doubao', model: getArkVisionModel(), operation },
-    () => chatJson('doubao', messages, OcrExtractionSchema, { model: getArkVisionModel() })
+    () => chatJson('doubao', messages, OcrExtractionSchema, {
+      model: getArkVisionModel(),
+      onWait: opts.onProviderWait
+    })
   );
 
   const entities = parseKimiEntities(parsed); // 复用同一套字段抽取
@@ -910,7 +941,7 @@ const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerN
   };
 };
 
-const requestDoubao = async (imageRef) => requestDoubaoImages(imageRef, 'ocr_image', 'doubao');
+const requestDoubao = async (imageRef, opts = {}) => requestDoubaoImages(imageRef, 'ocr_image', 'doubao', opts);
 
 // Wave 2 §F6：opts.timeoutMs 允许 caller 收紧/放宽这次调用的超时。
 // 默认沿用 cfg.timeoutMs（_ARK_TIMEOUT_MS=180s），PDF 首跳由 requestDoubaoPdf 传 30s 进来。
@@ -964,7 +995,8 @@ const requestDoubaoText = async (text, opts = {}) => {
     () => chatJson('doubao', messages, OcrExtractionSchema, {
       model: getArkVisionModel(),
       // Wave 2 §F6：透传 caller 给的 timeoutMs；未传时 chatJson 自己回落到 cfg.timeoutMs。
-      ...(typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {})
+      ...(typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}),
+      onWait: opts.onProviderWait
     })
   );
 
@@ -989,7 +1021,7 @@ const requestDoubaoText = async (text, opts = {}) => {
  * 所以这里走「pdf-parse 抽文本 → requestDoubaoText」。
  * 扫描件 PDF 没有文本层时返回空文本 → 调用方应改走 vision 路径（pdftoppm 拆页 → requestDoubao）。
  */
-const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
+const requestDoubaoPdf = async ({ sourceUrl, fileKey }, opts = {}) => {
   if (!hasDoubaoCredential()) {
     throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
   }
@@ -1009,17 +1041,18 @@ const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
     throw new Error('Doubao PDF 抽空文本（疑似扫描件）：请走 vision 路径（pdftoppm 拆页）');
   }
 
-  // Wave 2 §F6：PDF 首跳 30s 封顶（OCR_PDF_FIRSTHOP_TIMEOUT_MS 可改）。
-  // 失败立刻让 processMedicalImage 的 catch 切到 vision 路径，而不是干等 180s。
+  // Wave 2 §F6：PDF 首跳按文本长度给 30/60/90s。
+  // 失败后让 processMedicalImage 的 catch 切到 vision 路径，而不是固定干等全局 180s。
   const result = await requestDoubaoText(extractedText.substring(0, 4000), {
-    timeoutMs: OCR_PDF_FIRSTHOP_TIMEOUT_MS
+    timeoutMs: getPdfFirstHopTimeoutMs(extractedText),
+    onProviderWait: opts.onProviderWait
   });
   return { ...result, provider: 'doubao_pdf' };
 };
 
-const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }) => {
+const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }, opts = {}) => {
   const dataUrls = await renderPdfPagesToDataUrls({ sourceUrl, fileKey });
-  const result = await requestDoubaoImages(dataUrls, 'ocr_pdf', 'doubao_pdf_vision');
+  const result = await requestDoubaoImages(dataUrls, 'ocr_pdf', 'doubao_pdf_vision', opts);
   return {
     ...result,
     provider: 'doubao_pdf_vision',
@@ -1027,55 +1060,55 @@ const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }) => {
   };
 };
 
-const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }) => {
+const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
   if (!hasDoubaoVisionCredential()) {
     throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
   }
 
   if (!imageUrl || isPrivateOrIpUrl(imageUrl)) {
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestDoubao(dataUrl);
+    return requestDoubao(dataUrl, opts);
   }
 
   // Plan §Phase 2.4：把 *.cos.{region}.myqcloud.com 改写成 CDN 域；
   // COS_CDN_DOMAIN 未配置时 wrapPresignedWithCdn 是 identity。
   const cdnUrl = wrapPresignedWithCdn(imageUrl);
   try {
-    return await requestDoubao(cdnUrl);
+    return await requestDoubao(cdnUrl, opts);
   } catch (firstError) {
     // 一级回退：CDN 出错回退到原 COS URL（CDN 短期故障不阻塞 OCR 主路径）
     if (cdnUrl !== imageUrl) {
       logger.warn('Doubao CDN URL 失败，回退到原 COS URL', { error: firstError.message });
       try {
-        return await requestDoubao(imageUrl);
+        return await requestDoubao(imageUrl, opts);
       } catch (secondError) {
         logger.warn('Doubao 原 URL 模式也失败，再尝试 Base64 回退', { error: secondError.message });
         const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-        return requestDoubao(dataUrl);
+        return requestDoubao(dataUrl, opts);
       }
     }
     logger.warn('Doubao URL 模式失败，尝试 Base64 回退', { error: firstError.message });
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestDoubao(dataUrl);
+    return requestDoubao(dataUrl, opts);
   }
 };
 
-const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }) => {
+const recognizeByKimi = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
   if (!hasKimiCredential()) {
     throw new Error('Kimi API Key 未配置');
   }
 
   if (!imageUrl || isPrivateOrIpUrl(imageUrl)) {
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestKimi(dataUrl);
+    return requestKimi(dataUrl, opts);
   }
 
   try {
-    return await requestKimi(imageUrl);
+    return await requestKimi(imageUrl, opts);
   } catch (firstError) {
     logger.warn('Kimi URL 模式失败，尝试 Base64 回退', { error: firstError.message });
     const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
-    return requestKimi(dataUrl);
+    return requestKimi(dataUrl, opts);
   }
 };
 
@@ -1150,7 +1183,7 @@ const recognizeByRule = async ({ imageUrl, fileKey, mimeType: _mimeType }) => {
   };
 };
 
-const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
+const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
   const providerPreference = getOcrProvider();
   const attemptedProviders = new Set();
 
@@ -1158,12 +1191,12 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     // 主路径：Doubao/ARK。生产 OCR 唯一视觉 provider，coding-plan key 已弃用。
     if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential())) {
       attemptedProviders.add('doubao');
-      return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
+      return await recognizeByDoubao({ imageUrl, fileKey, mimeType }, opts);
     }
 
     if (providerPreference === 'kimi' || (providerPreference === 'auto' && hasKimiCredential())) {
       attemptedProviders.add('kimi');
-      return await recognizeByKimi({ imageUrl, fileKey, mimeType });
+      return await recognizeByKimi({ imageUrl, fileKey, mimeType }, opts);
     }
 
     if (providerPreference === 'tencent' || (providerPreference === 'auto' && hasTencentCredential())) {
@@ -1185,7 +1218,7 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     if (hasDoubaoVisionCredential() && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
       try {
         recordLlmFallback(fromProvider, 'doubao', fallbackReason);
-        return await recognizeByDoubao({ imageUrl, fileKey, mimeType });
+        return await recognizeByDoubao({ imageUrl, fileKey, mimeType }, opts);
       } catch (e) {
         logger.warn('Doubao 回退失败', { error: e.message });
       }
@@ -1194,7 +1227,7 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }) => {
     if (hasKimiCredential() && providerPreference !== 'kimi' && !attemptedProviders.has('kimi')) {
       try {
         recordLlmFallback(fromProvider, 'kimi', fallbackReason);
-        return await recognizeByKimi({ imageUrl, fileKey, mimeType });
+        return await recognizeByKimi({ imageUrl, fileKey, mimeType }, opts);
       } catch (e) {
         logger.warn('Kimi 回退失败', { error: e.message });
       }
@@ -1222,7 +1255,7 @@ const recognizeMedical = async (imageUrl) => {
  * markitdown 预处理：尝试用 markitdown 将文件转为 Markdown，再交给 Kimi 结构化
  * 对 PDF（文本型）和文档格式效果最好；扫描件/图片可能返回空文本，自动降级
  */
-const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }) => {
+const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }, opts = {}) => {
   let markitdownService;
   try {
     markitdownService = require('./markitdown');
@@ -1256,7 +1289,7 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   // 优先用 Doubao/ARK 进行结构化抽取，缺失则回退 Kimi。
   if (hasDoubaoCredential()) {
     try {
-      const doubaoResult = await requestDoubaoText(markdown);
+      const doubaoResult = await requestDoubaoText(markdown, opts);
       return {
         success: true,
         text: doubaoResult.text || markdown,
@@ -1274,7 +1307,7 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
   // 次选：Kimi 文本抽取（fallback）
   if (hasKimiCredential()) {
     try {
-      const kimiResult = await requestKimiText(markdown);
+      const kimiResult = await requestKimiText(markdown, opts);
       return {
         success: true,
         text: kimiResult.text || markdown,
@@ -1303,7 +1336,7 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
 /**
  * 完整的 OCR 处理流程
  */
-const processMedicalImage = async (imageUrl) => {
+const processMedicalImage = async (imageUrl, opts = {}) => {
   try {
     const source = typeof imageUrl === 'string'
       ? { sourceUrl: imageUrl }
@@ -1329,7 +1362,7 @@ const processMedicalImage = async (imageUrl) => {
         fileKey: source.fileKey,
         sourceUrl,
         mimeType: source.mimeType
-      });
+      }, opts);
       if (markitdownResult) {
         logger.info('markitdown 管线成功，跳过传统 OCR', { provider: markitdownResult.provider || 'markitdown' });
         return markitdownResult;
@@ -1350,7 +1383,7 @@ const processMedicalImage = async (imageUrl) => {
           const doubaoPdfResult = await requestDoubaoPdf({
             sourceUrl,
             fileKey: source.fileKey
-          });
+          }, opts);
           logger.info('PDF 走 Doubao 文本模式完成', { provider: doubaoPdfResult.provider });
           return {
             success: true,
@@ -1366,7 +1399,7 @@ const processMedicalImage = async (imageUrl) => {
             const doubaoVisionResult = await requestDoubaoPdfVision({
               sourceUrl,
               fileKey: source.fileKey
-            });
+            }, opts);
             logger.info('PDF 走 Doubao vision 拆页模式完成', {
               provider: doubaoVisionResult.provider,
               pageCount: doubaoVisionResult.pageCount
@@ -1392,7 +1425,7 @@ const processMedicalImage = async (imageUrl) => {
           const kimiPdfResult = await requestKimiPdf({
             sourceUrl,
             fileKey: source.fileKey
-          });
+          }, opts);
           logger.info('PDF 走 Kimi File API 模式完成', { provider: kimiPdfResult.provider });
           return {
             success: true,
@@ -1420,7 +1453,7 @@ const processMedicalImage = async (imageUrl) => {
       // 有文本则优先用 Doubao 文本模式结构化
       if (text && hasDoubaoCredential()) {
         try {
-          const doubaoResult = await requestDoubaoText(text);
+          const doubaoResult = await requestDoubaoText(text, opts);
           logger.info('PDF 走 Doubao 文本模式结构化完成');
           return {
             success: true,
@@ -1438,7 +1471,7 @@ const processMedicalImage = async (imageUrl) => {
       // 次选：Kimi 文本模式（fallback）
       if (text && hasKimiCredential()) {
         try {
-          const kimiResult = await requestKimiText(text);
+          const kimiResult = await requestKimiText(text, opts);
           logger.info('PDF 走 Kimi 文本模式结构化完成');
           return {
             success: true,
@@ -1469,7 +1502,7 @@ const processMedicalImage = async (imageUrl) => {
       imageUrl: sourceUrl,
       fileKey: source.fileKey,
       mimeType: source.mimeType
-    });
+    }, opts);
     return {
       success: true,
       text: result.text,
@@ -1503,6 +1536,8 @@ module.exports = {
     isPrivateOrIpUrl,
     assertSafeImageUrl,
     fetchImageAsDataUrl,
-    renderPdfPagesToDataUrls
+    renderPdfPagesToDataUrls,
+    parseKimiEntities,
+    getPdfFirstHopTimeoutMs
   }
 };

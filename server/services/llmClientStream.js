@@ -16,6 +16,7 @@ const axios = require('axios')
 const { StringDecoder } = require('string_decoder')
 const logger = require('../utils/logger')
 const { chatJson } = require('./llmClient')
+const llmRateLimiter = require('./llmRateLimiter')
 const {
   GROUP_ORDER,
   GROUPS,
@@ -168,6 +169,14 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
     stream: true
   }
 
+  await llmRateLimiter.acquire(provider, opts.onWait)
+  let limiterReleased = false
+  const releaseLimiter = () => {
+    if (limiterReleased) return
+    limiterReleased = true
+    llmRateLimiter.release(provider)
+  }
+
   let response
   try {
     response = await axios.post(
@@ -189,6 +198,14 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
       : 'streamChatJson 建连失败，交给上层兜底', {
       provider, error: err.message
     })
+    releaseLimiter()
+    if (!fallbackToChatJson) throw err
+    return chatJson(provider, messages, schema, opts)
+  }
+
+  if (!response || !response.data || typeof response.data.on !== 'function') {
+    const err = new Error('streamChatJson provider did not return a stream')
+    releaseLimiter()
     if (!fallbackToChatJson) throw err
     return chatJson(provider, messages, schema, opts)
   }
@@ -208,8 +225,8 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
     // —— 这两条路径都会调 chatJson 兜底，重复调 = 多花一次 token。
     // settled 一旦为 true 就吞掉后续的兜底路径；Promise 也只 resolve/reject 一次。
     let settled = false
-    const safeResolve = (v) => { if (!settled) { settled = true; resolve(v) } }
-    const safeReject = (err) => { if (!settled) { settled = true; reject(err) } }
+    const safeResolve = (v) => { if (!settled) { settled = true; releaseLimiter(); resolve(v) } }
+    const safeReject = (err) => { if (!settled) { settled = true; releaseLimiter(); reject(err) } }
     const fallbackChatJson = (err) => {
       if (settled) return
       if (!fallbackToChatJson) {
@@ -217,6 +234,7 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
         return
       }
       settled = true
+      releaseLimiter()
       chatJson(provider, messages, schema, opts).then(resolve, reject)
     }
 

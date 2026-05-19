@@ -398,7 +398,7 @@ jobs:
         KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
         OCR_PROVIDER: 'auto'
-        OCR_QUEUE_CONCURRENCY: '2'
+        OCR_QUEUE_CONCURRENCY: '3'
         OCR_PDF_VISION_MAX_PAGES: '3'
         OCR_PDF_VISION_DPI: '150'
         # ↓ 非敏感（公开端点 / 模型 ID / 超时）：固定字面量，便于单一来源 + 一眼可读

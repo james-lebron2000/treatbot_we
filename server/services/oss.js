@@ -1,4 +1,5 @@
 const COS = require('cos-nodejs-sdk-v5');
+const STS = require('qcloud-cos-sts');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -15,6 +16,14 @@ const isNonDevEnv = NODE_ENV !== 'development' && NODE_ENV !== 'test';
 
 const getCosBucket = () => process.env.COS_BUCKET || '';
 const getCosRegion = () => process.env.COS_REGION || 'ap-shanghai';
+const getCosAppId = () => {
+  const explicit = `${process.env.COS_APPID || ''}`.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const match = `${getCosBucket()}`.match(/-(\d{5,})$/);
+  return match ? match[1] : '';
+};
 const isLocalStorage = () =>
   !process.env.COS_SECRET_ID || !process.env.COS_SECRET_KEY || !getCosBucket();
 
@@ -431,7 +440,12 @@ const getSTS = async (userId) => {
   }
 
   try {
-    const result = await getCosClient().getCredential({
+    const appId = getCosAppId();
+    if (!appId) {
+      throw new Error('COS_APPID 未配置，且无法从 COS_BUCKET 推导 appId');
+    }
+
+    const stsOptions = {
       secretId: process.env.COS_SECRET_ID,
       secretKey: process.env.COS_SECRET_KEY,
       durationSeconds: 1800,
@@ -439,6 +453,7 @@ const getSTS = async (userId) => {
         version: '2.0',
         statement: [
           {
+            principal: { qcs: ['*'] },
             action: [
               'name/cos:PutObject',
               'name/cos:InitiateMultipartUpload',
@@ -447,11 +462,24 @@ const getSTS = async (userId) => {
             ],
             effect: 'allow',
             resource: [
-              `qcs::cos:${getCosRegion()}:uid/${process.env.COS_APPID || ''}:${getCosBucket()}/uploads/${userId}/*`
+              `qcs::cos:${getCosRegion()}:uid/${appId}:${getCosBucket()}/uploads/${userId}/*`
             ]
           }
         ]
       }
+    };
+    if (process.env.COS_STS_ENDPOINT) {
+      stsOptions.endpoint = process.env.COS_STS_ENDPOINT;
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      STS.getCredential(stsOptions, (err, data) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(data);
+      });
     });
     
     return result;
@@ -548,19 +576,42 @@ const getDirectUploadInfo = async (userId, fileSpecs = []) => {
   }
 
   const sts = await getSTS(userId);
-  const appId = process.env.COS_APPID || '';
+  const appId = getCosAppId();
   const hostname = `${getCosBucket()}.cos.${getCosRegion()}.myqcloud.com`;
   // sts.expiredTime 是秒还是毫秒看 SDK 版本 —— 大于 1e12 视作毫秒，否则当秒
   const rawExpired = (sts && sts.expiredTime) || 0;
   const expiredAt = rawExpired > 1e12 ? rawExpired : (rawExpired || (Math.floor(Date.now() / 1000) + 1800)) * 1000;
   const startTime = (sts && sts.startTime) || Math.floor(Date.now() / 1000);
+  const credentials = (sts && sts.credentials) || {};
+  if (!credentials.tmpSecretId || !credentials.tmpSecretKey || !credentials.sessionToken) {
+    throw new Error('STS 返回缺少临时密钥字段');
+  }
+  const putUrlExpires = Math.max(60, Math.min(1800, Math.floor((expiredAt - Date.now()) / 1000) || 1800));
+  const uploadSignClient = new COS({
+    SecretId: credentials.tmpSecretId,
+    SecretKey: credentials.tmpSecretKey,
+    SecurityToken: credentials.sessionToken
+  });
 
   const files = safeSpecs.map((spec) => {
     const originalName = spec.originalName || 'file.bin';
     const fileKey = generateKey(userId, originalName);
+    const signedPutUrl = uploadSignClient.getObjectUrl({
+      Bucket: getCosBucket(),
+      Region: getCosRegion(),
+      Key: fileKey,
+      Method: 'PUT',
+      Sign: true,
+      Expires: putUrlExpires,
+      Protocol: 'https:'
+    });
+    const putUrl = typeof signedPutUrl === 'string' ? signedPutUrl : signedPutUrl?.Url;
+    if (!putUrl) {
+      throw new Error('COS PUT 签名 URL 生成失败');
+    }
     return {
       fileKey,
-      putUrl: `https://${hostname}/${fileKey}`,
+      putUrl,
       host: hostname,
       originalName,
       mimeType: spec.mimeType || null
@@ -569,7 +620,7 @@ const getDirectUploadInfo = async (userId, fileSpecs = []) => {
 
   return {
     mode: 'cos',
-    credentials: (sts && sts.credentials) || null,
+    credentials,
     region: getCosRegion(),
     bucket: getCosBucket(),
     appId,
