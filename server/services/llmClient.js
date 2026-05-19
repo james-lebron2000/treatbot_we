@@ -102,7 +102,8 @@ const callOnce = async (providerKey, messages, opts = {}) => {
   const chatPath = cfg.chatCompletionPath || '/chat/completions';
 
   // Plan §Phase 1.1：进入限流闸；finally 释放即使 axios 抛错。
-  await llmRateLimiter.acquire(providerKey);
+  // Wave 2 §F5：opts.onWait（可选）—— 进入排队时回调一次，caller 可以推 SSE 'queued' 帧。
+  await llmRateLimiter.acquire(providerKey, opts.onWait);
   let response;
   try {
     response = await axios.post(
@@ -291,7 +292,8 @@ const streamingChatJson = async (providerKey, messages, schema, opts = {}) => {
   const startedAt = Date.now();
 
   // 限流闸；但是流式持续时间长，acquire 后必须确保 finally 释放。
-  await llmRateLimiter.acquire(providerKey);
+  // Wave 2 §F5：opts.onWait 透传到 acquire，让流式调用也能在排队时给前端推 'queued' 帧。
+  await llmRateLimiter.acquire(providerKey, opts.onWait);
 
   let response;
   try {

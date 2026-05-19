@@ -24,8 +24,11 @@
  *  - 即使 acquire 抛错也保证 release 由 finally 触发；如未对应 acquire，release 是 no-op。
  */
 
+// Wave 2 §F5：doubao 默认容量 3 → 4，与 server/services/queue.js 的 OCR_QUEUE_CONCURRENCY=4 对齐。
+// 之前的错配会让第 4 个 worker 在 acquire 上长时间排队，前端进度卡在 50% 没有任何提示。
+// kimi/openai 是兜底链路，并发提升收益小，保留 2。
 const DEFAULT_CAPACITIES = {
-  doubao: parseInt(process.env.LLM_DOUBAO_CONCURRENCY || '3', 10),
+  doubao: parseInt(process.env.LLM_DOUBAO_CONCURRENCY || '4', 10),
   kimi: parseInt(process.env.LLM_KIMI_CONCURRENCY || '2', 10),
   openai: parseInt(process.env.LLM_OPENAI_CONCURRENCY || '2', 10)
 };
@@ -61,7 +64,10 @@ const updateGauge = (provider, bucket) => {
   }
 };
 
-const acquire = (provider) => {
+// Wave 2 §F5：onWait 回调 —— acquire 必须等队列空位时立即同步触发，
+// 让 caller（queue.js / ocrPipeline.js）可以推一个 SSE 'queued' 帧告诉用户在排队。
+// 没传 onWait 等价于原行为。
+const acquire = (provider, onWait) => {
   const key = String(provider || 'unknown').toLowerCase();
   const bucket = getBucket(key);
 
@@ -69,6 +75,12 @@ const acquire = (provider) => {
     bucket.inflight += 1;
     updateGauge(key, bucket);
     return Promise.resolve();
+  }
+
+  // 必须等待。先 fire onWait（fire-and-forget；caller 异常不能阻塞获取）。
+  if (typeof onWait === 'function') {
+    try { onWait({ provider: key, capacity: bucket.capacity, waiting: bucket.waiting.length + 1 }); }
+    catch (e) { /* onWait 抛错不影响 acquire */ }
   }
 
   return new Promise((resolve) => {
