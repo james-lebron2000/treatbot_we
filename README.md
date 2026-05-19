@@ -130,27 +130,31 @@ cd server
 npm install
 npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 
-# CI 部署：直接 git push main，由 GitHub Actions 用 Secrets 注入容器
+# 自动生产部署：git push main，GitHub Actions 用 Secrets 注入容器
+# 手动生产部署：不依赖 GitHub Actions，见下方 scripts/deploy-production.sh
 ```
 
-> **注意：** `server/.env` **不再用于生产**。生产密钥（`ARK_API_KEY` / `KIMI_API_KEY` / `COS_*` / `JWT_SECRET` / `WEAPP_*` 等）已统一迁移到 **GitHub Actions Secrets**，由 `.github/workflows/deploy.yml` 在 `docker run -e` 时注入容器。详见下方「配置与密钥来源」。
+> **注意：** `server/.env` **不用于生产发布**。自动发布时生产密钥来自 **GitHub Actions Secrets**；手动发布时脚本会在服务器上备份当前 `treatbot-api` 容器 env 并复用，只覆盖脚本里维护的非敏感运行参数。详见下方「配置与密钥来源」。
 
 ### 配置与密钥来源（**重要**）
 
-本仓库**唯一**的生产配置入口是 **GitHub Actions Secrets**。设计动机：
-- 单一来源，避免 `.env` 与 CI 互相漂移（历史 bug：prod `.env` 里 `OCR_PROVIDER=kimi` 残留，导致即便 CI 注入了 Doubao 凭证也走不到 Doubao 路径）。
-- secrets 不落盘到服务器，只在 `docker run` 进程时注入；rotate key 只需要在 GitHub UI 改一个值。
-- `.env.example` 仅作为本地开发模板，列举字段名 + 示例值，**生产不读取该文件**。
+生产发布有两条入口：
+- 自动链路：**GitHub Actions Secrets** 是配置来源，由 `.github/workflows/deploy.yml` 在 `docker run -e` 时注入容器。
+- 手动链路：`scripts/deploy-production.sh` 不依赖 GitHub Actions。它从生产机当前 `treatbot-api` 容器导出 env 作为备份文件，再用同一套非敏感 OCR/限流参数覆盖；如果本机环境显式设置了 `KIMI_API_KEY` 或 `ARK_API_KEY`，脚本才会用本机值覆盖服务器旧值。
+
+这样可以避免 `.env` 与 CI 互相漂移，同时保留 GitHub Actions 不可用时的发布通道。`.env.example` 仅作为本地开发模板，生产不读取该文件。
 
 | 用途 | 来源 | 谁写 / 何时写 |
 |---|---|---|
 | 本地 `npm run dev` | `server/.env`（手动 cp `.env.example` → `.env`） | 开发者本机 |
 | 本地测试 / `npm test` | 测试 fixture + 临时 `process.env`（jest setup） | CI runner |
-| 生产容器 (`treatbot-api`) | GitHub Actions Secrets → `docker run -e ...` | 每次 `git push main` 触发 deploy workflow |
+| 生产容器 (`treatbot-api`) | GitHub Actions Secrets，或手动脚本复用当前容器 env | `git push main` 触发 workflow，或维护者执行 `scripts/deploy-production.sh` |
 
-### 生产部署链路（GitHub Actions → 服务器）
+### 生产部署链路（GitHub Actions / 手动脚本）
 
-生产部署由 `.github/workflows/deploy.yml` 完成，入口是 `git push origin HEAD:main`，不再手工 `docker-compose up`。
+#### 自动部署：GitHub Actions → 服务器
+
+自动生产部署由 `.github/workflows/deploy.yml` 完成，入口是 `git push origin HEAD:main`，不再手工 `docker-compose up`。
 
 1. `fast`：安装后端依赖，跑 ESLint、mock-only Jest、`JWT_SECRET` 生产守卫。
 2. `slow`：用 GitHub service container 启动 MySQL 8 + Redis 7，创建隔离 schema，跑集成测试；失败会告警，但不阻塞部署。
@@ -160,6 +164,32 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 H5、执行 smoke。
 7. 后端发布成功标准不是 `/health` 返回 200，而是新容器实际运行 `treatbot-api:${GITHUB_SHA}`。部署脚本会在容器启动后校验 `docker inspect treatbot-api -f '{{.Config.Image}}'`，如果 GHCR pull、本地 build 和 tarball 都不可用，会直接失败，不再保留旧容器后把 workflow 标成成功。
 8. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
+
+#### 手动部署：本机直连或境外中转
+
+当 GitHub Actions 到国内服务器链路异常，或需要绕开 GitHub Actions 做一次生产发布时，使用仓库内脚本：
+
+```bash
+# 本机直连生产机
+./scripts/deploy-production.sh --prod ubuntu@49.235.162.129
+
+# 通过境外服务器做 SSH ProxyJump 中转
+./scripts/deploy-production.sh \
+  --prod ubuntu@49.235.162.129 \
+  --relay root@45.32.219.241
+
+# 仅替换后端容器，不提升 H5、不修改 Caddyfile
+./scripts/deploy-production.sh --backend-only --relay root@45.32.219.241
+```
+
+手动脚本的行为与 workflow 保持一致：构建或复用 `web/dist`，用 `git archive` 打包 `server-src.tar.gz`，通过 tar-over-ssh 上传控制文件，服务器端优先复用/拉取镜像，失败则从源码本地 `docker build`，随后替换 `treatbot-api`、运行迁移、提升 H5、校验 Caddy、执行 smoke。中转模式使用 `ssh -J`，文件不会落到中转机磁盘。
+
+手动脚本不会自动提交 `docs/deploy-state-server-dump.md`，需要排查时直接读取服务器状态：
+
+```bash
+ssh ubuntu@49.235.162.129 'cat /tmp/treatbot-discovery.txt'
+ssh ubuntu@49.235.162.129 "docker inspect treatbot-api -f '{{.Config.Image}}'"
+```
 
 生产 smoke 最小检查：
 
@@ -173,7 +203,7 @@ H5_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
 
 期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 H5 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
 
-**所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
+**自动部署所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
 
 | Secret | 用途 |
 |---|---|
@@ -187,7 +217,7 @@ H5_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
 | `JWT_SECRET` | JWT 签名密钥（≥32 字符强随机） |
 | `DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` | MySQL 凭证 |
 
-**非敏感配置**（模型 ID / 端点 / 超时阈值）直接在 `deploy.yml` 字面量里维护，避免 secret 数量膨胀：
+**非敏感配置**（模型 ID / 端点 / 超时阈值）在 `deploy.yml` 和 `scripts/deploy-production.sh` 字面量里同步维护，避免 secret 数量膨胀：
 
 ```yaml
 # .github/workflows/deploy.yml（节选）
@@ -204,9 +234,9 @@ env:
 ```
 
 **常见误区**：
-- ❌ 直接 SSH 改 `/opt/treatbot/server/.env` 来切换 provider 或滚动密钥 —— 下次 deploy 会被 `-e` 覆盖回去（且 `--env-file` 用的是上一容器的 env dump，不是磁盘 `.env`）。
-- ✅ 在 GitHub Settings 改 secret，然后随便 push 一次（或手动 re-run 最新 workflow）即可 hot-rotate。
-- 紧急 hotfix 想跳过 CI，可由维护者临时 SSH 上去 `docker run -e VAR=newvalue ...` 重启容器；但下次正常 deploy 会按 GHA secrets 还原 —— 真正的 fix 必须落到 secret。
+- ❌ 直接 SSH 改 `/opt/treatbot/server/.env` 来切换 provider 或滚动密钥 —— 发布脚本不读取这个文件，容器使用的是上一容器 env dump + `docker run -e` 覆盖。
+- ✅ 自动链路改 GitHub Secret 后 re-run workflow；手动链路需要先更新当前容器 env 或在执行脚本时显式传入 `KIMI_API_KEY=... ARK_API_KEY=... ./scripts/deploy-production.sh`。
+- 紧急 hotfix 想跳过 CI，可由维护者临时 SSH 上去 `docker run -e VAR=newvalue ...` 重启容器；但下次正常 deploy 会按发布入口的配置来源还原 —— 真正的 fix 必须落到 GitHub Secret 或手动发布流程。
 
 ### 数据库迁移 + 试验导入
 
