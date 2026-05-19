@@ -106,7 +106,27 @@ const runStreamingPipeline = async ({ source, emit }) => {
   await safeEmit(composeEvent(null, STAGE.PREPROCESS, {}))
 
   // 2) 走原有 OCR 链拿 rawText（视觉/PDF 解析，最贵的一步）
-  const ocrResult = await processMedicalImage(source)
+  //
+  // Wave 1 §F3：视觉/PDF OCR 心跳。
+  // processMedicalImage 是 60–180s 的非流式 HTTP 调用，期间前端 progress 卡在 15%（PREPROCESS 基线）
+  // 长达数分钟，体感上完全静默。这里用 setInterval 每 2.5s 推一帧 OCR_TEXT
+  // （只带 progress，不带 rawText —— queue.js emit adapter 不会把空 rawText 附到 SSE payload），
+  // 让进度从 16 缓慢爬到 39，给真正的 OCR_TEXT(40) 留 1 个单位台阶。
+  //
+  // 关键：心跳 emit 不 await（fire-and-forget），不影响 processMedicalImage 的关键路径；
+  // finally 块 clearInterval，避免 vision 出错后心跳还在跑。
+  let ocrHeartbeatProgress = 15
+  const ocrHeartbeatInterval = setInterval(() => {
+    if (ocrHeartbeatProgress >= 39) return
+    ocrHeartbeatProgress += 1
+    safeEmit(composeEvent(null, STAGE.OCR_TEXT, { progress: ocrHeartbeatProgress }))
+  }, 2500)
+  let ocrResult
+  try {
+    ocrResult = await processMedicalImage(source)
+  } finally {
+    clearInterval(ocrHeartbeatInterval)
+  }
   const rawText = (ocrResult && ocrResult.text) || ''
   const provider = (ocrResult && ocrResult.provider) || 'unknown'
 

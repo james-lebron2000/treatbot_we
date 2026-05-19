@@ -211,21 +211,22 @@ const runOcrTask = async (data, opts = {}) => {
       if (updateArgs) {
         await MedicalRecord.update(updateArgs, { where: { id: recordId } });
         logger.info('OCR 缓存命中，跳过 LLM 调用', { recordId, fileHash });
-        await publishRecordEventSafe(recordId, { status: 'completed', fromCache: true });
+        await publishRecordEventSafe(recordId, { status: 'completed', progress: 100, fromCache: true });
+        // Wave 1 §F1：cache hit 路径也用 setImmediate 移出关键路径。
         if (userId) {
-          try {
-            await Promise.race([
+          setImmediate(() => {
+            Promise.race([
               notificationQueue.add({ type: 'ocr_completed', recordId, userId, fromCache: true }),
               new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('notify_add_timeout_2s')), 2000)
               )
-            ]);
-          } catch (notifyErr) {
-            logger.warn('完成通知入队失败（cache hit）', {
-              recordId,
-              error: notifyErr.message
+            ]).catch((notifyErr) => {
+              logger.warn('完成通知入队失败（cache hit）', {
+                recordId,
+                error: notifyErr && notifyErr.message
+              });
             });
-          }
+          });
         }
         return { success: true, recordId, cacheHit: true };
       }
@@ -254,24 +255,19 @@ const runOcrTask = async (data, opts = {}) => {
     // LLM 调用是 60-180s，用户在中途取消是常见场景；此时 OCR 结果丢弃，不写 completed。
     await assertNotCancelled(recordId);
 
-    // Plan §Phase 1.3：阶段二 → structuring（schema 校验 / 字段合并 / 写库）。
-    // 这一段虽然只有 ~1s，但用户进度条留在 90% 比直接跳 100% 体感更连续。
-    try {
-      await MedicalRecord.update(
-        { status_phase: 'structuring' },
-        { where: { id: recordId } }
-      );
-      await publishRecordEventSafe(recordId, {
-        status: 'running',
-        statusPhase: 'structuring',
-        progress: 90
-      });
-    } catch (phaseErr) {
-      // 阶段切换的 DB 写入是 advisory，失败不要影响主路径
-      logger.warn('status_phase=structuring 切换失败（忽略）', {
+    // Wave 1 §F1：structuring 中间帧只推 SSE，不写 DB。
+    // 之前这里有一次 `MedicalRecord.update({status_phase:'structuring'})`，
+    // 但 ~100ms 后的 completed UPDATE 又把 status_phase 改回 null，等于一次浪费的 RTT。
+    // SSE 帧保留（progress=90 让客户端进度条平滑过渡），但 DB 写入跳过 —— tail 死区缩短一次 DB RTT。
+    publishRecordEventSafe(recordId, {
+      status: 'running',
+      statusPhase: 'structuring',
+      progress: 90
+    }).catch((phaseErr) => {
+      logger.warn('structuring SSE 推送失败（忽略）', {
         recordId, error: phaseErr && phaseErr.message
       });
-    }
+    });
 
     if (!hasMeaningfulOcrResult(result)) {
       // 修复方案 Track 2.2：错误信息带 provider + text.length，写到 structured.error
@@ -306,33 +302,44 @@ const runOcrTask = async (data, opts = {}) => {
       where: { id: recordId }
     });
 
+    // Wave 1 §F1：把 SSE `completed` 帧前置到 cache/notify 之前 ——
+    // 客户端的「真正完成态」由轮询 parse-status-batch 决定，而前一次 UPDATE 已经把
+    // status='completed' 落库；现在 publish 出去，客户端下一次 poll 立即拿到完成态，
+    // tail 死区从 (DB UPDATE + cache.set + notify.add + SSE) 缩到只剩 (DB UPDATE + SSE)。
+    // Wave 1 §F2：附带 progress:100 让客户端 handleStreamState 把进度条推到 100，
+    // 不再视觉上停在 99 等下一次 polling tick。
+    await publishRecordEventSafe(recordId, { status: 'completed', progress: 100 });
+
     // Plan §Phase 1.2：OCR 成功后写回缓存（best-effort）。同 hash 后续上传 → 直接命中。
+    // Wave 1 §F1：用 setImmediate 把 cache + notify 完全移出关键路径 —— 即使两者各自慢 200ms，
+    // 用户也已经看到 completed 帧了。
     if (fileHash) {
-      const payload = ocrCache.buildPayloadFromResult(result);
-      ocrCache.set(fileHash, payload).catch((e) => {
-        logger.warn('ocrCache.set 异常（忽略）', { recordId, error: e && e.message });
+      const cachePayload = ocrCache.buildPayloadFromResult(result);
+      setImmediate(() => {
+        ocrCache.set(fileHash, cachePayload).catch((e) => {
+          logger.warn('ocrCache.set 异常（忽略）', { recordId, error: e && e.message });
+        });
       });
     }
 
     // 完成通知（best-effort：通知队列也要 Redis，挂掉不影响主流程）
+    // Wave 1 §F1：从 await Promise.race 改成 setImmediate 异步丢出，本来就允许丢失，
+    // 不再阻塞 worker 返回；2s race 保留在 setImmediate 内部，防止 Redis 卡住积压闭包。
     if (userId) {
-      try {
-        await Promise.race([
+      setImmediate(() => {
+        Promise.race([
           notificationQueue.add({ type: 'ocr_completed', recordId, userId }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('notify_add_timeout_2s')), 2000)
           )
-        ]);
-      } catch (notifyErr) {
-        logger.warn('完成通知入队失败（忽略，不影响 OCR 结果）', {
-          recordId,
-          error: notifyErr.message
+        ]).catch((notifyErr) => {
+          logger.warn('完成通知入队失败（忽略，不影响 OCR 结果）', {
+            recordId,
+            error: notifyErr && notifyErr.message
+          });
         });
-      }
+      });
     }
-
-    // Plan §Phase 3.1 & §Phase 2.3：把 completed 状态 push 给订阅 SSE 的客户端。
-    await publishRecordEventSafe(recordId, { status: 'completed' });
 
     logger.info('OCR处理完成:', { recordId });
     return { success: true, recordId };

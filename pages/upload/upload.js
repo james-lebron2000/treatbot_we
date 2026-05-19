@@ -1181,14 +1181,24 @@ Page({
     if (!payload || this.completionHandled) return
     const status = `${payload.status || ''}`.toLowerCase()
     const progress = Number(payload.progress)
+    const isTerminal = status === 'completed' || status === 'error' || status === 'cancelled'
     // 进度只往上不往下（轮询 + SSE 双源时，SSE 早到的 progress 不能被轮询的旧值覆盖回去）
     if (Number.isFinite(progress) && progress > Number(this.data.parseProgress || 0)) {
       // 文案映射保持与 mapParseStatus 的客户端镜像一致：
       // 'running' + statusPhase=streaming → analyzing；其它（如 completed/error/cancelled）让轮询走 handleCompletedResult 主路径
-      const uiStatus = (status === 'completed' || status === 'error' || status === 'cancelled')
-        ? status
-        : 'analyzing'
-      this.setProgressTarget(uiStatus, Math.min(99, progress))
+      const uiStatus = isTerminal ? status : 'analyzing'
+      // Wave 1 §F2：进度上限分两档 ——
+      //  · 终态帧（completed/error/cancelled）允许冲到 100，避免视觉上停在 99 等下一轮 poll
+      //  · 中段帧仍封顶 99，把 100 留给真正的完成态写库
+      const cap = isTerminal ? 100 : 99
+      this.setProgressTarget(uiStatus, Math.min(cap, progress))
+    }
+    // Wave 1 §F2：SSE 终态帧立刻 kick 一次 checkParseStatus —— 不等批次 done 帧、不等下一个 3s 轮询周期。
+    // 这是把「99% 卡 1–3 秒」死区从客户端这一侧消掉的关键：服务端推 completed 帧的瞬间，
+    // 客户端就启动 /parse-status-batch 拉最终字段，体感上 tail 几乎归零。
+    // 注意：仍依赖 completionHandled 防双触发；checkParseStatus 内部自带去重。
+    if (isTerminal && typeof this.checkParseStatus === 'function' && !this.completionHandled) {
+      this.checkParseStatus()
     }
     // 字段组 advisory：服务端用 fieldGroup 标记本帧附带哪一组（basic/diagnosis/treatment/timeline）字段；
     // 累积到 instance 上的 streamingPartial，并按 GROUP_META 分组刷到 data.streamingPartialGroups —— wxml
