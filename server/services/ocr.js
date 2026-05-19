@@ -61,6 +61,11 @@ const _ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volce
 const getArkVisionModel = () => process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
 // 大型扫描 PDF + 多页 vision 调用需要 90s+，timeout 默认 180s
 const _ARK_TIMEOUT_MS = parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10);
+// Wave 2 §F6：PDF 文本路径的首跳超时（Doubao 文本结构化）。
+// 之前 PDF 链路所有跳都享受全局 180s timeout —— 如果第一跳因网络抖动卡住，用户要等 3 分钟
+// 才能进入第二跳。这里把首跳收紧到 30s（环境可改），让兜底链路尽快切换。
+// 兜底（vision / kimi / pdf-parse）仍走 _ARK_TIMEOUT_MS，给真实复杂 PDF 留余量。
+const OCR_PDF_FIRSTHOP_TIMEOUT_MS = parseInt(process.env.OCR_PDF_FIRSTHOP_TIMEOUT_MS || '30000', 10);
 const hasDoubaoCredential = () => ocrConfig.hasDoubaoCredential();
 const hasDoubaoVisionCredential = () => ocrConfig.hasDoubaoCredential();
 
@@ -907,7 +912,9 @@ const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerN
 
 const requestDoubao = async (imageRef) => requestDoubaoImages(imageRef, 'ocr_image', 'doubao');
 
-const requestDoubaoText = async (text) => {
+// Wave 2 §F6：opts.timeoutMs 允许 caller 收紧/放宽这次调用的超时。
+// 默认沿用 cfg.timeoutMs（_ARK_TIMEOUT_MS=180s），PDF 首跳由 requestDoubaoPdf 传 30s 进来。
+const requestDoubaoText = async (text, opts = {}) => {
   if (!hasDoubaoCredential()) {
     throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
   }
@@ -954,7 +961,11 @@ const requestDoubaoText = async (text) => {
 
   const parsed = await instrumentLlmCall(
     { provider: 'doubao', model: getArkVisionModel(), operation: 'ocr_text' },
-    () => chatJson('doubao', messages, OcrExtractionSchema, { model: getArkVisionModel() })
+    () => chatJson('doubao', messages, OcrExtractionSchema, {
+      model: getArkVisionModel(),
+      // Wave 2 §F6：透传 caller 给的 timeoutMs；未传时 chatJson 自己回落到 cfg.timeoutMs。
+      ...(typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {})
+    })
   );
 
   const entities = parseKimiEntities(parsed);
@@ -998,7 +1009,11 @@ const requestDoubaoPdf = async ({ sourceUrl, fileKey }) => {
     throw new Error('Doubao PDF 抽空文本（疑似扫描件）：请走 vision 路径（pdftoppm 拆页）');
   }
 
-  const result = await requestDoubaoText(extractedText.substring(0, 4000));
+  // Wave 2 §F6：PDF 首跳 30s 封顶（OCR_PDF_FIRSTHOP_TIMEOUT_MS 可改）。
+  // 失败立刻让 processMedicalImage 的 catch 切到 vision 路径，而不是干等 180s。
+  const result = await requestDoubaoText(extractedText.substring(0, 4000), {
+    timeoutMs: OCR_PDF_FIRSTHOP_TIMEOUT_MS
+  });
   return { ...result, provider: 'doubao_pdf' };
 };
 
