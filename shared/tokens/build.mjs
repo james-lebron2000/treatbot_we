@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates tokens.css / tokens.wxss for web / mini-program / H5 from tokens.json.
+// Generates tokens.css / tokens.wxss for web / mini-program / Treatbot Web from tokens.json.
 // Source of truth: shared/tokens/tokens.json. Edit there, then run this script.
 //
 // Usage:
@@ -21,7 +21,7 @@ const HEADER = `/* AUTO-GENERATED from shared/tokens/tokens.json — do not edit
 // WXSS gotcha: WeChat Mini Program does NOT match the `:root` selector — CSS custom
 // properties declared there silently no-op, leaving every `var(--brand)` etc. unresolved
 // (UI falls back to black text on white bg). The fix is to declare them on `page`,
-// which IS the WXSS equivalent of <html>. Web/H5 .css files keep `:root` as normal.
+// which IS the WXSS equivalent of <html>. Web/Treatbot Web .css files keep `:root` as normal.
 function buildCss(t, selector = ':root') {
   const lines = []
   const groups = [

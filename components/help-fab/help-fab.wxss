@@ -1,5 +1,5 @@
 /* PRD-2026Q3 §U5：求助 FAB —— 用 rpx 适配各种屏幕宽度
- * Q3 视觉对齐 §C.5（Plan web-h5-cozy-gizmo V2）：
+ * Q3 视觉对齐 §C.5（Plan web-treatbot-cozy-gizmo V2）：
  *   - 主色统一为 var(--brand)（原 #1F5AC7 与 brand 仅差 2 度，但视觉破碎）
  *   - 文本/分隔/底色全部走 token，与 Landing 卡片同形态 */
 .help-fab-root {

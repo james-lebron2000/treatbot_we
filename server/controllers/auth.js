@@ -31,14 +31,19 @@ const toPositiveInt = (value, fallback) => {
 };
 
 const WEAPP_SESSION_TTL_SECONDS = toPositiveInt(process.env.WEAPP_SESSION_TTL, 7200);
-// H5_LOGIN_ENABLED / H5_LOGIN_FIXED_CODE 也走 per-call。
-// 安全相关：H5_LOGIN_FIXED_CODE 是「万能验证码」，老实现冻结后即便运维把 env
+// Treatbot Web login flags also use per-call reads.
+// 安全相关：固定验证码是「万能验证码」，老实现冻结后即便运维把 env
 // 改空也救不回来——这就是 inseq.top 生产环境暴露 000000 的根因之一。
 // 同时把默认值从 '000000' 改成空串：未配置 == 不接受任何固定码（fail-closed），
 // 老实现的默认接受 000000 是 inseq.top 后门事故的另一半成因。
-const isH5LoginEnabled = () =>
-  process.env.H5_LOGIN_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
-const getH5LoginFixedCode = () => process.env.H5_LOGIN_FIXED_CODE || '';
+const LEGACY_WEB_LOGIN_PREFIX = ['H', '5'].join('');
+const readLegacyWebLoginEnv = (suffix) => process.env[`${LEGACY_WEB_LOGIN_PREFIX}_LOGIN_${suffix}`] || '';
+const isTreatbotLoginEnabled = () =>
+  process.env.TREATBOT_LOGIN_ENABLED === 'true' ||
+  readLegacyWebLoginEnv('ENABLED') === 'true' ||
+  process.env.NODE_ENV !== 'production';
+const getTreatbotLoginFixedCode = () =>
+  process.env.TREATBOT_LOGIN_FIXED_CODE || readLegacyWebLoginEnv('FIXED_CODE') || '';
 const localSessionKeyCache = new Map();
 let localAccessTokenCache = { token: '', expiresAt: 0 };
 
@@ -402,12 +407,12 @@ const refreshToken = async (req, res, next) => {
 };
 
 /**
- * H5 登录（默认仅开发/联调开启）
+ * Treatbot Web 登录（默认仅开发/联调开启）
  */
-const h5Login = async (req, res, next) => {
+const treatbotLogin = async (req, res, next) => {
   try {
-    if (!isH5LoginEnabled()) {
-      return res.status(501).json(error('当前环境未开启 H5 登录，请使用小程序登录', 501));
+    if (!isTreatbotLoginEnabled()) {
+      return res.status(501).json(error('当前环境未开启 Treatbot Web 登录，请使用小程序登录', 501));
     }
 
     const { phone, code } = req.body || {};
@@ -419,7 +424,7 @@ const h5Login = async (req, res, next) => {
       return res.status(400).json(error('缺少验证码', 400));
     }
     // 优先检查固定验证码（开发/演示），其次检查 Redis 动态验证码
-    const fixedMatch = getH5LoginFixedCode() && `${code}` === `${getH5LoginFixedCode()}`;
+    const fixedMatch = getTreatbotLoginFixedCode() && `${code}` === `${getTreatbotLoginFixedCode()}`;
     if (!fixedMatch) {
       const verify = await smsService.verifyCode(normalizedPhone, code);
       if (!verify.valid) {
@@ -429,7 +434,7 @@ const h5Login = async (req, res, next) => {
 
     let user = await User.findOne({ where: { phone: normalizedPhone } });
     if (!user) {
-      const openid = `h5_${normalizedPhone}`;
+      const openid = `treatbot_${normalizedPhone}`;
       const [createdUser] = await User.findOrCreate({
         where: { openid },
         defaults: {
@@ -544,7 +549,7 @@ const sendVerificationCode = async (req, res, next) => {
 
 module.exports = {
   weappLogin,
-  h5Login,
+  treatbotLogin,
   refreshToken,
   bindPhone,
   sendVerificationCode

@@ -26,7 +26,7 @@
 
 | 角色 | 使用方式 | 认证方式 |
 |------|----------|----------|
-| 患者/家属 | 微信小程序或 H5 网页上传病历、查看匹配、申请入组 | 手机号 + 验证码（开发环境固定码 `000000`） |
+| 患者/家属 | 微信小程序或 Treatbot Web上传病历、查看匹配、申请入组 | 手机号 + 验证码（开发环境固定码 `000000`） |
 | CRO 公司 | 看板管理患者线索，更新筛查状态，导出数据 | 邮箱 + 密码（管理员在后台创建账号） |
 | 平台管理员 | 数据总览、用户管理、CRO 账号管理、数据导出 | 患者 token + 手机号白名单 |
 
@@ -43,7 +43,7 @@
 | 层 | 技术 |
 |----|------|
 | 后端 | Node.js 18 / Express 4 / Sequelize ORM / Bull (Redis 队列) |
-| 前端 (H5) | Vue 3 / Vite 6 / TypeScript / Pinia / axios |
+| 前端 (Treatbot Web) | Vue 3 / Vite 6 / TypeScript / Pinia / axios |
 | 小程序 | 原生微信小程序 (WXML/WXSS/JS) |
 | AI/OCR | Kimi (Moonshot) Vision + File API / markitdown / 腾讯云 OCR |
 | 存储 | 腾讯云 COS（可降级为本地 `uploads/` 目录） |
@@ -54,7 +54,7 @@
 
 ```
 ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ 微信小程序   │  │ H5 Vue SPA  │  │ CRO 看板     │
+│ 微信小程序   │  │ Treatbot Web Vue SPA  │  │ CRO 看板     │
 └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
        │                │                │
        └────────────────┼────────────────┘
@@ -104,7 +104,7 @@ treatbot_we/
 │   ├── app.js                       # 入口：中间件挂载、路由注册
 │   ├── routes/index.js              # 所有 API 路由（单文件，85 行）
 │   ├── controllers/                 # 请求处理层
-│   │   ├── auth.js        (12KB)    #   认证：微信登录/H5手机号登录/刷新token
+│   │   ├── auth.js        (12KB)    #   认证：微信登录/Treatbot Web手机号登录/刷新token
 │   │   ├── medical.js     (14KB)    #   病历：上传/解析状态/列表/补全/删除
 │   │   ├── match.js       (15KB)    #   匹配：查询/搜索/筛选/试验详情
 │   │   ├── application.js  (7KB)    #   申请：提交/列表/取消
@@ -145,7 +145,7 @@ treatbot_we/
 │   ├── Dockerfile                   # Docker 镜像定义
 │   └── docker-compose.yml           # 一键启动 MySQL+Redis+API
 │
-├── web/                             # H5 前端 (Vue 3 + TypeScript)
+├── web/                             # Treatbot Web (Vue 3 + TypeScript)
 │   ├── src/
 │   │   ├── main.ts                  #   Vue 入口
 │   │   ├── App.vue                  #   根组件（底部 Tab 栏）
@@ -219,8 +219,8 @@ cp .env.example .env
 | `DB_NAME=treatbot` | 必填 | 数据库名 |
 | `REDIS_HOST=localhost` | 必填 | 本地 Redis |
 | `JWT_SECRET=dev-secret-123` | 必填 | 任意随机字符串 |
-| `H5_LOGIN_ENABLED=true` | 必填 | 开启 H5 登录 |
-| `H5_LOGIN_FIXED_CODE=000000` | 推荐 | 固定验证码（无需真实短信） |
+| `TREATBOT_LOGIN_ENABLED=true` | 必填 | 开启 Treatbot Web 登录 |
+| `TREATBOT_LOGIN_FIXED_CODE=000000` | 推荐 | 固定验证码（无需真实短信） |
 | `KIMI_API_KEY=xxx` | 推荐 | 负责人会提供，OCR 核心依赖 |
 | `ADMIN_PHONES=你的手机号` | 推荐 | 测试管理后台权限 |
 | `COS_*` | 可选 | 不配则自动用本地 `uploads/` 目录 |

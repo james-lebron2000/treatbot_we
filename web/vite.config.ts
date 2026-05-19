@@ -4,7 +4,7 @@ import path from 'node:path'
 
 // 路由懒加载后，把 Vue 运行时 + axios + pinia 切进稳定的 vendor chunk，
 // 业务代码更新不会让第三方依赖 cache miss。对应 PRD-2026Q2 §2.7。
-// PRD-2026Q2 §3.7：通过 `@shared` alias 让 H5 与小程序共享仓库根 `shared/` 下的文案字典；
+// PRD-2026Q2 §3.7：通过 `@shared` alias 让 Treatbot Web 与小程序共享仓库根 `shared/` 下的文案字典；
 // Vite 默认的 server.fs.allow 只包含 project root，需要显式把仓库根加进来。
 const repoRoot = path.resolve(__dirname, '..')
 

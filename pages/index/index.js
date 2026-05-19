@@ -72,7 +72,7 @@ Page({
   },
 
   async onLoad() {
-    // 读取本地「我看过了」状态；同 H5 用 localStorage('onboardingSeenAt')
+    // 读取本地「我看过了」状态；同 Treatbot Web 用 localStorage('onboardingSeenAt')
     const seenAt = wx.getStorageSync('onboardingSeenAt')
     this.setData({
       onboardingSeen: Boolean(seenAt),

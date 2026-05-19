@@ -30,7 +30,7 @@ test('login → upload → match 全链路', async ({ page }) => {
   }
   await installApiMocks(page, {
     '/api/auth/send-code': (route) => fulfillJson(route, envelope({ ok: true })),
-    '/api/auth/h5-login': (route) =>
+    '/api/auth/treatbot-login': (route) =>
       fulfillJson(
         route,
         envelope({

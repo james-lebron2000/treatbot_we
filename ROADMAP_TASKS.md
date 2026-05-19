@@ -324,7 +324,7 @@
 
 ---
 
-### B7. 用户列表 + 试验 CRUD（H2 / H5）
+### B7. 用户列表 + 试验 CRUD（H2 / Treatbot Web）
 
 **现状**：后端已有 `GET /api/admin/users`（分页+筛选）和 `GET /api/admin/trials`（含申请统计）。试验 CRUD 后端未实现。
 
@@ -630,7 +630,7 @@ CMD ["node", "app.js"]
 
 | 任务 | 涉及文件 | 核心工作 | 工时 |
 |------|---------|---------|------|
-| G4 小程序申请管理 | `pages/profile/applications/` | 对齐 H5 ApplicationsView 的功能 | 4-6h |
+| G4 小程序申请管理 | `pages/profile/applications/` | 对齐 Treatbot Web ApplicationsView 的功能 | 4-6h |
 | G5 癌种语义扩展 | `server/services/matchEngine.js` DISEASE_PROFILES | 扩展 13→30+ 癌种别名；添加子类型映射 | 3-4h |
 | G6 用户行为埋点 | `web/src/utils/analytics.ts` **新建** | 封装埋点函数，关键页面调用 | 4-6h |
 | G7 手动补录字段 | `web/src/pages/UploadView.vue` | 在 gap-filling 区域增加 ECOG/治疗线数输入框（schema.ts 已定义） | 2-3h |

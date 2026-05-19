@@ -384,7 +384,7 @@
         <a href="#how">怎么用</a>
         <a href="#sovereignty">您的数据</a>
         <a href="#about">关于我们</a>
-        <a class="nav-cta" href="/h5/quick-match" data-cta="start-match">开始</a>
+        <a class="nav-cta" href="/treatbot/upload" data-cta="start-match">开始</a>
       </nav>
     </div>
   </header>
@@ -399,7 +399,7 @@
         <strong style="color:#0f172a;">数据不留在我们服务器，完全由您掌管。</strong>
       </p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="/h5/quick-match" data-cta="start-match" aria-label="开始匹配">
+        <a class="btn btn-primary" href="/treatbot/upload" data-cta="start-match" aria-label="开始匹配">
           开始，帮家人找下一步 <span aria-hidden="true">→</span>
         </a>
         <a class="btn btn-ghost" href="/treatbot/demo" aria-label="先看演示，无需登录">
@@ -569,7 +569,7 @@
       <h2>这一步，不用您承诺什么</h2>
       <p>看完再决定。几分钟，完全免费，不留任何数据。</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="/h5/quick-match" data-cta="start-match">开始，帮家人找下一步 <span aria-hidden="true">→</span></a>
+        <a class="btn btn-primary" href="/treatbot/upload" data-cta="start-match">开始，帮家人找下一步 <span aria-hidden="true">→</span></a>
         <a class="btn btn-ghost" href="/treatbot/demo">先看看别人家的例子</a>
       </div>
     </div>
@@ -580,8 +580,8 @@
     <div class="container">
       <div class="foot-main">© 数愈科技 · 数愈健康 · 陪您一起，帮家人找到下一步。本平台仅供参考，不代替医生。</div>
       <div class="foot-links">
-        <a href="/h5/quick-match">手机端快速匹配</a>
-        <a href="/treatbot/">网页版上传</a>
+        <a href="/treatbot/upload">开始上传</a>
+        <a href="/treatbot/">Treatbot Web</a>
         <a href="/treatbot/demo">样例演示</a>
         <a href="/privacy">您的数据主权</a>
       </div>
@@ -601,20 +601,11 @@
       });
     });
 
-    // Q3-红线 §B.4：「开始匹配」CTA UA + viewport 分流
-    // - href 默认 /h5/quick-match：保证无 JS / 爬虫降级到 H5（移动场景占多数，正确）
-    // - 桌面浏览器（≥768px 且非移动 UA）改写到 /treatbot/，进 Vue SPA 主入口
-    // - 兜底：iPadOS 13+ UA 伪装成 Mac，纯 UA 检测会误判，所以叠加 viewport 宽度
-    // - iPad 关键字故意从 mobileUa 正则剔除：iPad 大屏走桌面，小 iPad 由 narrow 兜底
+    // Treatbot Web is the single browser client. Keep CTA attributes only for analytics.
     (function () {
-      var ua = navigator.userAgent || '';
-      var mobileUa = /Mobi|Android|iPhone|iPod|Mobile|Phone/i.test(ua);
-      var narrow = window.innerWidth < 768;
-      var isMobile = mobileUa || narrow;
-      if (isMobile) return;
       var els = document.querySelectorAll('[data-cta="start-match"]');
       for (var i = 0; i < els.length; i++) {
-        els[i].setAttribute('href', '/treatbot/');
+        els[i].setAttribute('href', '/treatbot/upload');
       }
     })();
   </script>

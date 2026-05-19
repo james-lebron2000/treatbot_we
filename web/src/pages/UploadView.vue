@@ -238,7 +238,7 @@ const patientStore = usePatientStore()
 
 // PRD-2026Q4 followup：客户端硬上限，与小程序 / 服务端共享同一个常量
 // （shared/schemas/upload.js BATCH_UPLOAD_MAX）—— 单一来源后任何一边改了 N，
-// 三端同步生效，杜绝"H5 还停留在旧值整批上传完才被 400"的事故。
+// 三端同步生效，杜绝"Treatbot Web 还停留在旧值整批上传完才被 400"的事故。
 const MAX_BATCH_FILES = SHARED_BATCH_UPLOAD_MAX
 
 const file = ref<File | null>(null)
@@ -622,7 +622,7 @@ const uploadAndParse = async () => {
   track('upload_start', { fileCount: files.value.length })
 
   try {
-    // Step 1：一次性批量上传（H5 原生支持 <input multiple>）
+    // Step 1：一次性批量上传（Treatbot Web 原生支持 <input multiple>）
     parseStatus.value = 'uploading'
     pollStartTime = Date.now()
     elapsedSeconds.value = 0

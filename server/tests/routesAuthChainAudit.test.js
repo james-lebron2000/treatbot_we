@@ -63,7 +63,7 @@ describe('routes/index.js — auth chain regression gates', () => {
       'POST /track',                  // Q3-红线 §B.2 anonymous funnel
       'POST /auth/weapp-login',       // login itself
       'POST /auth/send-code',         // send sms code
-      'POST /auth/h5-login',          // login itself
+      'POST /auth/treatbot-login',    // login itself
       'POST /auth/refresh',           // refresh uses token in body, not authMiddleware
       'POST /admin/login',            // admin login
       'POST /cro/login'               // cro login

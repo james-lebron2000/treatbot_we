@@ -1,5 +1,5 @@
 /**app.wxss**/
-/* Q3 视觉对齐 §B（Plan web-h5-cozy-gizmo V2）：以 Landing A 级语言为 SSoT 的 baseline。
+/* Q3 视觉对齐 §B（Plan web-treatbot-cozy-gizmo V2）：以 Landing A 级语言为 SSoT 的 baseline。
    说明：tokens.wxss 内 spacing/radii/font 用 px，但 WXSS var() 会原样输出 px（不随屏宽缩放）。
    因此本文件颜色用 var(--*)，但所有尺寸（padding/radius/font-size/shadow）写 rpx。
    对应关系：1px = 2rpx；var(--s-4)=16px → 32rpx；var(--r-lg)=16px → 32rpx；--fs-body=15px → 30rpx。 */

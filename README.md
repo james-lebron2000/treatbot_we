@@ -20,7 +20,7 @@
 
 | 端 | 入口 | 状态 |
 |---|---|---|
-| H5 患者端 | `https://your-domain/treatbot/` | 已部署 |
+| Treatbot Web | `https://your-domain/treatbot/` | 已部署 |
 | 微信小程序 | 微信扫码 | 已部署 |
 | 管理后台 | `/api/admin/*` | API 可用 |
 
@@ -104,7 +104,7 @@ treatbot_we/
 │   └── config/
 │       └── database.js        # Sequelize 连接配置
 │
-├── web/                       # H5 前端 (Vue 3 + Vite + TypeScript)
+├── web/                       # Treatbot Web (Vue 3 + Vite + TypeScript)
 │   └── src/
 │       ├── pages/
 │       │   └── UploadView.vue # 上传 + 解析 + 匹配主流程
@@ -159,9 +159,9 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 1. `fast`：安装后端依赖，跑 ESLint、mock-only Jest、`JWT_SECRET` 生产守卫。
 2. `slow`：用 GitHub service container 启动 MySQL 8 + Redis 7，创建隔离 schema，跑集成测试；失败会告警，但不阻塞部署。
 3. `build-api`：在 GitHub runner 构建 API 镜像并推送 GHCR，作为生产服务器拉取的标准镜像来源。
-4. `build-web`：构建 H5 `web/dist`，作为 `web-dist` artifact。
+4. `build-web`：构建 Treatbot Web `web/dist`，作为 `web-dist` artifact。
 5. `deploy`：通过 tar-over-ssh 上传 `web-dist.tar.gz`、`server-src.tar.gz` 和反代配置到服务器；不再用 `scp` 传这些控制文件，避免 GitHub runner 到服务器的 SFTP/SCP 传输偶发挂住。服务器会先尝试 `docker pull` GHCR 镜像，但只作为机会性快路径，8 分钟无结果就改用 `server-src.tar.gz` 本地 `docker build`。本地 build 会给 Dockerfile 传腾讯云 apt/pip 镜像源，避免生产服务器出境访问 PyPI 下载 `markitdown[pdf]` 依赖时超时。不要把 API 镜像 tarball 作为默认上传路径，2026-05-15 实测 230-262MB 跨境 SCP 会超过 75 分钟。
-6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 H5、执行 smoke。
+6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 Treatbot Web、执行 smoke。
 7. 后端发布成功标准不是 `/health` 返回 200，而是新容器实际运行 `treatbot-api:${GITHUB_SHA}`。部署脚本会在容器启动后校验 `docker inspect treatbot-api -f '{{.Config.Image}}'`，如果 GHCR pull、本地 build 和 tarball 都不可用，会直接失败，不再保留旧容器后把 workflow 标成成功。
 8. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
 
@@ -178,11 +178,11 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
   --prod ubuntu@49.235.162.129 \
   --relay root@45.32.219.241
 
-# 仅替换后端容器，不提升 H5、不修改 Caddyfile
+# 仅替换后端容器，不提升 Treatbot Web、不修改 Caddyfile
 ./scripts/deploy-production.sh --backend-only --relay root@45.32.219.241
 ```
 
-手动脚本的行为与 workflow 保持一致：构建或复用 `web/dist`，用 `git archive` 打包 `server-src.tar.gz`，通过 tar-over-ssh 上传控制文件，服务器端优先复用/拉取镜像，失败则从源码本地 `docker build`，随后替换 `treatbot-api`、运行迁移、提升 H5、校验 Caddy、执行 smoke。中转模式使用 `ssh -J`，文件不会落到中转机磁盘。
+手动脚本的行为与 workflow 保持一致：构建或复用 `web/dist`，用 `git archive` 打包 `server-src.tar.gz`，通过 tar-over-ssh 上传控制文件，服务器端优先复用/拉取镜像，失败则从源码本地 `docker build`，随后替换 `treatbot-api`、运行迁移、提升 Treatbot Web、校验 Caddy、执行 smoke。中转模式使用 `ssh -J`，文件不会落到中转机磁盘。
 
 手动脚本不会自动提交 `docs/deploy-state-server-dump.md`，需要排查时直接读取服务器状态：
 
@@ -197,11 +197,11 @@ ssh ubuntu@49.235.162.129 "docker inspect treatbot-api -f '{{.Config.Image}}'"
 curl -fsS https://inseq.top/health
 ssh ubuntu@49.235.162.129 "docker inspect treatbot-api -f '{{.Config.Image}}'"
 curl -i -sS 'https://inseq.top/api/medical/parse-status-stream?recordIds=rec_smoke'
-H5_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
+TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
   BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 ```
 
-期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 H5 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
+期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 Treatbot Web 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
 
 **自动部署所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
 
@@ -245,7 +245,7 @@ node scripts/migrate.js        # 建表 / 补列（幂等）
 node scripts/importTrials.js   # 导入 496 条试验
 ```
 
-### H5 前端
+### Treatbot Web
 
 ```bash
 cd web
@@ -259,7 +259,7 @@ npm run build        # 构建到 dist/，部署到 nginx /treatbot/
 仓库根目录就是小程序工程（`app.json` + `pages/` + `utils/`）。
 
 ```bash
-# 1. 用「微信开发者工具」打开仓库根目录（不要打开 web/，那是 H5）
+# 1. 用「微信开发者工具」打开仓库根目录（不要打开 web/，那是 Treatbot Web）
 # 2. AppID 已在 project.config.json 里固定；如不是你的账号请改回自己的测试号
 # 3. 服务器域名：开发模式可勾「不校验合法域名」，
 #    线上需要在「微信公众平台 → 开发设置 → 服务器域名」加 https://inseq.top
@@ -292,7 +292,7 @@ cli auto --project $(pwd)        # 自动化测试入口
 | `REDIS_HOST / REDIS_PORT` | 是 | Bull 队列 |
 | `COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET` | 否 | 腾讯云 COS 文件存储 |
 | `OCR_SECRET_ID / OCR_SECRET_KEY` | 否 | 腾讯云 OCR 备用 |
-| `H5_LOGIN_ENABLED` | 否 | `true` 开启 H5 手机号登录 |
+| `TREATBOT_LOGIN_ENABLED` | 否 | `true` 开启 Treatbot Web 手机号登录 |
 | `ADMIN_PHONES` | 否 | 逗号分隔的管理员手机号 |
 
 ---
@@ -301,7 +301,7 @@ cli auto --project $(pwd)        # 自动化测试入口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/h5-login` | H5 手机号登录（验证码 000000）|
+| POST | `/api/auth/treatbot-login` | Treatbot Web 手机号登录（验证码 000000）|
 | POST | `/api/auth/weapp-login` | 微信小程序登录 |
 | POST | `/api/medical/upload` | 上传病历（图片/PDF，最大 30MB）|
 | GET | `/api/medical/records` | 病历列表 |
@@ -347,7 +347,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | AI / OCR | Kimi (Moonshot) Vision + File API |
 | 文件存储 | 腾讯云 COS（可降级为本地 uploads/）|
 | 容器化 | Docker + alpine 镜像（多阶段构建）|
-| H5 前端 | Vue 3 + Vite + TypeScript |
+| Treatbot Web | Vue 3 + Vite + TypeScript |
 | 小程序 | 微信原生 WXML/WXSS |
 
 ---
@@ -363,12 +363,12 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | 在招试验数据 | **496 条**，`decomposed_criteria` **2659 条** 已解析 |
 | 生产部署 | `https://inseq.top` · Caddy 反代 + Docker 多阶段构建 |
 | 服务端测试 | **28 suites / 212 tests 全绿**（jest，跳过 api.test.js 的 MySQL 依赖） |
-| H5 e2e | **16/16 chromium-desktop 全绿**（Playwright：demo 富信息 + 患者友好 + admin） |
+| Treatbot Web e2e | **16/16 chromium-desktop 全绿**（Playwright：demo 富信息 + 患者友好 + admin） |
 | Lint 基线 | ✅ **0 errors / 0 warnings**（2026-04-29 清零，从 38 warnings 起） |
 | CI 质量门 | ✅ Deploy + Secret Scan + e2e 三 workflow 强制通过；pre-commit detect-secrets + gitleaks |
 | 安全基线 | ✅ JWT 启动强校验 · CSP 生产无 unsafe-inline 脚本 · HSTS · captcha · SMS 限频 · LLM 入参 PII scrub |
 | 可观测性 | ✅ Sentry SDK + scrubber · Prometheus `/metrics` · http 耗时直方图 · 试验新鲜度 daily job · admin audit log |
-| 合规自助（§A.2） | ✅ 同意管理 / 数据导出 / 注销账号 / 改密 — H5 + 小程序两端就绪 |
+| 合规自助（§A.2） | ✅ 同意管理 / 数据导出 / 注销账号 / 改密 — Treatbot Web + 小程序两端就绪 |
 | 隐私页面 | ✅ `/privacy`（落地静态版）+ `/treatbot/privacy`（SPA 8 节患者友好版） |
 | 漏斗埋点（§B.2） | ✅ 6 事件白名单：landing_view / upload_start / upload_success / match_view / trial_apply / application_submitted |
 | Demo 数据质量 | ✅ 灯塔报告 12 节富信息病例 · `matchEngine.isCancerTypeMismatch` 硬排除跨癌种（修复肝癌→HER2 子宫内膜癌事故） |
@@ -406,7 +406,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 **🟡 P2 —— 体验 & 工程化**
 6. CSP `styleSrc` 仍含 `unsafe-inline`（Element Plus 依赖，待 nonce 方案）
 7. 前端只有 e2e，无 Vitest 单元覆盖
-8. `shared/schemas/` 只迁了 `upload.js` 一份（曾用 `.cjs`，因 WeApp `require()` 不识 .cjs 已改名）；后续做 codegen 把 H5 zod schema dump 成 CJS 常量，结束双份漂移
+8. `shared/schemas/` 只迁了 `upload.js` 一份（曾用 `.cjs`，因 WeApp `require()` 不识 .cjs 已改名）；后续做 codegen 把 Treatbot Web zod schema dump 成 CJS 常量，结束双份漂移
 
 ### 下一步方案（建议优先级）
 
@@ -428,7 +428,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 **长尾（不阻断主线）**
 - [ ] Staging 环境（K8s / 简版 docker-compose 双环境）
 - [ ] CSP nonce 方案，彻底移除 `styleSrc` 的 `unsafe-inline`
-- [ ] `shared/schemas/` codegen：H5 zod → CJS 常量自动 dump，小程序 require 同源
+- [ ] `shared/schemas/` codegen：Treatbot Web zod → CJS 常量自动 dump，小程序 require 同源
 - [ ] Sentry sourcemap 上传，生产报错栈可读
 - [ ] Vitest 单元覆盖核心组件（HelpFab / FieldExplainer / RecordSummaryCard）
 
@@ -499,7 +499,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | B4 | ⏸ | **CPA 计费模型** | I1 🔴 | 按合格线索收费，依赖 B2/B3 |
 | B5 | ⏸ | **ICP 备案 / 医疗信息服务资质** | I4 🔴 | 商业合作前置合规，**审批周期 3–6 个月需立即启动** |
 | B6 | ⏸ | 申请状态跟踪（前端完整状态流） | C8 🟠 | pending → contacted → enrolled 全链路 |
-| B7 | ⏸ | 用户列表 + 试验 CRUD | H2/H5 🟠 | 运营人员数据维护入口 |
+| B7 | ⏸ | 用户列表 + 试验 CRUD | H2/Treatbot Web 🟠 | 运营人员数据维护入口 |
 
 **里程碑**：CRO 可登录 → 筛选线索 → 导出 CSV → 按 CPA 结算。
 
@@ -533,9 +533,9 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | G1 | ⏸ | 可分享匹配报告 | E1 🟠 | 带二维码的公开报告页，核心传播载体 |
 | G2 | ✅ | 新用户引导 + 样本病历 | F1 🟠 | OnboardingView 30 秒期望管理 + Demo 3 个灯塔报告样例（hcc/nsclc/sba），`/treatbot/demo` 公开可达 |
 | G3 | ⏸ | 试验数据定期更新 | G1 🟠 | trialFreshness daily job 已就位；ClinicalTrials.gov 同步管线待接入 |
-| G4 | ⏸ | 小程序申请管理 | D4 🟠 | 微信端申请查看/取消，与 H5 对齐 |
+| G4 | ⏸ | 小程序申请管理 | D4 🟠 | 微信端申请查看/取消，与 Treatbot Web 对齐 |
 | G5 | ⏸ | 癌种语义扩展 | A10 🟡 | 疾病本体词典："胃癌" 自动包含 "胃腺癌" 等子类型 |
-| G6 | ✅ | 用户行为埋点 | F4 🟡 | 6 事件白名单（landing_view / upload_start / upload_success / match_view / trial_apply / application_submitted），H5 sendBeacon + 小程序 wx.request 双端就绪 |
+| G6 | ✅ | 用户行为埋点 | F4 🟡 | 6 事件白名单（landing_view / upload_start / upload_success / match_view / trial_apply / application_submitted），Treatbot Web sendBeacon + 小程序 wx.request 双端就绪 |
 | G7 | ✅ | 手动补录字段 | B7 🟡 | `pages/manualEntry/`（小程序）+ `web/src/pages/UploadView.vue` FieldExplainer 字段说明已上线 |
 
 **里程碑**：分享报告带来 > 10% 新用户；试验数据月度自动更新；转化漏斗可量化。

@@ -2,7 +2,7 @@
 // 拆出来独立模块的两个理由：
 //   1. 主调用方 pages/upload/upload.js 是 Page() 模块，require 它会触发 wx 全局；
 //      把无 wx 依赖的纯算法放这里，jest 直接 require 即可单测。
-//   2. 后续可能有 H5 端复用（pages/web 也有同样的拍照模糊问题）。
+//   2. 后续可能有 Treatbot Web复用（pages/web 也有同样的拍照模糊问题）。
 //
 // 算法：RGBA → 灰度（BT.601）→ 5-point Laplacian → 方差。
 // OpenCV 社区惯用阈值 < 100 视为模糊；本仓 conservative 取 80（见 upload.js）。

@@ -242,7 +242,7 @@ const ensureIndexes = async () => {
   await safeAddIndex('medical_records', ['user_id', 'deleted_at'], { name: 'idx_user_deleted' });
   // PRD-2026Q3 T1-3：matches 默认基线选择主路径
   await safeAddIndex('medical_records', ['user_id', 'is_active'], { name: 'idx_user_active' });
-  // Admin H5 后台：按用户 / 状态 / 日期筛选上传数据的主路径索引
+  // Admin Web 后台：按用户 / 状态 / 日期筛选上传数据的主路径索引
   await safeAddIndex('medical_records', ['user_id', 'deleted_at', 'created_at'], { name: 'idx_record_user_deleted_created' });
   await safeAddIndex('medical_records', ['status', 'deleted_at', 'created_at'], { name: 'idx_record_status_deleted_created' });
   await safeAddIndex('trial_applications', ['user_id']);

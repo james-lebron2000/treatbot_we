@@ -1,4 +1,4 @@
-<!-- PRD-2026Q2 §3.7：与 H5 MatchesView 手动录入卡片字段对齐（diagnosis/stage/genes/age） -->
+<!-- PRD-2026Q2 §3.7：与 Treatbot Web MatchesView 手动录入卡片字段对齐（diagnosis/stage/genes/age） -->
 <!-- U4：每个字段加「？」白话解释 + 「我不知道，先跳过」逃生口 -->
 <view class="container">
   <view class="hero">

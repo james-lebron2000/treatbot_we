@@ -1,5 +1,5 @@
 // PRD-2026Q2 §共享层：必填字段集来自 shared/schemas/upload.js，
-// 让小程序与（未来的）H5 端共用一份单一来源。
+// 让小程序与（未来的）Treatbot Web共用一份单一来源。
 //
 // 注意：WeChat 小程序的 require() 解析器只识别 .js 扩展名，不接受 .cjs，
 // 否则会在编译期报「module not found」。文件内容仍是 CommonJS 形态，
@@ -545,6 +545,6 @@ module.exports = {
   buildRecordSections,
   buildStructuredSummary,
   buildGapSections,
-  // 暴露共享 schema 给上游消费方（如 H5 后续 zod 包装）：
+  // 暴露共享 schema 给上游消费方（如 Treatbot Web 后续 zod 包装）：
   sharedUploadSchema
 }

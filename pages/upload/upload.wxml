@@ -98,7 +98,7 @@
         <!-- PRD-2026Q2 §3.7：主按钮走 shared copy.cta.upload / status.parsing -->
         {{uploading ? copy.status.parsing : copy.cta.upload}}
       </button>
-      <!-- PRD-2026Q2 §3.7：手动录入入口（与 H5 MatchesView 的 manualEntry query 对齐，路由到 matches tab） -->
+      <!-- PRD-2026Q2 §3.7：手动录入入口（与 Treatbot Web MatchesView 的 manualEntry query 对齐，路由到 matches tab） -->
       <view class="manual-entry-link" bindtap="goToManualEntry">{{copy.cta.manualEntry}}</view>
     </view>
   </view>

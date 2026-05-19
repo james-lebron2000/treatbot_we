@@ -29,7 +29,7 @@ describe('app.js — trust proxy is enabled in production', () => {
     expect(routesSrc).toMatch(/'\/admin\/login'\s*,\s*strictLimiter/);
     expect(routesSrc).toMatch(/'\/cro\/login'\s*,\s*strictLimiter/);
     expect(routesSrc).toMatch(/'\/auth\/weapp-login'\s*,\s*strictLimiter/);
-    expect(routesSrc).toMatch(/'\/auth\/h5-login'\s*,\s*strictLimiter/);
+    expect(routesSrc).toMatch(/'\/auth\/treatbot-login'\s*,\s*strictLimiter/);
     expect(routesSrc).toMatch(/'\/auth\/send-code'\s*,\s*strictLimiter/);
     expect(routesSrc).toMatch(/'\/auth\/refresh'\s*,\s*strictLimiter/);
   });

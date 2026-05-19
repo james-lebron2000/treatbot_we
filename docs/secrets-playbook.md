@@ -10,7 +10,7 @@
 | `OPENAI_API_KEY` | 兜底 LLM | platform.openai.com | 季度 | @backend |
 | `COS_SECRET_ID` / `COS_SECRET_KEY` | 腾讯云对象存储 | console.cloud.tencent.com | 半年 | @ops |
 | `OCR_SECRET_ID` / `OCR_SECRET_KEY` | 腾讯云 OCR | console.cloud.tencent.com | 半年 | @ops |
-| `SMS_*`（腾讯云短信） | H5 验证码 | console.cloud.tencent.com | 半年 | @ops |
+| `SMS_*`（腾讯云短信） | Treatbot Web 验证码 | console.cloud.tencent.com | 半年 | @ops |
 | `JWT_SECRET` | 业务 token 签名 | 本地随机 | 半年 + 事件驱动 | @backend |
 | `DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` | MySQL | 部署机 | 半年 | @ops |
 

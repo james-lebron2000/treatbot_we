@@ -1,11 +1,11 @@
-// PRD-2026Q3 §U5：H5 + 小程序 双端共用「需要帮忙」FAB 文案的单一来源。
+// PRD-2026Q3 §U5：Treatbot Web + 小程序 双端共用「需要帮忙」FAB 文案的单一来源。
 //
 // 历史：原文件是 help.json。WeApp `require()` 只识 .js 扩展（不识 .json / .cjs），
 // 引到 small program 端时编译期 throw "module 'shared/copy/help.json.js' is not defined"。
 // 同 utils/schema.js 那次 .cjs → .js 的修复语义一致：把 JSON 数据就地转成
-// CommonJS module，单一 source of truth，仍然由 H5 + 小程序两端共用。
+// CommonJS module，单一 source of truth，仍然由 Treatbot Web + 小程序两端共用。
 //
-// H5 (web/src/copy/help.ts) 改成 `import help from '../../../shared/copy/help.js'`，
+// Treatbot Web (web/src/copy/help.ts) 改成 `import help from '../../../shared/copy/help.js'`，
 // Vite + TS 都能直接吃 CommonJS 默认导出（已配 `esModuleInterop`）。
 
 module.exports = {

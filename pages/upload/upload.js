@@ -15,14 +15,14 @@ const { track } = require('../../utils/track')
 const { computeLaplacianVariance } = require('../../utils/blurAdvisory')
 // Plan §Phase 3.3：文件名启发式占位卡规则
 const { inferFileHint, buildPlaceholderHints } = require('../../utils/placeholderHints')
-// PRD-2026Q2 §3.7：与 H5 共享的上传场景文案字典（仓库根 `shared/copy/upload.js`）。
+// PRD-2026Q2 §3.7：与 Treatbot Web 共享的上传场景文案字典（仓库根 `shared/copy/upload.js`）。
 // 注意：WeApp `require()` 不识 .json 后缀（同 .cjs 一样会丢 "module not defined"），
 // 已迁移到 .js（CommonJS）；详见 shared/copy/upload.js 顶部说明。
 const copy = require('../../shared/copy/upload.js')
 // PRD-2026Q4 followup：上传批次上限单一来源（与 server/controllers/medical.js 同源）
 const { BATCH_UPLOAD_MAX: SHARED_BATCH_UPLOAD_MAX } = require('../../shared/schemas/upload.js')
 
-// PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 H5 UploadView.classifyError 对齐。
+// PRD-2026Q2 §3.7：错误分类三大类 + unknown 兜底，与 Treatbot Web UploadView.classifyError 对齐。
 // 增量：DevTools 里 `wx.login` 自身会话过期 → utils/auth.js 抛 code='wx_login_session_expired'，
 // 这里单独识别并回 'wx_login'，避免泛化到 unknown 让研发同学误以为是后端 bug。
 const classifyUploadError = (error) => {
@@ -1827,7 +1827,7 @@ Page({
     }
   },
 
-  // PRD-2026Q2 §3.7：手动录入入口（与 H5 /matches?manualEntry=1 对等）
+  // PRD-2026Q2 §3.7：手动录入入口（与 Treatbot Web /matches?manualEntry=1 对等）
   goToManualEntry() {
     wx.navigateTo({ url: '/pages/manualEntry/manualEntry' })
   },

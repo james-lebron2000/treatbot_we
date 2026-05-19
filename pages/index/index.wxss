@@ -1,5 +1,5 @@
 /* pages/index/index.wxss
- * Q3 视觉对齐 §E.1（Plan web-h5-cozy-gizmo V2）：
+ * Q3 视觉对齐 §E.1（Plan web-treatbot-cozy-gizmo V2）：
  *   - Hero 改 Landing 同款 radial 浅光 (.hero-shell baseline 已生效，本文件仅做尺寸/响应微调)
  *   - 卡片：实白 + 1px 细边 + 32rpx 圆角；按下 -2rpx + shadow-1
  *   - 颜色全 token；字号语义命名 */

@@ -38,9 +38,9 @@ router.post('/track', funnelController.track);
 // PRD-2026Q4 T0-7：所有写入 phone / id_card 的入口前置 normalizePii
 router.post('/auth/weapp-login', strictLimiter, normalizePii, authController.weappLogin);
 router.post('/auth/send-code', strictLimiter, normalizePii, authController.sendVerificationCode);
-router.post('/auth/h5-login', strictLimiter, normalizePii, authController.h5Login);
+router.post('/auth/treatbot-login', strictLimiter, normalizePii, authController.treatbotLogin);
 // PRD-2026Q4 T0-7 followup（路由审计）：refreshToken 是凭证再签发路径，
-// 与 weapp-login / send-code / h5-login 同等敏感 → 同等限流。老实现漏了 strictLimiter，
+// 与 weapp-login / send-code / treatbot-login 同等敏感 → 同等限流。老实现漏了 strictLimiter，
 // 暴露 refresh-token 撞库 / 暴破面（leaked refresh token 在过期前可被重放）。
 router.post('/auth/refresh', strictLimiter, authController.refreshToken);
 router.post('/auth/bind-phone', authMiddleware, strictLimiter, normalizePii, authController.bindPhone);

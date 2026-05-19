@@ -1,9 +1,9 @@
-// PRD-2026Q3 §U4：H5 + 小程序双端共享的字段术语 / 匹配理由 / 错误文案字典（单一来源）。
+// PRD-2026Q3 §U4：Treatbot Web + 小程序双端共享的字段术语 / 匹配理由 / 错误文案字典（单一来源）。
 //
 // 历史：原文件是 glossary.json。WeApp `require()` 不识别 .json 后缀；同
 // help.json / upload.json 一致迁移到 .js（CommonJS）。
 //
-// H5 (web/src/copy/glossary.ts) 改成 `import glossary from '../../../shared/copy/glossary.js'`。
+// Treatbot Web (web/src/copy/glossary.ts) 改成 `import glossary from '../../../shared/copy/glossary.js'`。
 //
 // 文案规则（_meta.rule）：
 //   每条 plain ≤ 60 字；不出现「分期」「评分」「突变」等术语之外的医学英文；

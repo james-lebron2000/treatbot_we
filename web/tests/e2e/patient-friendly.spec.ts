@@ -33,7 +33,7 @@ const JARGON_ALLOWLIST = [
 const installCommonMocks = async (page: Page) => {
   await installApiMocks(page, {
     '/api/auth/send-code': (r) => fulfillJson(r, envelope({ ok: true })),
-    '/api/auth/h5-login': (r) =>
+    '/api/auth/treatbot-login': (r) =>
       fulfillJson(
         r,
         envelope({

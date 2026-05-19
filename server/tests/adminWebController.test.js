@@ -1,5 +1,5 @@
 /**
- * Admin H5 后台数据契约测试。
+ * Admin Web 后台数据契约测试。
  *
  * 覆盖第一版后台最关键的只读契约：
  *  - dashboard 返回 overview / dailyTrend / funnel / dataQuality
@@ -68,7 +68,7 @@ const statusRow = (status, count) => ({
   get: (key) => (key === 'count' ? String(count) : undefined)
 });
 
-describe('admin H5 controller contracts', () => {
+describe('admin Treatbot Web controller contracts', () => {
   const originalAdminEnv = {
     username: process.env.ADMIN_LOGIN_USERNAME,
     keyHash: process.env.ADMIN_LOGIN_KEY_HASH,

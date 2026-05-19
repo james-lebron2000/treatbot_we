@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 3000;
 // PRD-2026Q4 T0-7 followup（rate-limit per-client）：生产部署是 nginx → docker，
 // 没有 `trust proxy` 时 req.ip 始终是 nginx 容器 IP（同一个），导致：
 //   1) middleware/rateLimit.js 的 keyGenerator 用 req.userId || req.ip → 所有未登录
-//      请求（/admin/login, /auth/h5-login, /auth/send-code）共享一个 bucket，
+//      请求（/admin/login, /auth/treatbot-login, /auth/send-code）共享一个 bucket，
 //      strictLimiter 20/15min 变成「全平台 20/15min」全局 throttle，攻击者捡便宜，
 //      正常用户被误伤；
 //   2) 审计日志走 X-Forwarded-For 手解，已经正确，但其它依赖 req.ip 的代码（abuse

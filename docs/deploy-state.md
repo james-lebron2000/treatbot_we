@@ -22,7 +22,7 @@
 - [x] **PHASE 1** — Discover: Caddyfile + nginx + ports + containers dumped to `docs/deploy-state-server-dump.md`
 - [x] **PHASE 2** — Author `deploy/Caddyfile`（HTTPS + 所有路由 + `path /api/demo/*` 修复）
 - [x] **PHASE 3** — Migrate: scp + `caddy validate` + swap + reload；nginx archive + stop + disable
-- [x] **PHASE 4** — Mobile login 适配验证（Vue SPA + Next.js H5 两端均 mobile-ready）
+- [x] **PHASE 4** — Treatbot Web mobile login 适配验证（Vue SPA mobile-ready）
 - [x] **PHASE 5** — Real-data smoke on https://inseq.top（全绿）
 
 **交付状态：✅ 全部完成**
@@ -42,8 +42,8 @@
 ### PHASE 4 verification（移动端登录适配）
 iPhone UA 实测：
 - `GET /treatbot/login`（Vue SPA）→ 200，`<meta name="viewport" content="width=device-width, initial-scale=1.0" />` 存在
-- `GET /h5/quick-match/login`（Next.js H5）→ 200，viewport meta 存在，Tailwind `max-w-md` + `w-full` 响应式布局
-- `GET /h5` → 302 `/h5/quick-match`（符合 Caddyfile `redir`）
+- `GET /treatbot/login`（Treatbot Web）→ 200，viewport meta 存在
+- legacy Next.js mobile route retired; Caddy now serves a single Treatbot Web browser client
 
 CSS 审计（`web/src/style.css`）：
 - `.app-shell` 流式布局（`max-width:960px` + `margin:0 auto`），无 min-width
@@ -63,8 +63,8 @@ CSS 审计（`web/src/style.css`）：
 | `GET /health` | 200 | ✅ 200 |
 | `GET /treatbot/` | 200（Vue SPA shell） | ✅ 200 |
 | `GET /treatbot/login` | 200 + viewport meta | ✅ 200 + viewport |
-| `GET /h5` | 302 → /h5/quick-match | ✅ 302 |
-| `GET /h5/quick-match/login` | 200 + viewport meta | ✅ 200 + viewport |
+| `GET /treatbot/` | 200 + viewport meta | ✅ 200 + viewport |
+| `GET /treatbot/login` | 200 + viewport meta | ✅ 200 + viewport |
 | `GET /demo-assets/sample-1-hcc.jpg` | 200 | ✅ 200 |
 | `GET /api/demo/samples` | 200 Express JSON `{code:0,...}` | ✅ 200，两条 sample 完整返回 |
 | `GET /api/demo/samples/sample-1-hcc/result` | 200 完整 diagnosis/stage/ecog | ✅ 200，`原发性肝癌(HCC)` III 期 等字段齐全 |
@@ -96,7 +96,7 @@ CSS 审计（`web/src/style.css`）：
 - nginx 归档 `nginx-tree.retired.20260418-121211.tar.gz` + disable
 
 ### 2026-04-18 cycle 2 — PHASE 4-5（本次）
-- iPhone UA 实测 `/treatbot/login` + `/h5/quick-match/login`：viewport meta 都存在
+- iPhone UA 实测 `/treatbot/login`：viewport meta 存在
 - 审计 `web/src/style.css` + `LoginView.vue`：流式布局 + safe-area，无桌面-only fixed width
 - 10 路线上 smoke 全 200/302/401，符合预期
 - `/api/demo/*` catch-all 404 bug 彻底修复：`{code:0,...}` Express 格式

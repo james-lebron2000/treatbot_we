@@ -31,9 +31,9 @@ pnpm -C web tokens:build
 |---|---|
 | `web/src/styles/tokens.css` | Vue Web（在 [web/src/main.ts](../web/src/main.ts) 第一行 import） |
 | `styles/tokens.wxss` | 微信小程序（在 [app.wxss](../app.wxss) 顶部 `@import '/styles/tokens.wxss'`） |
-| `server/public/landing/tokens.css` | Landing H5（`<link>` 引入） |
-| `server/public/admin/tokens.css` | Admin H5（`<link>` 引入） |
-| `server/public/demo/tokens.css` | Demo H5（`<link>` 引入） |
+| `server/public/landing/tokens.css` | Landing Web（`<link>` 引入） |
+| `server/public/admin/tokens.css` | Admin Web（`<link>` 引入） |
+| `server/public/demo/tokens.css` | Demo Web（`<link>` 引入） |
 
 **禁止手改任何 `tokens.css/wxss`**——它们头部都有 `AUTO-GENERATED` 警告。CI 会校验 hash。
 
@@ -155,7 +155,7 @@ toast.error('提交失败，请重试')
 
 **禁用** `window.alert/confirm/prompt`——CI grep 已加 0 命中校验。
 
-### 4.2 Admin H5（[server/public/admin/](../server/public/admin/)）
+### 4.2 Admin Web（[server/public/admin/](../server/public/admin/)）
 
 | API | 用途 |
 |---|---|
@@ -165,7 +165,7 @@ toast.error('提交失败，请重试')
 
 实现见 [server/public/admin/dialog.js](../server/public/admin/dialog.js)。
 
-### 4.3 Demo H5（[server/public/demo/](../server/public/demo/)）
+### 4.3 Demo Web（[server/public/demo/](../server/public/demo/)）
 
 5 屏路演演示，用 `setTimeout` 模拟解析过程，无后端依赖：
 1. [01-home.html](../server/public/demo/01-home.html) — 首屏 hero
@@ -188,7 +188,7 @@ transition: background 150ms ease, transform 100ms cubic-bezier(0.4, 0, 0.2, 1);
 已应用于：
 - Vue `<AppButton>`、`web/src/style.css` `.btn`
 - Demo `_shared.css` `.demo-btn`
-- Admin H5 `.btn`
+- Admin Web `.btn`
 - 小程序 `.btn-primary` `.btn-default`
 
 ## 5. 反模式 & 检查清单
@@ -242,5 +242,5 @@ cd web && pnpm build
 |---|---|---|
 | Week 1 | 2026-05-02 | shared/tokens 体系 + 5 端 build target |
 | Week 2 | 2026-05-02 | Web 基础组件 + composables + style.css token 化 |
-| Week 3 | 2026-05-02 | Admin H5 全量重写 + Demo 5 屏新建 |
+| Week 3 | 2026-05-02 | Admin Web 全量重写 + Demo 5 屏新建 |
 | Week 4 | 2026-05-03 | Vue admin 4 页 token 化 + 全站微交互 + 本文 |

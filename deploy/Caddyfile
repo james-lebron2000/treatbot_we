@@ -8,8 +8,6 @@
 # 路由拓扑（所有请求经 Caddy:443 → 下游）：
 #   /                         → 127.0.0.1:3000  (Express static landing page)
 #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
-#   /h5 → redir /h5/quick-match
-#   /h5/*                     → 127.0.0.1:3100  (Next.js)
 #   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
 #   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
 #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
@@ -44,24 +42,10 @@ inseq.top, www.inseq.top {
         header Cache-Control "no-store"
     }
 
-    # H5（Next.js @ 3100）
-    redir /h5 /h5/quick-match
-    handle /h5/* {
-        reverse_proxy 127.0.0.1:3100 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            transport http {
-                read_timeout 300s
-                write_timeout 300s
-            }
-        }
-    }
-
     # 所有 treatbot-api（Express @ 3000）的专有 API（在 /api/* catch-all 之前）
     @treatbot_api {
         path /api/demo/*
-        path /api/auth/h5-login /api/auth/send-code /api/auth/weapp-login /api/auth/refresh /api/auth/bind-phone /api/auth/profile
+        path /api/auth/treatbot-login /api/auth/send-code /api/auth/weapp-login /api/auth/refresh /api/auth/bind-phone /api/auth/profile
         path /api/medical/* /api/matches /api/matches/* /api/trials /api/trials/*
         path /api/applications /api/applications/*
         path /api/admin/* /api/cro/* /api/user/*

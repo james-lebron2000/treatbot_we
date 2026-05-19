@@ -2,7 +2,7 @@
 //
 // 这份文件用 CommonJS 导出，目的是让两端共消费同一组常量：
 //   - 小程序  utils/schema.js        require('../shared/schemas/upload.js')
-//   - H5      web/src/schemas/...    后续可写一个 .ts 包装器 import 这份 .js
+//   - Treatbot Web      web/src/schemas/...    后续可写一个 .ts 包装器 import 这份 .js
 //
 // 历史注记：曾用 .cjs 扩展名，因 WeChat 小程序 require() 解析器只识别 .js，
 // 编译期会直接「module not found」；统一改成 .js 后两端都能解析，
@@ -25,7 +25,7 @@
 // 速率：用户 30/h × 9 = 270 份/小时，单份 OCR ~$0.05，~$13.5/h/user 上限可控。
 const BATCH_UPLOAD_MAX = 9
 
-// 与 H5 web/src/utils/track.ts 的 6-event whitelist 思路一致：单一来源 + 校验。
+// 与 Treatbot Web/src/utils/track.ts 的 6-event whitelist 思路一致：单一来源 + 校验。
 const REQUIRED_FIELDS = [
   'diagnosis',       // 临床诊断
   'pathologyType',   // 病理/组织学类型
@@ -36,7 +36,7 @@ const REQUIRED_FIELDS = [
   'targetLesion'     // 是否存在可测量靶病灶（影响入组评估）
 ]
 
-// 简易枚举值，便于 H5 / WeApp 统一表单 picker 选项。
+// 简易枚举值，便于 Treatbot Web / WeApp 统一表单 picker 选项。
 const SEX_VALUES = ['男', '女']
 const ECOG_VALUES = [0, 1, 2, 3, 4]
 const STAGE_VALUES = ['I期', 'II期', 'III期', 'IV期', '局部晚期', '转移性', '未知']
@@ -56,7 +56,7 @@ const getMissingRequiredKeys = (record) => {
 }
 
 // 简易 issues 数组，结构对齐 zod 的 SafeParseError.error.issues，
-// H5 后续接 zod 时可直接喂出。
+// Treatbot Web 后续接 zod 时可直接喂出。
 const validate = (record) => {
   const issues = []
   const data = record && typeof record === 'object' ? record : {}

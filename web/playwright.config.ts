@@ -1,12 +1,12 @@
 // Q3-红线 §B.3：Playwright e2e 配置
 //
-// 目标：在不依赖真实后端 (MySQL/Redis/COS/LLM) 的前提下，把 H5 三条 happy path
+// 目标：在不依赖真实后端 (MySQL/Redis/COS/LLM) 的前提下，把 Treatbot Web 三条 happy path
 // 跑成可重放的回归。所有 /api/** 请求都用 page.route() 在 spec 内 mock。
 //
 // 运行环境约束：
 //   - webServer 起 vite preview（需要先 build），strictPort=true 防止串口
 //   - 仅启用 chromium：CI 装包成本低、本地执行快；要扩 webkit 再加 project
-//   - 两个 project 覆盖桌面和 iPhone 13 mobile 视口（H5 主战场是手机）
+//   - 两个 project 覆盖桌面和 iPhone 13 mobile 视口（Treatbot Web 主战场是手机）
 
 import { defineConfig, devices } from '@playwright/test'
 
@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       // Q3-红线 §B.3：移动端用 Pixel 5 emulation（chromium 内核），
-      // 避免再下载 webkit。viewport / userAgent 与真实手机近似，足够 H5 回归。
+      // 避免再下载 webkit。viewport / userAgent 与真实手机近似，足够 Treatbot Web 回归。
       name: 'mobile-pixel5',
       use: { ...devices['Pixel 5'] }
     }

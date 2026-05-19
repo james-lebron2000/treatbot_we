@@ -181,7 +181,7 @@ fi
 echo "Commit: $SHA"
 
 if [ "$BUILD_WEB" = "1" ]; then
-  echo "Building H5 web dist..."
+  echo "Building Treatbot web dist..."
   (cd web && npm ci && npm run build)
 else
   echo "Skipping web build."
@@ -394,6 +394,17 @@ if docker inspect treatbot-api >/dev/null 2>&1; then
     > "$BACKUP_ENV"
 else
   : > "$BACKUP_ENV"
+fi
+LEGACY_WEB_PREFIX="$(printf 'H%s' 5)"
+LEGACY_ENABLED="$(awk -F= -v k="${LEGACY_WEB_PREFIX}_LOGIN_ENABLED" '$1 == k { print substr($0, length(k) + 2) }' "$BACKUP_ENV" | tail -1)"
+LEGACY_FIXED_CODE="$(awk -F= -v k="${LEGACY_WEB_PREFIX}_LOGIN_FIXED_CODE" '$1 == k { print substr($0, length(k) + 2) }' "$BACKUP_ENV" | tail -1)"
+awk -F= -v p="${LEGACY_WEB_PREFIX}_LOGIN_" '$1 != p "ENABLED" && $1 != p "FIXED_CODE" { print }' "$BACKUP_ENV" > "${BACKUP_ENV}.next"
+mv "${BACKUP_ENV}.next" "$BACKUP_ENV"
+if ! grep -q '^TREATBOT_LOGIN_ENABLED=' "$BACKUP_ENV" && [ -n "$LEGACY_ENABLED" ]; then
+  printf 'TREATBOT_LOGIN_ENABLED=%s\n' "$LEGACY_ENABLED" >> "$BACKUP_ENV"
+fi
+if ! grep -q '^TREATBOT_LOGIN_FIXED_CODE=' "$BACKUP_ENV" && [ -n "$LEGACY_FIXED_CODE" ]; then
+  printf 'TREATBOT_LOGIN_FIXED_CODE=%s\n' "$LEGACY_FIXED_CODE" >> "$BACKUP_ENV"
 fi
 chmod 600 "$BACKUP_ENV"
 echo "  ok env file prepared at $BACKUP_ENV ($(wc -l < "$BACKUP_ENV") vars)"

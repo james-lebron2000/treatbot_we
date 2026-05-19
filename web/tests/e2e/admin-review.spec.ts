@@ -1,4 +1,4 @@
-// Q3-红线 §B.3：Admin H5 后台 happy path。
+// Q3-红线 §B.3：Admin Web 后台 happy path。
 //
 // 验证：
 //   1. 注入 fake admin token 跳过 requireAuth

@@ -1,18 +1,18 @@
-// PRD-2026Q2 §3.7：H5 + 小程序双端共享的上传场景文案字典（单一来源）。
+// PRD-2026Q2 §3.7：Treatbot Web + 小程序双端共享的上传场景文案字典（单一来源）。
 //
 // 历史：原文件是 upload.json。WeApp `require()` 不识别 .json 后缀，会丢
 // "module 'shared/copy/upload.json.js' is not defined"。同 help.json → help.js、
 // schemas/upload.cjs → upload.js 的迁移语义一致：把 JSON 数据就地转成 CommonJS module，
-// 单一 source of truth，仍然由 H5 + 小程序两端共用。
+// 单一 source of truth，仍然由 Treatbot Web + 小程序两端共用。
 //
-// H5 (web/src/pages/UploadView.vue) 改成 `import uploadCopy from '@shared/copy/upload.js'`，
+// Treatbot Web (web/src/pages/UploadView.vue) 改成 `import uploadCopy from '@shared/copy/upload.js'`，
 // Vite + TS 都能直接吃 CommonJS 默认导出（已配 esModuleInterop）。
 //
 // 文案温度：温暖陪伴语气（empathy.ts 风格）—— 每条错误 = 共情 + 可行动作；
 // 每条状态 ≤ 12 字、主动说明在做什么；字段 hint 解释为什么需要以及不确定时怎么办。
 
 module.exports = {
-  _comment: 'PRD-2026Q2 §3.7：H5 与小程序共享的上传场景文案字典。',
+  _comment: 'PRD-2026Q2 §3.7：Treatbot Web 与小程序共享的上传场景文案字典。',
   error: {
     rate_limit: '您今天上传得挺多了 —— 我们想把每份都做对，稍等一会儿就能继续。不想等的话，直接告诉我们关键信息，一样能匹配。',
     parse_failed: '这张我们没能看清 —— 可能图片有点模糊，或者格式不太常见。换张清晰点的再试试？或者直接手动录入也行。',

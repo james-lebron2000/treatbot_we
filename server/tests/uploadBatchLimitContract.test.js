@@ -11,7 +11,7 @@
 //      d) uploadFiles 全失败时 throw 原 err（保 statusCode），不 throw new Error(message)
 //         —— 否则所有失败都被 classifyUploadError 错分类成 'network'，用户看到
 //         "网络有点卡" 这条假报错。
-//   4) H5 web/src/pages/UploadView.vue：MAX_BATCH_FILES 来自 shared 常量；onFileChange
+//   4) Treatbot Web/src/pages/UploadView.vue：MAX_BATCH_FILES 来自 shared 常量；onFileChange
 //      必须 slice 截断，不允许裸赋值 files.value=selected。
 //
 // 这些都是上次线上事故根因；任何未来 PR 改回老样子都应该被这条测试挂掉。
@@ -22,7 +22,7 @@ const path = require('path');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const MEDICAL_CTRL = path.join(REPO_ROOT, 'server', 'controllers', 'medical.js');
 const UPLOAD_PAGE = path.join(REPO_ROOT, 'pages', 'upload', 'upload.js');
-const H5_UPLOAD_VIEW = path.join(REPO_ROOT, 'web', 'src', 'pages', 'UploadView.vue');
+const WEB_UPLOAD_VIEW = path.join(REPO_ROOT, 'web', 'src', 'pages', 'UploadView.vue');
 const SHARED_SCHEMA = path.join(REPO_ROOT, 'shared', 'schemas', 'upload.js');
 
 describe('shared upload schema — single source of truth', () => {
@@ -125,10 +125,10 @@ describe('upload page contract — mini-program', () => {
   });
 });
 
-// PRD-2026Q4 followup：H5 必须有客户端 count cap，与小程序 / 服务端同号。
-describe('upload H5 contract — Vue UploadView.vue', () => {
+// PRD-2026Q4 followup：Treatbot Web 必须有客户端 count cap，与小程序 / 服务端同号。
+describe('upload Treatbot Web contract — Vue UploadView.vue', () => {
   let src;
-  beforeAll(() => { src = fs.readFileSync(H5_UPLOAD_VIEW, 'utf8'); });
+  beforeAll(() => { src = fs.readFileSync(WEB_UPLOAD_VIEW, 'utf8'); });
 
   test('imports BATCH_UPLOAD_MAX from @shared/schemas/upload.js', () => {
     expect(src).toMatch(/from\s+['"]@shared\/schemas\/upload\.js['"]/);
@@ -148,19 +148,19 @@ describe('upload H5 contract — Vue UploadView.vue', () => {
 });
 
 // 三端运行时数值一致性：所有引用都解析到同一个 shared 常量值。
-// 即使有人通过 ENV 覆盖了服务端默认（仅服务端可），WeApp / H5 也必须明确知道这点
+// 即使有人通过 ENV 覆盖了服务端默认（仅服务端可），WeApp / Treatbot Web 也必须明确知道这点
 // （wxml `<9` 不读 env，所以默认必须保持 9；改默认 = 改 shared/schemas/upload.js）。
-describe('upload limit numeric parity — server / WeApp / H5', () => {
+describe('upload limit numeric parity — server / WeApp / Treatbot Web', () => {
   test('all three sides resolve to the same shared BATCH_UPLOAD_MAX', () => {
     const sharedMax = require(SHARED_SCHEMA).BATCH_UPLOAD_MAX;
     const serverSrc = fs.readFileSync(MEDICAL_CTRL, 'utf8');
     const weappSrc = fs.readFileSync(UPLOAD_PAGE, 'utf8');
-    const h5Src = fs.readFileSync(H5_UPLOAD_VIEW, 'utf8');
+    const webSrc = fs.readFileSync(WEB_UPLOAD_VIEW, 'utf8');
 
     // 三端都必须 reference SHARED_BATCH_UPLOAD_MAX（已被前面单独测试过，这里再做一次合并 sanity）
     expect(serverSrc).toMatch(/SHARED_BATCH_UPLOAD_MAX/);
     expect(weappSrc).toMatch(/SHARED_BATCH_UPLOAD_MAX/);
-    expect(h5Src).toMatch(/SHARED_BATCH_UPLOAD_MAX/);
+    expect(webSrc).toMatch(/SHARED_BATCH_UPLOAD_MAX/);
     // 共享值必须是个正整数，避免日后写成字符串 / NaN
     expect(Number.isInteger(sharedMax)).toBe(true);
     expect(sharedMax).toBeGreaterThan(0);

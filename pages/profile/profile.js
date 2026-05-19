@@ -172,7 +172,7 @@ Page({
     }
   },
 
-  // Q3-红线 §A.2：注销账号（不可逆，二次确认；与 H5 SettingsView 注销流程同语义）。
+  // Q3-红线 §A.2：注销账号（不可逆，二次确认；与 Treatbot Web SettingsView 注销流程同语义）。
   deleteMyAccount() {
     wx.showModal({
       title: '注销账号',

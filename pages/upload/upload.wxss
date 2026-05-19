@@ -1,5 +1,5 @@
 /** pages/upload/upload.wxss
- * Q3 视觉对齐 §E.2（Plan web-h5-cozy-gizmo V2）：
+ * Q3 视觉对齐 §E.2（Plan web-treatbot-cozy-gizmo V2）：
  *   - 配色：青绿 #1b9c85 / 琥珀 #e6a93d 全替为 var(--brand)；状态色用 *-text companion
  *   - 卡片：实白 + 1rpx solid var(--line) + 32rpx 圆角，删 glass morphism / backdrop-filter
  *   - Progress：实色 brand fill（去 3 色渐变）+ 慢速浅 shine

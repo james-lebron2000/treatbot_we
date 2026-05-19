@@ -1,11 +1,11 @@
 # Treatbot 2026 Q2 PRD — 小程序 UI 抛光冲刺
 
 > 产出时间：2026-05-05
-> 撰写依据：`docs/PRD-2026Q2.md` 闭环后，对刚合并到 main 的小程序 5 页 UI 重做（commit `97d9ab5`，Plan §web-h5-cozy-gizmo V2）做了一轮**双视角审阅**——
+> 撰写依据：`docs/PRD-2026Q2.md` 闭环后，对刚合并到 main 的小程序 5 页 UI 重做（commit `97d9ab5`，Plan §web-treatbot-cozy-gizmo V2）做了一轮**双视角审阅**——
 > - 资深产品设计师（Apple HIG / Material 3 视觉语言出身）
 > - 资深医疗 B2C 产品经理（病人侧产品 / 信任建立 / 漏斗转化）
 > 两边各自独立审阅、给意见、再相互讨论。本 PRD 是**讨论后的共识方案**。
-> 范围：**仅微信小程序**（5 个 user-facing 页 + 共享组件 + token / copy）。Web / H5 / Admin / 后端不在本轮。
+> 范围：**仅微信小程序**（5 个 user-facing 页 + 共享组件 + token / copy）。Web / Treatbot Web / Admin / 后端不在本轮。
 > 关联文档：
 > - `docs/PRD-2026Q2.md` — Q2 安全与体验 PRD
 > - `docs/PRD-2026Q3.md` — Q3 后端冲刺 PRD（明确"前端 / 小程序 / 设计另行排期"）

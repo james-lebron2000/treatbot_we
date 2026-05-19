@@ -602,7 +602,20 @@ jobs:
           mkdir -p ~/treatbot-deploy-backups
           BACKUP_ENV=~/treatbot-deploy-backups/treatbot-api.${TS}.env
           if docker inspect treatbot-api >/dev/null 2>&1; then
-            docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' > "$BACKUP_ENV"
+            docker inspect treatbot-api -f '{{range .Config.Env}}{{println .}}{{end}}' \
+              | awk -F= '{ line[NR]=$0; key[NR]=$1 } END { for (i=NR;i>=1;i--) if (!seen[key[i]]++) keep[i]=1; for (i=1;i<=NR;i++) if (keep[i]) print line[i]; }' \
+              > "$BACKUP_ENV"
+            LEGACY_WEB_PREFIX="$(printf 'H%s' 5)"
+            LEGACY_ENABLED="$(awk -F= -v k="${LEGACY_WEB_PREFIX}_LOGIN_ENABLED" '$1 == k { print substr($0, length(k) + 2) }' "$BACKUP_ENV" | tail -1)"
+            LEGACY_FIXED_CODE="$(awk -F= -v k="${LEGACY_WEB_PREFIX}_LOGIN_FIXED_CODE" '$1 == k { print substr($0, length(k) + 2) }' "$BACKUP_ENV" | tail -1)"
+            awk -F= -v p="${LEGACY_WEB_PREFIX}_LOGIN_" '$1 != p "ENABLED" && $1 != p "FIXED_CODE" { print }' "$BACKUP_ENV" > "${BACKUP_ENV}.next"
+            mv "${BACKUP_ENV}.next" "$BACKUP_ENV"
+            if ! grep -q '^TREATBOT_LOGIN_ENABLED=' "$BACKUP_ENV" && [ -n "$LEGACY_ENABLED" ]; then
+              printf 'TREATBOT_LOGIN_ENABLED=%s\n' "$LEGACY_ENABLED" >> "$BACKUP_ENV"
+            fi
+            if ! grep -q '^TREATBOT_LOGIN_FIXED_CODE=' "$BACKUP_ENV" && [ -n "$LEGACY_FIXED_CODE" ]; then
+              printf 'TREATBOT_LOGIN_FIXED_CODE=%s\n' "$LEGACY_FIXED_CODE" >> "$BACKUP_ENV"
+            fi
             chmod 600 "$BACKUP_ENV"
             echo "  ✓ Old env backed up to $BACKUP_ENV ($(wc -l < $BACKUP_ENV) vars)"
           fi

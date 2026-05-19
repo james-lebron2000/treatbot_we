@@ -10,7 +10,7 @@ const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
 // PRD-2026Q4 T0-10：转化漏斗埋点
 const funnelTracker = require('../services/funnelTracker');
-// PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/H5 各自
+// PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/Treatbot Web 各自
 // 硬编码不同步"反复事故。env BATCH_UPLOAD_MAX 仍可覆盖默认（仅服务端，便于压测/灰度）。
 const sharedUploadSchema = require('../../shared/schemas/upload.js');
 const SHARED_BATCH_UPLOAD_MAX = sharedUploadSchema.BATCH_UPLOAD_MAX;

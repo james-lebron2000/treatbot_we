@@ -86,9 +86,9 @@ POST /api/auth/refresh
 }
 ```
 
-### 1.3 H5 登录（可选能力）
+### 1.3 Treatbot Web 登录（可选能力）
 ```
-POST /api/auth/h5-login
+POST /api/auth/treatbot-login
 ```
 
 请求体：
@@ -100,8 +100,8 @@ POST /api/auth/h5-login
 ```
 
 说明：
-- 若服务端未开启 H5 登录，会返回 `501`（不再是 `404`）
-- 联调环境可通过环境变量 `H5_LOGIN_ENABLED=true` 开启
+- 若服务端未开启 Treatbot Web 登录，会返回 `501`（不再是 `404`）
+- 联调环境可通过环境变量 `TREATBOT_LOGIN_ENABLED=true` 开启
 
 ### 1.4 绑定手机号（小程序）
 

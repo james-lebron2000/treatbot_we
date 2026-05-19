@@ -14,7 +14,7 @@ const path = require('path')
 const ROOT = path.resolve(__dirname, '..')
 const dry = process.argv.includes('--dry')
 
-// 跳过的目录（H5 / 后端 / 依赖）
+// 跳过的目录（Treatbot Web / 后端 / 依赖）
 const SKIP_DIRS = new Set(['node_modules', 'web', 'server', '.git', 'dist', 'miniprogram_npm'])
 
 /** 递归找 .wxss */

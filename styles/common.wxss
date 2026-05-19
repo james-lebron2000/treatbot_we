@@ -1,6 +1,6 @@
 /** styles/common.wxss
  * 公共样式 —— upload 页 + 通用 step / preview / tips 等。
- * Q3 视觉对齐 §B.1（Plan web-h5-cozy-gizmo V2）：
+ * Q3 视觉对齐 §B.1（Plan web-treatbot-cozy-gizmo V2）：
  *   - 主色统一为 var(--brand)；删 Ant Design 青绿渐变 (#1890ff → #36cfc9)
  *   - 状态色用 *-text 深色文字 + *-soft 浅底（companion token 系统）
  *   - 卡片：实白 + 1px 细边 + 32rpx 圆角 + 默认无阴影

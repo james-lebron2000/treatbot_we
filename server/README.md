@@ -184,7 +184,7 @@ cd server
 ## 管理员导出
 
 ### 权限模型
-- 管理员 H5 后台优先走独立账号：`POST /api/admin/login` 使用 `ADMIN_LOGIN_USERNAME + ADMIN_LOGIN_KEY_HASH` 登录，返回专用 `adminToken`。
+- 管理员 Admin Web 后台优先走独立账号：`POST /api/admin/login` 使用 `ADMIN_LOGIN_USERNAME + ADMIN_LOGIN_KEY_HASH` 登录，返回专用 `adminToken`。
 - `ADMIN_LOGIN_KEY_HASH` 存 key 的 SHA-256 verifier，格式 `sha256:<hex>`，不要把明文 key 写进仓库。
 - 管理员接口仍兼容旧的 `Bearer Token + 管理员白名单`：
   - `ADMIN_USER_IDS=user_xxx,user_yyy`

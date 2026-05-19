@@ -1,4 +1,4 @@
-// PRD-2026Q2 §3.6：H5 前端腾讯行为验证码（TCaptcha）封装。
+// PRD-2026Q2 §3.6：Treatbot Web腾讯行为验证码（TCaptcha）封装。
 //
 // 设计原则：软集成。
 //  - 未配置 VITE_TENCENT_CAPTCHA_APP_ID → ensureCaptchaTicket 直接 resolve(null)，

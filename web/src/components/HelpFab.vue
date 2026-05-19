@@ -73,7 +73,7 @@ const modalText = ref('')
 const onSelect = (opt: HelpOption) => {
   open.value = false
   if (opt.actionType === 'tel') {
-    // H5 端用 tel: 协议；浏览器拦截则降级展示电话号码
+    // Treatbot Web用 tel: 协议；浏览器拦截则降级展示电话号码
     const tel = opt.actionPayload.replace(/[^0-9+\-]/g, '')
     if (tel) {
       window.location.href = `tel:${tel}`

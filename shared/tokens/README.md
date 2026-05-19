@@ -18,7 +18,7 @@ shared/tokens/
 |---|---|---|
 | Web (Vue 3) | `web/src/styles/tokens.css` | `web/src/main.ts` 在 `import './style.css'` 之前 `import './styles/tokens.css'` |
 | 微信小程序 | `styles/tokens.wxss` | `app.wxss` 顶部 `@import './styles/tokens.wxss';` |
-| Landing/Admin/Demo H5 | `server/public/landing/tokens.css` | `<link rel="stylesheet" href="/landing/tokens.css">` |
+| Landing/Admin/Demo Web | `server/public/landing/tokens.css` | `<link rel="stylesheet" href="/landing/tokens.css">` |
 
 三份文件**内容完全相同**，仅扩展名 / 路径不同；都在 `:root { ... }` 内声明 CSS 变量。
 

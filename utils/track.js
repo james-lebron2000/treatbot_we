@@ -4,7 +4,7 @@
 // （WeApp 没有这些 API），统一走 wx.request。失败一律静默——埋点不能阻断业务。
 //
 // 服务端入口在 server/routes/index.js:33 → controllers/funnel.js，匿名也接收。
-// 事件白名单与服务端 + H5 三端同款；不在白名单里的事件直接丢弃，避免脏数据。
+// 事件白名单与服务端 + Treatbot Web 三端同款；不在白名单里的事件直接丢弃，避免脏数据。
 
 const WHITELIST = new Set([
   'landing_view',

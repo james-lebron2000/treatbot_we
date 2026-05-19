@@ -3,7 +3,7 @@
  *
  * 设计原则：软集成。
  *  - 未配置 TENCENT_CAPTCHA_APP_ID / TENCENT_CAPTCHA_SECRET_KEY 时直接放行
- *    （dev 联调环境，H5 前端也不会弹滑块，见 web/src/utils/captcha.ts）
+ *    （dev 联调环境，Treatbot Web也不会弹滑块，见 web/src/utils/captcha.ts）
  *  - 配置了才真正调腾讯接口；任何失败（网络/签名/风险）都记日志后拒绝
  */
 const axios = require('axios');

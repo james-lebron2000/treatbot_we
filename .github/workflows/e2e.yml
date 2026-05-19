@@ -1,4 +1,4 @@
-# Q3-红线 §B.3：H5 e2e 回归
+# Q3-红线 §B.3：Treatbot Web e2e 回归
 # 仅跑 chromium，--with-deps 在 ubuntu 上拉浏览器系统依赖。
 name: e2e
 

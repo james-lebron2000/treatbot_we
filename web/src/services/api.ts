@@ -220,7 +220,7 @@ export const api = {
     return unwrap<any>(data)
   },
   async login(payload: { phone: string; code: string }) {
-    const { data } = await http.post<ApiResponse<{ token: string }>>('/api/auth/h5-login', payload)
+    const { data } = await http.post<ApiResponse<{ token: string }>>('/api/auth/treatbot-login', payload)
     return unwrap<{ token: string }>(data)
   },
   async uploadMedicalRecord(file: File, type: string, remark: string) {
@@ -235,7 +235,7 @@ export const api = {
     )
     return unwrap<{ fileId: string; recordId?: string }>(data)
   },
-  // Phase E.2：H5 端原生支持 multi-FormData（<input multiple>），所以这里直接命中
+  // Phase E.2：Treatbot Web原生支持 multi-FormData（<input multiple>），所以这里直接命中
   // /api/medical/upload-batch（一次最多 10 份）。返回 { total, successCount, fileIds, records[] }。
   async uploadMedicalRecordBatch(
     files: File[],

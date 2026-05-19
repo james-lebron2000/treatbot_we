@@ -152,7 +152,7 @@ pre-commit 或 CI 跑一条 grep：
 ```bash
 # 禁用词检查 —— 命中即红
 grep -rn -E "结构化|智能化|赋能|闭环|一站式|全链路|精准匹配|打通|秒级|毫秒级" \
-  web/src/ server/public/ pages/ h5/ 2>/dev/null
+  web/src/ server/public/ pages/ 2>/dev/null
 # exit 0 表示没命中（绿）；exit 1 表示命中（红）
 ```
 

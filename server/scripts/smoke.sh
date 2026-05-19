@@ -6,8 +6,8 @@ BASE_URL="${BASE_URL:-https://inseq.top}"
 FILE_PATH="${FILE_PATH:-}"
 WEAPP_CODE="${WEAPP_CODE:-}"
 TOKEN="${TOKEN:-}"
-H5_PHONE="${H5_PHONE:-}"
-H5_CODE="${H5_CODE:-000000}"
+TREATBOT_PHONE="${TREATBOT_PHONE:-}"
+TREATBOT_CODE="${TREATBOT_CODE:-000000}"
 ENABLE_TRIAL_FLOW="${ENABLE_TRIAL_FLOW:-0}"
 POLL_MAX="${POLL_MAX:-20}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
@@ -76,18 +76,18 @@ if [ -z "$TOKEN" ]; then
     else
       step_fail "POST /api/auth/weapp-login"
     fi
-  elif [ -n "$H5_PHONE" ]; then
-    h5_resp="$(curl -fsS -m 20 -X POST "$BASE_URL/api/auth/h5-login" \
+  elif [ -n "$TREATBOT_PHONE" ]; then
+    treatbot_resp="$(curl -fsS -m 20 -X POST "$BASE_URL/api/auth/treatbot-login" \
       -H 'Content-Type: application/json' \
-      -d "{\"phone\":\"$H5_PHONE\",\"code\":\"$H5_CODE\"}" || true)"
-    if [ -n "$h5_resp" ] && require_code_zero "$h5_resp"; then
-      TOKEN="$(printf '%s' "$h5_resp" | json_get "return data.data&&data.data.token")"
-      step_ok "POST /api/auth/h5-login"
+      -d "{\"phone\":\"$TREATBOT_PHONE\",\"code\":\"$TREATBOT_CODE\"}" || true)"
+    if [ -n "$treatbot_resp" ] && require_code_zero "$treatbot_resp"; then
+      TOKEN="$(printf '%s' "$treatbot_resp" | json_get "return data.data&&data.data.token")"
+      step_ok "POST /api/auth/treatbot-login"
     else
-      step_fail "POST /api/auth/h5-login"
+      step_fail "POST /api/auth/treatbot-login"
     fi
   else
-    step_warn "No TOKEN/WEAPP_CODE/H5_PHONE provided; authenticated checks are skipped"
+    step_warn "No TOKEN/WEAPP_CODE/TREATBOT_PHONE provided; authenticated checks are skipped"
   fi
 fi
 

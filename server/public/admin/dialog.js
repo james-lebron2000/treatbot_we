@@ -1,5 +1,5 @@
 /**
- * Vanilla Dialog / Toast utilities for the legacy /admin H5.
+ * Vanilla Dialog / Toast utilities for the legacy /admin Treatbot Web.
  * Visual language mirrors the Vue-side AppDialog/AppToast and Landing tokens.
  *
  * Public API (exposed on window.AdminUI):

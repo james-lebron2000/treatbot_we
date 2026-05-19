@@ -469,7 +469,7 @@ const extractApplicationList = (payload) => {
 
 // Q3-红线 §A.1：双 token 续签 single-flight。多个并发请求同时撞 401 时，只
 // 让第一个发起 /api/auth/refresh，其它共享同一个 Promise，避免 refreshToken
-// 被 Redis (single-use) 端连续消费导致全员登出。H5 web/src/utils/api.ts 同语义。
+// 被 Redis (single-use) 端连续消费导致全员登出。Treatbot Web/src/utils/api.ts 同语义。
 let refreshing = null
 
 const clearAuth = () => {
@@ -705,7 +705,7 @@ const login = async (code) => {
 
 const loginWithTestAccount = async (params = {}) => {
   return request({
-    url: '/api/auth/h5-login',
+    url: '/api/auth/treatbot-login',
     method: 'POST',
     data: {
       phone: safeText(params.phone || '13800138000'),
@@ -739,7 +739,7 @@ const getProfile = async () => {
 // ==================== Q3-红线 §A.2：用户合规自助 API ====================
 // 后端在 server/routes/index.js:49-53 已就绪；小程序此前没有调用方，所以
 // 用户在 WeApp 端无法行使「同意管理 / 数据导出 / 注销」三项权益。
-// 这里照 H5 web/src/api/me.ts 的命名复刻，便于以后做 codegen 共享。
+// 这里照 Treatbot Web/src/api/me.ts 的命名复刻，便于以后做 codegen 共享。
 
 const getMyConsent = () =>
   request({ url: '/api/me/consent', method: 'GET' })
@@ -1281,7 +1281,7 @@ const buildApplyIdempotencyKey = (payload = {}) => {
   if (isPresent(payload.idempotencyKey)) {
     return safeText(payload.idempotencyKey).slice(0, 64)
   }
-  // PRD-2026Q2 §2.5：与 H5 对齐 —— 仅用 trialId 作幂等作用域，
+  // PRD-2026Q2 §2.5：与 Treatbot Web 对齐 —— 仅用 trialId 作幂等作用域，
   // 后端已按 userId+route 包一层；带 recordIds/phone 会让同一人刷单。
   const source = `apply_${safeText(payload.trialId)}`
   return source.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || `apply_${Date.now()}`

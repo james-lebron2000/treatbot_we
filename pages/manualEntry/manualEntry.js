@@ -1,4 +1,4 @@
-// PRD-2026Q2 §3.7：小程序手动录入页（H5 MatchesView 的 manualEntry 入口对等），
+// PRD-2026Q2 §3.7：小程序手动录入页（Treatbot Web MatchesView 的 manualEntry 入口对等），
 // 用来当用户没有报告 / 不想上传时，直接把诊断/分期/基因/年龄录入后进入匹配。
 // U4：为 0 医学基础病人加「？」白话解释 + 「我不知道，先跳过」逃生口。
 const api = require('../../utils/api')
