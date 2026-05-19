@@ -348,10 +348,12 @@ jobs:
 
         SSH_OPTS=(
           -i ~/.ssh/deploy_key
+          -o BatchMode=yes
           -o StrictHostKeyChecking=accept-new
           -o ConnectTimeout=20
           -o ServerAliveInterval=15
           -o ServerAliveCountMax=4
+          -o LogLevel=ERROR
         )
 
         cp web-dist.tar.gz release-upload/web-dist.tar.gz
@@ -365,11 +367,9 @@ jobs:
         ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
           'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/treatbot-upload/deploy /tmp/deploy'
 
-        echo "Uploading release control files..."
-        scp "${SSH_OPTS[@]}" release-upload/web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/web-dist.tar.gz"
-        scp "${SSH_OPTS[@]}" release-upload/server-src.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/server-src.tar.gz"
-        scp "${SSH_OPTS[@]}" release-upload/deploy/Caddyfile "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/Caddyfile"
-        scp "${SSH_OPTS[@]}" release-upload/deploy/nginx-patch.conf "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-upload/deploy/nginx-patch.conf"
+        echo "Uploading release control files via tar-over-ssh..."
+        tar -czf - -C release-upload . | ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
+          'tar -xzf - -C /tmp/treatbot-upload'
 
         echo "Promoting release control files on server..."
         ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" <<'REMOTE'
@@ -426,7 +426,7 @@ jobs:
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
           # 把整段 SSH 脚本的 stdout/stderr 同时落盘到 /tmp/treatbot-discovery.txt
-          # 下一个 workflow 步骤会 scp 回 runner 并 commit 进 docs/deploy-state-server-dump.md
+          # 下一个 workflow 步骤会通过 ssh cat 拉回 runner 并 commit 进 docs/deploy-state-server-dump.md
           # 这样 autonomous routine 只需 `git pull` 就能读到最新服务器状态，不需要 gh CLI
           exec > >(tee /tmp/treatbot-discovery.txt) 2>&1
           echo "===== Deploy $TS — SHA=$SHA ====="
@@ -1017,12 +1017,23 @@ jobs:
         chmod 600 ~/.ssh/deploy_key
         ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-        if scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-             "$SERVER_USER@$SERVER_HOST:/tmp/treatbot-discovery.txt" \
-             ./server-dump/treatbot-discovery.txt; then
+        SSH_OPTS=(
+          -i ~/.ssh/deploy_key
+          -o BatchMode=yes
+          -o StrictHostKeyChecking=accept-new
+          -o ConnectTimeout=20
+          -o ServerAliveInterval=15
+          -o ServerAliveCountMax=4
+          -o LogLevel=ERROR
+        )
+
+        if ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
+             'cat /tmp/treatbot-discovery.txt' \
+             > ./server-dump/treatbot-discovery.txt; then
           echo "  ✓ fetched $(wc -l < server-dump/treatbot-discovery.txt) lines"
         else
-          echo "  ⚠ scp failed — no state file to commit"
+          rm -f ./server-dump/treatbot-discovery.txt
+          echo "  ⚠ fetch failed — no state file to commit"
         fi
 
         # 清理临时 key（GH runner 每次 job 会销毁 VM，保险起见）

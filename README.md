@@ -156,7 +156,7 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 2. `slow`：用 GitHub service container 启动 MySQL 8 + Redis 7，创建隔离 schema，跑集成测试；失败会告警，但不阻塞部署。
 3. `build-api`：在 GitHub runner 构建 API 镜像并推送 GHCR，作为生产服务器拉取的标准镜像来源。
 4. `build-web`：构建 H5 `web/dist`，作为 `web-dist` artifact。
-5. `deploy`：通过 SSH 上传 `web-dist.tar.gz`、`server-src.tar.gz` 和反代配置到服务器；服务器会先尝试 `docker pull` GHCR 镜像，但只作为机会性快路径，8 分钟无结果就改用 `server-src.tar.gz` 本地 `docker build`。本地 build 会给 Dockerfile 传腾讯云 apt/pip 镜像源，避免生产服务器出境访问 PyPI 下载 `markitdown[pdf]` 依赖时超时。不要把 API 镜像 tarball 作为默认上传路径，2026-05-15 实测 230-262MB 跨境 SCP 会超过 75 分钟。
+5. `deploy`：通过 tar-over-ssh 上传 `web-dist.tar.gz`、`server-src.tar.gz` 和反代配置到服务器；不再用 `scp` 传这些控制文件，避免 GitHub runner 到服务器的 SFTP/SCP 传输偶发挂住。服务器会先尝试 `docker pull` GHCR 镜像，但只作为机会性快路径，8 分钟无结果就改用 `server-src.tar.gz` 本地 `docker build`。本地 build 会给 Dockerfile 传腾讯云 apt/pip 镜像源，避免生产服务器出境访问 PyPI 下载 `markitdown[pdf]` 依赖时超时。不要把 API 镜像 tarball 作为默认上传路径，2026-05-15 实测 230-262MB 跨境 SCP 会超过 75 分钟。
 6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 H5、执行 smoke。
 7. 后端发布成功标准不是 `/health` 返回 200，而是新容器实际运行 `treatbot-api:${GITHUB_SHA}`。部署脚本会在容器启动后校验 `docker inspect treatbot-api -f '{{.Config.Image}}'`，如果 GHCR pull、本地 build 和 tarball 都不可用，会直接失败，不再保留旧容器后把 workflow 标成成功。
 8. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
