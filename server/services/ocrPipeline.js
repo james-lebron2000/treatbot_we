@@ -49,6 +49,29 @@ const OCR_STRUCTURED_STREAM_TIMEOUT_MS = Math.max(
   10000,
   readPositiveIntEnv('OCR_STRUCTURED_STREAM_TIMEOUT_MS', 45000)
 )
+// Wave 2 §F4：跳过二次 LLM 抽取的"快路径"。
+// 视觉 LLM 调用本身已经走 chatJson(OcrExtractionSchema)，返回的 entities 已经是 schema 形状；
+// 二次 streamChatJson 主要是为了"逐组 field_group emit"的 UX。如果首次结果已经包含
+// 关键字段（diagnosis / stage / geneMutation / treatment 任一非空），就直接 fake-stream
+// entities 作为 field_group 事件，省一次 20–45s 的 LLM 调用。
+// 默认 ON：实测视觉 entities 命中率高（同一个 prompt 体系）。
+// 出问题可设 OCR_SKIP_SECOND_LLM=0 退回原行为。
+const OCR_SKIP_SECOND_LLM = (process.env.OCR_SKIP_SECOND_LLM || '1') !== '0'
+
+// 判断 entities 是否「足够好」可以跳过二次 LLM：至少一个核心字段非空。
+// 与 server/services/queue.js hasMeaningfulOcrResult 同口径。
+const entitiesAreComplete = (entities = {}, rawText = '') => {
+  if (!entities || typeof entities !== 'object') return false
+  const text = `${rawText || ''}`.trim()
+  if (!text) return false
+  const has = (v) => v !== null && v !== undefined && `${v}`.trim() !== ''
+  return Boolean(
+    has(entities.diagnosis) ||
+    has(entities.stage) ||
+    has(entities.geneMutation) ||
+    has(entities.treatment)
+  )
+}
 
 /**
  * 把 ocr.js 已抽到的 entities 形状归一为 OcrExtractionSchema 接受的形状（部分别名兼容）。
@@ -139,6 +162,42 @@ const runStreamingPipeline = async ({ source, emit }) => {
 
   // 3) ocr_text 阶段事件——把识别到的全文丢给前端先展示
   await safeEmit(composeEvent(null, STAGE.OCR_TEXT, { rawText }))
+
+  // Wave 2 §F4：快路径 —— 视觉 LLM 已经返回了 schema 形状的 entities，
+  // 如果核心字段已经齐了就 fake-stream 出去，跳过二次 streamChatJson（省 20–45s）。
+  // 失败/缺字段时继续走下方完整的 streamChatJson 路径。
+  //
+  // 设计说明：不做 OcrExtractionSchema.safeParse —— schema 里有 molecular/organoidDrugSensitivity
+  // 这类必填 object 字段，但 ocr.js 的 entities 用 null 表达缺失；safeParse 会失败但下游消费方
+  // （queue.js / parseTask）只读核心字段，并不真的需要严格 schema。沿用现有 fallback 兜底路径的
+  // 「写啥读啥」契约即可。`entitiesAreComplete` 已经保证至少一个核心字段非空。
+  if (OCR_SKIP_SECOND_LLM && entitiesAreComplete(ocrResult.entities, rawText)) {
+    const fastShape = entitiesToSchemaShape(ocrResult.entities || {}, rawText)
+    logger.info('ocrPipeline 快路径：视觉 entities 已完整，跳过二次 LLM', { provider })
+    // 按组 emit field_group，节奏 ~80ms 一组，模拟流式 UX
+    for (const groupName of RENDERABLE_GROUPS) {
+      const group = GROUPS[groupName]
+      const slice = {}
+      for (const k of group.keys) slice[k] = fastShape[k]
+      // eslint-disable-next-line no-await-in-loop
+      await safeEmit(composeEvent(null, STAGE.FIELD_GROUP, {
+        fieldGroup: groupName,
+        fields: slice,
+        progress: group.progress
+      }))
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 80))
+    }
+    return {
+      entities: fastShape,
+      text: rawText,
+      provider,
+      confidence: typeof fastShape.confidence === 'number' ? fastShape.confidence : 0.5,
+      detections: ocrResult.detections || null,
+      pageCount: ocrResult.pageCount || null,
+      schemaValidated: fastShape
+    }
+  }
 
   // 4) 流式结构化抽取
   const promptVars = { scrubbedText: '__INLINE__' }   // 我们手动注入文本，绕开 promptRegistry 的占位

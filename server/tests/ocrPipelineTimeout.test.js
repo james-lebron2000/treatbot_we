@@ -1,3 +1,7 @@
+// Wave 2 §F4：快路径默认 ON 会让本测试的 mockProcessImage 命中 fast path、
+// 完全绕过 streamChatJson。本测试断言的是 fallback 链路本身，必须在 require 之前关闭 fast path。
+process.env.OCR_SKIP_SECOND_LLM = '0';
+
 const mockProcessMedicalImage = jest.fn();
 const mockStreamChatJson = jest.fn();
 
