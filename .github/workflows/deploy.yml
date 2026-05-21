@@ -329,11 +329,11 @@ jobs:
         git archive --format=tar HEAD server shared .dockerignore | gzip -9 > server-src.tar.gz
         ls -lh server-src.tar.gz
 
-    # 只上传小文件。API 镜像走服务器 GHCR pull。
+    # 只上传小文件。API 镜像先走服务器 GHCR pull；若 GHCR 不稳定，
+    # 服务器会用 GITHUB_TOKEN 从 GitHub API 下载源码 tarball 并本机构建。
     # 2026-05-15 实测 230-262MB API tarball 跨境 SCP 75m 仍超时，不能作为主链路。
     # 2026-05-22 再次实测 GitHub runner -> 腾讯云 SSH 吞吐很低：4.1MB server-src 也会超 180s。
-    # 因此默认不再上传 server-src 本地构建兜底；GHCR 拉取失败时部署应显式失败，
-    # 避免“上传兜底包”本身拖垮主链路。
+    # 因此默认不再从 runner 上传 server-src 兜底包，避免“上传兜底包”本身拖垮主链路。
     - name: Upload release control files to server
       timeout-minutes: 15
       env:
@@ -395,6 +395,7 @@ jobs:
         GHCR_IMAGE: ghcr.io/james-lebron2000/treatbot-api:${{ github.sha }}
         GHCR_USER: ${{ github.actor }}
         GHCR_TOKEN: ${{ github.token }}
+        REPO_NAME: ${{ github.repository }}
         # OCR / LLM provider 凭证从 GitHub Secrets 注入容器（替代手动 ssh 改 .env）。
         # 命中策略：docker run 同时使用 --env-file 和 -e 时，-e last-wins 覆盖 file 中同名 KEY；
         # secret 留空则跳过对应 -e 行，旧容器值得以保留 —— 与原行为兼容。
@@ -424,8 +425,8 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_JOB_TIMEOUT_MS,OCR_STRUCTURED_STREAM_TIMEOUT_MS,PARSE_STATUS_RATE_LIMIT_MAX,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
-        command_timeout: 65m  # opportunistic GHCR pull (≤8m) + local build fallback (≤45m) + restart cushion
+        envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,REPO_NAME,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_JOB_TIMEOUT_MS,OCR_STRUCTURED_STREAM_TIMEOUT_MS,PARSE_STATUS_RATE_LIMIT_MAX,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
+        command_timeout: 65m  # opportunistic GHCR pull (≤4m) + local build fallback (≤45m) + restart cushion
         script: |
           set -e
           TS=$(date +%Y%m%d-%H%M%S)
@@ -511,7 +512,7 @@ jobs:
               echo "  Pulling image from GHCR: $GHCR_IMAGE"
               if echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null 2>&1; then
                 if command -v timeout >/dev/null 2>&1; then
-                  timeout 8m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
+                  timeout 4m docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
                 else
                   docker pull "$GHCR_IMAGE" && IMAGE_READY=1 || IMAGE_READY=0
                 fi
@@ -546,6 +547,28 @@ jobs:
 
           SOURCE_TARBALL=/tmp/server-src.tar.gz
           BUILD_DIR=/tmp/treatbot-server-build.${TS}
+          if [ "$IMAGE_READY" != "1" ] && [ ! -f "$SOURCE_TARBALL" ] && [ -n "${REPO_NAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+            echo "  Downloading source tarball from GitHub API for local build fallback"
+            SOURCE_URL="https://api.github.com/repos/${REPO_NAME}/tarball/${SHA}"
+            if command -v timeout >/dev/null 2>&1; then
+              timeout 10m curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 20 \
+                -H "Authorization: Bearer ${GHCR_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -o "$SOURCE_TARBALL" \
+                "$SOURCE_URL" || rm -f "$SOURCE_TARBALL"
+            else
+              curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 20 \
+                -H "Authorization: Bearer ${GHCR_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -o "$SOURCE_TARBALL" \
+                "$SOURCE_URL" || rm -f "$SOURCE_TARBALL"
+            fi
+            if [ -f "$SOURCE_TARBALL" ]; then
+              echo "  ✓ Source tarball downloaded ($(du -h "$SOURCE_TARBALL" | cut -f1))"
+            else
+              echo "  ⚠ GitHub source tarball download failed; no local build fallback available"
+            fi
+          fi
           if [ "$IMAGE_READY" != "1" ] && [ -f "$SOURCE_TARBALL" ]; then
             echo "  Building image locally from source tarball: $SOURCE_TARBALL"
             LOCAL_BUILD_ARGS=(
@@ -557,7 +580,12 @@ jobs:
             )
             rm -rf "$BUILD_DIR"
             mkdir -p "$BUILD_DIR"
-            tar -xzf "$SOURCE_TARBALL" -C "$BUILD_DIR"
+            FIRST_ENTRY=$(tar -tzf "$SOURCE_TARBALL" | head -1 || true)
+            if echo "$FIRST_ENTRY" | grep -q '/$'; then
+              tar -xzf "$SOURCE_TARBALL" --strip-components=1 -C "$BUILD_DIR"
+            else
+              tar -xzf "$SOURCE_TARBALL" -C "$BUILD_DIR"
+            fi
             rm -f "$SOURCE_TARBALL"
             if [ ! -f "$BUILD_DIR/server/Dockerfile" ]; then
               echo "  ⚠ source tarball extracted but server/Dockerfile is missing; falling back"
