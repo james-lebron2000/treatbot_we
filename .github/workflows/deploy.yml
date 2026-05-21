@@ -365,23 +365,27 @@ jobs:
         echo "Server source tarball: $(du -h server-src.tar.gz | cut -f1)"
 
         ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
-          'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/treatbot-upload/deploy /tmp/deploy'
+          'rm -rf /tmp/treatbot-upload /tmp/deploy && mkdir -p /tmp/deploy'
 
-        echo "Uploading release control files via tar-over-ssh..."
-        tar -czf - -C release-upload . | ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
-          'tar -xzf - -C /tmp/treatbot-upload'
+        upload_file() {
+          local src="$1"
+          local dest="$2"
+          local mode="${3:-0644}"
+          echo "Uploading $src -> $dest"
+          if command -v timeout >/dev/null 2>&1; then
+            timeout 180s ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
+              "cat > '${dest}.tmp' && chmod '$mode' '${dest}.tmp' && mv '${dest}.tmp' '$dest'" < "$src"
+          else
+            ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" \
+              "cat > '${dest}.tmp' && chmod '$mode' '${dest}.tmp' && mv '${dest}.tmp' '$dest'" < "$src"
+          fi
+          ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" "ls -lh '$dest'"
+        }
 
-        echo "Promoting release control files on server..."
-        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" <<'REMOTE'
-        set -euo pipefail
-        cd /tmp/treatbot-upload
-        mv web-dist.tar.gz /tmp/web-dist.tar.gz
-        mv server-src.tar.gz /tmp/server-src.tar.gz
-        mv deploy/Caddyfile /tmp/deploy/Caddyfile
-        mv deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
-        rm -rf /tmp/treatbot-upload
-        ls -lh /tmp/web-dist.tar.gz /tmp/server-src.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
-        REMOTE
+        upload_file release-upload/web-dist.tar.gz /tmp/web-dist.tar.gz
+        upload_file release-upload/server-src.tar.gz /tmp/server-src.tar.gz
+        upload_file release-upload/deploy/Caddyfile /tmp/deploy/Caddyfile
+        upload_file release-upload/deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
 
     # ---- Step 2: SSH 进服务器执行替换 ----
     - name: Deploy backend container + promote web + patch nginx
