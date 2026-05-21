@@ -63,11 +63,27 @@ jobs:
       - name: Run miniapp contract tests
         run: npx jest --config jest.miniapp.config.js --runInBand
 
+      - name: Check WeApp upload secrets
+        id: weapp_secrets
+        run: |
+          if [ -n "$WEAPP_UPLOAD_PRIVATE_KEY" ]; then
+            echo "should_upload=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_upload=0" >> "$GITHUB_OUTPUT"
+          echo "::warning::WEAPP_UPLOAD_PRIVATE_KEY is not configured; skipping automatic WeApp upload."
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::error::Manual WeApp upload requires WEAPP_UPLOAD_PRIVATE_KEY."
+            exit 1
+          fi
+
       - name: Upload or preview WeApp
+        if: steps.weapp_secrets.outputs.should_upload == '1'
         run: node scripts/upload-weapp-ci.js --mode "$WEAPP_UPLOAD_MODE"
 
       - name: Upload preview QR
-        if: ${{ github.event.inputs.mode == 'preview' }}
+        if: ${{ steps.weapp_secrets.outputs.should_upload == '1' && github.event.inputs.mode == 'preview' }}
         uses: actions/upload-artifact@v4
         with:
           name: weapp-preview-qrcode
