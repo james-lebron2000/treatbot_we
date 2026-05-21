@@ -108,12 +108,18 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
 
   if (status === 'completed') {
     const r = payload.result || {}
-    // 把 main 的扁平字段重新包成 UploadView 期望的 { entities, text, provider, confidence }。
-    // 注意：main 的 result.rawText 是截断到 500 字的 preview，不能当全量 text 用；
-    // 但 UploadView 的 normalizeRecord 仅用 entities 的字段，text 仅做兜底显示，所以这里截断版本就够了。
-    const entities: Record<string, unknown> = {}
-    for (const k of ['diagnosis', 'stage', 'geneMutation', 'treatment', 'treatmentLine', 'pdl1', 'ecog']) {
-      if (r[k] !== undefined && r[k] !== null) entities[k] = r[k]
+    // 新契约优先读 result.entities；旧契约仍兼容扁平 result。
+    // 不再只挑 7 个字段，否则 age/pathologyType/lab/imaging 等富字段会在 Web 端丢失。
+    const entities: Record<string, unknown> = (r.entities && typeof r.entities === 'object' && !Array.isArray(r.entities))
+      ? { ...(r.entities as Record<string, unknown>) }
+      : {}
+    for (const [key, value] of Object.entries(r)) {
+      if (['id', 'recordId', 'entities', 'schemaVersion', 'promptVersion', 'confidence', 'rawText', 'source', 'providerMeta'].includes(key)) {
+        continue
+      }
+      if (value !== undefined && value !== null && value !== '') {
+        entities[key] = value
+      }
     }
     return {
       recordId,
@@ -123,7 +129,11 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       result: {
         entities,
         text: typeof r.rawText === 'string' ? r.rawText : '',
-        provider: typeof r.provider === 'string' ? r.provider : 'unknown',
+        provider: typeof r.provider === 'string'
+          ? r.provider
+          : (r.providerMeta && typeof r.providerMeta === 'object' && typeof (r.providerMeta as Record<string, unknown>).provider === 'string'
+              ? String((r.providerMeta as Record<string, unknown>).provider)
+              : 'unknown'),
         confidence: typeof r.confidence === 'number' ? r.confidence : 0.5
       }
     }

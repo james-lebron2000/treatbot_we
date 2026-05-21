@@ -62,6 +62,46 @@ export const FIELD_SCHEMAS: FieldSchema[] = [
   }
 ]
 
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+)
+
+const isBlank = (value: unknown) => {
+  if (value === 0 || value === '0' || value === false) return false
+  if (Array.isArray(value)) return value.length === 0
+  return value === null || value === undefined || value === ''
+}
+
+const mergeNonBlank = (...sources: unknown[]) => {
+  const out: Record<string, unknown> = {}
+  sources.forEach((source) => {
+    if (!isObject(source)) return
+    Object.entries(source).forEach(([key, value]) => {
+      if (!isBlank(value)) out[key] = value
+    })
+  })
+  return out
+}
+
+export const unwrapStructuredSource = (raw: Record<string, unknown> | null | undefined) => {
+  const source = isObject(raw) ? raw : {}
+  const result = isObject(source.result) ? source.result : {}
+  const structured = isObject(source.structured) ? source.structured : {}
+  const structuredPayload = isObject(source.structuredPayload) ? source.structuredPayload : {}
+  const nested = mergeNonBlank(
+    source.entities,
+    structured.entities,
+    structuredPayload.entities,
+    result.entities,
+    result
+  )
+  const flat = mergeNonBlank(source)
+  for (const key of ['entities', 'structured', 'structuredPayload', 'result']) {
+    delete flat[key]
+  }
+  return { ...nested, ...flat }
+}
+
 const pick = (raw: Record<string, unknown>, aliases: string[]) => {
   for (const key of aliases) {
     const value = raw[key]
@@ -73,11 +113,12 @@ const pick = (raw: Record<string, unknown>, aliases: string[]) => {
 }
 
 export const normalizeRecord = (raw: Record<string, unknown>) => {
+  const source = unwrapStructuredSource(raw)
   const normalized: Record<string, unknown> = {}
   FIELD_SCHEMAS.forEach((field) => {
-    normalized[field.key] = pick(raw, field.aliases)
+    normalized[field.key] = pick(source, field.aliases)
   })
-  normalized.id = raw.id || raw.recordId || raw.fileId || ''
+  normalized.id = source.id || source.recordId || source.fileId || ''
   return normalized
 }
 

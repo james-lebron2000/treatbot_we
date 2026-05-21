@@ -197,8 +197,12 @@ describe('Phase 1.3 buildParseStatusEntry 透传 statusPhase', () => {
     expect(entry.result.pathologyType).toBe('腺癌');
     expect(entry.result.labValues.ALT.value).toBe(35);
     expect(entry.result.treatmentHistory[0].name).toBe('奥希替尼');
+    expect(entry.result.entities.age).toBe(65);
+    expect(entry.result.entities.labValues.ALT.value).toBe(35);
+    expect(entry.result.schemaVersion).toBe('medical-record.v1');
     expect(entry.result.confidence).toBe(0.82);
     expect(entry.result.rawText).toBe('这是一段原始识别文本');
+    expect(entry.structured.entities.age).toBe(65);
   });
 });
 
@@ -253,6 +257,8 @@ describe('parse-status-batch result shape', () => {
     expect(result.geneMutation).toBe('EGFR L858R');
     expect(result.age).toBe(61);
     expect(result.pathologyType).toBe('腺癌');
+    expect(result.entities.age).toBe(61);
+    expect(result.entities.pathologyType).toBe('腺癌');
     expect(result.molecular.drivers[0].gene).toBe('EGFR');
     expect(result.imaging[0].modality).toBe('CT');
     expect(result.confidence).toBe(0.91);

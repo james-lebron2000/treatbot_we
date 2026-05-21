@@ -21,7 +21,7 @@
 | 端 | 入口 | 状态 |
 |---|---|---|
 | Treatbot Web | `https://your-domain/treatbot/` | 已部署 |
-| 微信小程序 | 微信扫码 | 已部署 |
+| 微信小程序 | 微信扫码 | 体验版可自动上传，正式版需微信审核发布 |
 | 管理后台 | `/api/admin/*` | API 可用 |
 
 ---
@@ -214,6 +214,7 @@ TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
 | `KIMI_API_KEY` | Moonshot Kimi 密钥 — OCR fallback |
 | `COS_SECRET_ID` / `COS_SECRET_KEY` | 腾讯云 COS（病历存储） |
 | `WEAPP_APPID` / `WEAPP_SECRET` | 微信小程序登录凭证 |
+| `WEAPP_UPLOAD_PRIVATE_KEY` | 小程序 CI 上传私钥，用于上传体验版 / 预览二维码 |
 | `JWT_SECRET` | JWT 签名密钥（≥32 字符强随机） |
 | `DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` | MySQL 凭证 |
 
@@ -279,6 +280,55 @@ npm run build        # 构建到 dist/，部署到 nginx /treatbot/
 cli preview --project $(pwd) --qr-output qr.txt
 cli auto --project $(pwd)        # 自动化测试入口
 ```
+
+### 小程序体验版上传
+
+后端和 Treatbot Web 由 `.github/workflows/deploy.yml` 部署；微信小程序是另一条发布链路，代码进 `main` 后还需要上传体验版，正式版仍需在微信公众平台提交审核并发布。
+
+自动上传入口：
+
+```bash
+# GitHub Actions: Upload WeApp Experience
+# 自动触发：main 上小程序相关路径变更
+# 手动触发：Actions → Upload WeApp Experience → Run workflow
+```
+
+必需 GitHub Secret：
+
+| Secret | 说明 |
+|---|---|
+| `WEAPP_APPID` | 小程序 AppID；默认也可读 `project.config.json` |
+| `WEAPP_UPLOAD_PRIVATE_KEY` | 微信公众平台「开发管理 → 开发设置 → 小程序代码上传密钥」下载的私钥内容 |
+
+本地上传 / 预览：
+
+```bash
+npm install --no-save miniprogram-ci@2.1.31
+WEAPP_UPLOAD_PRIVATE_KEY="$(cat private.key)" \
+  node scripts/upload-weapp-ci.js --mode upload --version 2026.05.22-1 --desc "OCR card fix"
+
+WEAPP_UPLOAD_PRIVATE_KEY="$(cat private.key)" \
+  node scripts/upload-weapp-ci.js --mode preview --qr weapp-preview.jpg
+```
+
+上传体验版后，用真机走一遍：登录 → 上传单图 → 上传多图 → OCR 完成 → Step 3 病历卡片显示 → 历史病历详情可读档。体验版通过后再提交审核 / 发布正式版。
+
+### 用户闭环验收
+
+生产端最小闭环脚本：
+
+```bash
+TREATBOT_PHONE=13800138000 \
+FILE_PATHS=server/public/demo/sample-2-nsclc.jpg \
+  scripts/verify-user-loop.sh
+
+# 多图 / 长图等样例可以用逗号分隔
+TREATBOT_PHONE=13800138000 \
+FILE_PATHS=server/public/demo/sample-1-hcc.jpg,server/public/demo/sample-2-nsclc.jpg \
+  scripts/verify-user-loop.sh
+```
+
+脚本会检查：`/health`、未登录 SSE 401、登录、`upload-sts`、批量上传、`parse-status-batch` 终态、`result.entities` 完整结构、`records/:id` 读档和匹配接口。
 
 ---
 

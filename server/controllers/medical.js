@@ -8,6 +8,7 @@ const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
 const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+const metrics = require('../middleware/metrics');
 // PRD-2026Q4 T0-10：转化漏斗埋点
 const funnelTracker = require('../services/funnelTracker');
 // PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/Treatbot Web 各自
@@ -173,6 +174,65 @@ const firstNonEmpty = (...values) => {
     return value;
   }
   return null;
+};
+
+const observeParseState = (entry, source) => {
+  try {
+    if (!entry || !metrics.ocrParseStateTotal) return;
+    metrics.ocrParseStateTotal
+      .labels(source || 'unknown', entry.status || 'unknown', entry.result ? '1' : '0')
+      .inc();
+  } catch (_e) {
+    // metrics must never affect the API path
+  }
+};
+
+const buildStructuredResult = (record) => {
+  const structured = normalizeStructured(record.structured);
+  const entities = normalizeEntities(structured.entities);
+  const rawText = firstNonEmpty(structured.text, entities.rawText);
+  const confidence = firstNonEmpty(structured.confidence, entities.confidence, 0.9);
+  const normalizedConfidence = typeof confidence === 'number'
+    ? confidence
+    : Number(confidence) || 0.9;
+  const resultEntities = {
+    ...entities,
+    diagnosis: firstNonEmpty(entities.diagnosis, record.diagnosis),
+    stage: firstNonEmpty(entities.stage, record.stage),
+    geneMutation: firstNonEmpty(entities.geneMutation, entities.gene_mutation, record.gene_mutation),
+    treatment: firstNonEmpty(entities.treatment, record.treatment),
+    treatmentLine: firstNonEmpty(entities.treatmentLine, record.treatment_line),
+    pdl1: firstNonEmpty(entities.pdl1, record.pdl1)
+  };
+  const source = normalizeStructured(structured.source);
+  const providerMeta = normalizeStructured(structured.providerMeta || structured.provider_meta || structured.ocrMeta);
+  const schemaVersion = firstNonEmpty(
+    structured.schemaVersion,
+    structured.schema_version,
+    entities.schemaVersion,
+    'medical-record.v1'
+  );
+  const promptVersion = firstNonEmpty(
+    structured.promptVersion,
+    structured.prompt_version,
+    entities.promptVersion,
+    entities.prompt_version,
+    null
+  );
+  const payload = {
+    ...resultEntities,
+    id: record.id,
+    recordId: record.id,
+    schemaVersion,
+    promptVersion,
+    entities: resultEntities,
+    confidence: normalizedConfidence,
+    rawText: typeof rawText === 'string' ? rawText.substring(0, 500) : rawText,
+    source,
+    providerMeta,
+    updatedAt: record.updated_at
+  };
+  return payload;
 };
 
 /**
@@ -908,22 +968,16 @@ const buildParseStatusEntry = (record) => {
     updatedAt: record.updated_at
   };
   if (record.status === 'completed' && record.structured) {
-    const structured = normalizeStructured(record.structured);
-    const entities = normalizeEntities(structured.entities);
-    const rawText = firstNonEmpty(structured.text, entities.rawText);
-    const confidence = firstNonEmpty(structured.confidence, entities.confidence, 0.9);
-    entry.result = {
-      ...entities,
-      id: record.id,
-      recordId: record.id,
-      diagnosis: firstNonEmpty(entities.diagnosis, record.diagnosis),
-      stage: firstNonEmpty(entities.stage, record.stage),
-      geneMutation: firstNonEmpty(entities.geneMutation, entities.gene_mutation, record.gene_mutation),
-      treatment: firstNonEmpty(entities.treatment, record.treatment),
-      treatmentLine: firstNonEmpty(entities.treatmentLine, record.treatment_line),
-      pdl1: firstNonEmpty(entities.pdl1, record.pdl1),
-      confidence: typeof confidence === 'number' ? confidence : Number(confidence) || 0.9,
-      rawText: typeof rawText === 'string' ? rawText.substring(0, 500) : rawText
+    entry.result = buildStructuredResult(record);
+    entry.structured = {
+      ...entry.result.entities,
+      schemaVersion: entry.result.schemaVersion,
+      promptVersion: entry.result.promptVersion,
+      entities: entry.result.entities,
+      confidence: entry.result.confidence,
+      source: entry.result.source,
+      providerMeta: entry.result.providerMeta,
+      updatedAt: entry.result.updatedAt
     };
   }
   if (record.status === 'error' && record.structured?.error) {
@@ -952,7 +1006,9 @@ const getParseStatus = async (req, res, next) => {
       return res.status(404).json({ code: 404, message: '记录不存在', data: null });
     }
 
-    res.json(success(buildParseStatusEntry(record)));
+    const entry = buildParseStatusEntry(record);
+    observeParseState(entry, 'poll');
+    res.json(success(entry));
   } catch (err) {
     next(err);
   }
@@ -1005,6 +1061,7 @@ const getParseStatusBatch = async (req, res, next) => {
       }
       return buildParseStatusEntry(r);
     });
+    entries.forEach((entry) => observeParseState(entry, 'batch'));
 
     const TERMINAL = new Set(['completed', 'error', 'not_found']);
     const done = entries.every((e) => TERMINAL.has(e.status));
@@ -1114,6 +1171,10 @@ const getRecordDetail = async (req, res, next) => {
       logger.warn('获取图片URL失败:', { recordId: id, error: e.message });
     }
 
+    const result = record.status === 'completed' && record.structured
+      ? buildStructuredResult(record)
+      : null;
+
     res.json(success({
       id: record.id,
       type: record.type,
@@ -1124,7 +1185,19 @@ const getRecordDetail = async (req, res, next) => {
       status: record.status,
       uploadTime: record.created_at,
       images,
-      structured: record.structured?.entities || {}
+      result,
+      structured: result
+        ? {
+            ...result.entities,
+            schemaVersion: result.schemaVersion,
+            promptVersion: result.promptVersion,
+            entities: result.entities,
+            confidence: result.confidence,
+            source: result.source,
+            providerMeta: result.providerMeta,
+            updatedAt: result.updatedAt
+          }
+        : { entities: normalizeEntities(record.structured?.entities) }
     }));
 
   } catch (err) {
@@ -1561,6 +1634,7 @@ const handleParseStatusStream = async (req, res, next) => {
     let allTerminal = true;
     for (const r of records) {
       const entry = buildParseStatusEntry(r);
+      observeParseState(entry, 'stream_initial');
       writeFrame('state', entry);
       if (!TERMINAL.has(entry.status)) allTerminal = false;
     }
@@ -1669,6 +1743,7 @@ module.exports = {
   // Plan §Phase 1.3 测试钩子（仅供 tests/medicalParseStatus.test.js 直查纯函数）
   __mapParseStatus: mapParseStatus,
   __buildParseStatusEntry: buildParseStatusEntry,
+  __buildStructuredResult: buildStructuredResult,
   // PRD-2026Q4 followup（B5）：暴露给 streamingResilienceContract.test.js 锁住并发池行为，
   // 不让未来重构悄悄退化回 `Promise.allSettled(files.map(...))`。
   __runWithConcurrency: runWithConcurrency,

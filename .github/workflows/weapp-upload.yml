@@ -1,0 +1,75 @@
+name: Upload WeApp Experience
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'upload or preview'
+        required: true
+        default: 'upload'
+        type: choice
+        options:
+          - upload
+          - preview
+      version:
+        description: 'WeChat experience version, e.g. 2026.05.22-1'
+        required: false
+        type: string
+      desc:
+        description: 'Upload note shown in WeChat MP backend'
+        required: false
+        type: string
+      robot:
+        description: 'WeChat CI robot number'
+        required: false
+        default: '1'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - 'app.js'
+      - 'app.json'
+      - 'app.wxss'
+      - 'components/**'
+      - 'pages/**'
+      - 'project.config.json'
+      - 'shared/**'
+      - 'styles/**'
+      - 'utils/**'
+      - 'scripts/upload-weapp-ci.js'
+      - '.github/workflows/weapp-upload.yml'
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEAPP_APPID: ${{ secrets.WEAPP_APPID }}
+      WEAPP_UPLOAD_PRIVATE_KEY: ${{ secrets.WEAPP_UPLOAD_PRIVATE_KEY }}
+      WEAPP_UPLOAD_ROBOT: ${{ github.event.inputs.robot || '1' }}
+      WEAPP_UPLOAD_MODE: ${{ github.event.inputs.mode || 'upload' }}
+      WEAPP_VERSION: ${{ github.event.inputs.version || format('{0}-{1}', github.ref_name, github.run_number) }}
+      WEAPP_DESC: ${{ github.event.inputs.desc || format('Treatbot {0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install miniapp upload dependencies
+        run: npm install --no-save miniprogram-ci@2.1.31
+
+      - name: Run miniapp contract tests
+        run: npx jest --config jest.miniapp.config.js --runInBand
+
+      - name: Upload or preview WeApp
+        run: node scripts/upload-weapp-ci.js --mode "$WEAPP_UPLOAD_MODE"
+
+      - name: Upload preview QR
+        if: ${{ github.event.inputs.mode == 'preview' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: weapp-preview-qrcode
+          path: weapp-preview-qrcode.jpg
+          if-no-files-found: ignore

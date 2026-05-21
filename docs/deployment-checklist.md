@@ -155,9 +155,9 @@ redis-cli -h your-host ping
 - [ ] 配置隐私保护指引
 
 ### 2. 上传代码
-- [ ] 使用微信开发者工具上传
-- [ ] 填写版本号
-- [ ] 填写项目备注
+- [ ] GitHub Actions → `Upload WeApp Experience` 成功，或本地执行 `node scripts/upload-weapp-ci.js --mode upload`
+- [ ] 版本号包含日期和短 SHA
+- [ ] 项目备注写明本次用户可见修复
 
 ### 3. 提交审核
 - [ ] 准备测试账号
@@ -168,6 +168,14 @@ redis-cli -h your-host ping
 ### 4. 发布上线
 - [ ] 审核通过后发布
 - [ ] 配置灰度发布（可选）
+- [ ] 真机验证：登录 → 上传单图 → 上传多图 → OCR 完成 → Step 3 病历卡片显示 → 历史详情可读档
+
+### 5. 小程序 CI 前置条件
+- [ ] GitHub Secret `WEAPP_APPID` 已配置
+- [ ] GitHub Secret `WEAPP_UPLOAD_PRIVATE_KEY` 已配置
+- [ ] 微信公众平台已开启「小程序代码上传」
+- [ ] 服务器域名包含 `https://inseq.top`
+- [ ] request / uploadFile 合法域名均包含 `https://inseq.top`
 
 ---
 
@@ -236,6 +244,7 @@ crontab -e
 - [ ] 用户注册/登录
 - [ ] 病历上传
 - [ ] AI 解析
+- [ ] `scripts/verify-user-loop.sh` 通过，且 `result.entities` 与 `records/:id.structured.entities` 非空
 - [ ] 试验匹配
 - [ ] 在线报名
 

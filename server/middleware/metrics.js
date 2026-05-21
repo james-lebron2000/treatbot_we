@@ -114,6 +114,13 @@ const ocrCacheTotal = new client.Counter({
   registers: [register]
 });
 
+const ocrParseStateTotal = new client.Counter({
+  name: 'ocr_parse_state_total',
+  help: '解析状态读取计数，按 source/status/has_result 维度，用于定位客户端卡住或结果为空',
+  labelNames: ['source', 'status', 'has_result'],
+  registers: [register]
+});
+
 // Q3-红线 §B.2：业务漏斗事件计数器（POST /api/track 落库时同步 inc）
 // 标签 event 取自白名单（landing_view / upload_start / upload_success /
 // match_view / trial_apply / application_submitted）；
@@ -194,6 +201,7 @@ module.exports = {
   llmProviderInflightGauge,
   // Plan §Phase 1.2：OCR 结果缓存 hit/miss 计数器
   ocrCacheTotal,
+  ocrParseStateTotal,
   // Q3-红线 §B.2：漏斗事件计数器
   userFunnelEventTotal
 };
