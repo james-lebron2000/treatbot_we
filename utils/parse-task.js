@@ -297,8 +297,14 @@ const mergeStructuredEntities = (entries) => {
     if (normalized.previousTreatments) treatments.push(`${normalized.previousTreatments}`)
 
     const raw = entry.result || {}
-    if (typeof raw.confidence === 'number' && raw.confidence > maxConfidence) {
-      maxConfidence = raw.confidence
+    const rawSource = typeof schema.unwrapStructuredSource === 'function'
+      ? schema.unwrapStructuredSource(raw)
+      : raw
+    const confidence = typeof raw.confidence === 'number'
+      ? raw.confidence
+      : (typeof rawSource.confidence === 'number' ? rawSource.confidence : null)
+    if (typeof confidence === 'number' && confidence > maxConfidence) {
+      maxConfidence = confidence
     }
     if (entry.recordId) sourceRecordIds.push(entry.recordId)
   })
@@ -361,12 +367,18 @@ const syncActiveParseBatch = async () => {
   })
 
   if (done) {
-    // 所有终态 → 把"最后一份完成"的结果写到与单文件 path 共享的 storage key，
-    // 让 records/detail、matches 等不感知批量也能读到。
+    // 所有终态 → 把合并后的结果写到与单文件 path 共享的 storage key，
+    // 让 records/detail、matches 等不感知批量也能读到完整病历卡片。
     if (completedEntries.length) {
       const last = completedEntries[completedEntries.length - 1]
-      const result = schema.normalizeStructuredRecord(last.result || {})
       const resolvedRecordId = last.recordId || last.fileId
+      const result = mergedEntities
+        ? {
+            ...mergedEntities,
+            id: resolvedRecordId || mergedEntities.id || '',
+            recordId: resolvedRecordId || mergedEntities.recordId || ''
+          }
+        : schema.normalizeStructuredRecord(last.result || {})
       if (resolvedRecordId) {
         setCachedParseResult(resolvedRecordId, result)
         wx.setStorageSync('currentRecordId', resolvedRecordId)

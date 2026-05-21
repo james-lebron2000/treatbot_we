@@ -8,18 +8,39 @@
 // 测试环境：parse-task → api → wx.getAccountInfoSync 在模块加载时被调用，
 // 所以 global.wx 必须先于 require 安装。
 
+const storage = new Map()
+
 global.wx = {
   getAccountInfoSync: () => ({ miniProgram: { envVersion: 'develop' } }),
-  getStorageSync: () => null,
-  setStorageSync: () => {},
-  removeStorageSync: () => {},
-  getStorageInfoSync: () => ({ keys: [] })
+  getStorageSync: (key) => storage.get(key) || null,
+  setStorageSync: (key, value) => { storage.set(key, value) },
+  removeStorageSync: (key) => { storage.delete(key) },
+  getStorageInfoSync: () => ({ keys: Array.from(storage.keys()) })
 }
 
-const { mergeStructuredEntities } = require('../parse-task')
+const {
+  setActiveParseBatch,
+  syncActiveParseBatch,
+  mergeStructuredEntities
+} = require('../parse-task')
 const { FIELD_SCHEMAS } = require('../schema')
+const api = require('../api')
 
 const REQUIRED_KEY_COUNT = FIELD_SCHEMAS.length    // 应是 30+（PR #26 描述说 37）
+
+const originalGetParseStatusBatch = api.getParseStatusBatch
+const originalGetMatches = api.getMatches
+
+beforeEach(() => {
+  storage.clear()
+  api.getParseStatusBatch = jest.fn()
+  api.getMatches = jest.fn(() => Promise.resolve({ data: [] }))
+})
+
+afterAll(() => {
+  api.getParseStatusBatch = originalGetParseStatusBatch
+  api.getMatches = originalGetMatches
+})
 
 describe('mergeStructuredEntities — null/empty edge cases', () => {
   test('空数组 → null（上传页走 handleParseFailure 分支）', () => {
@@ -161,5 +182,87 @@ describe('mergeStructuredEntities — full-field shape (B3 核心契约)', () =>
       { fileId: 'f2', recordId: 'r2', status: 'completed', result: { ecog: '2' } }
     ])
     expect(out.ecog).toBe('0')  // first-wins，'0' 不被当 '' 跳过
+  })
+
+  test('I10: completed entry 使用 result.entities 时仍合并出完整字段', () => {
+    const out = mergeStructuredEntities([{
+      fileId: 'f1',
+      recordId: 'r1',
+      status: 'completed',
+      result: {
+        entities: {
+          diagnosis: '肺腺癌',
+          stage: 'IV期',
+          age: 66,
+          ecog: '1',
+          geneMutation: 'EGFR 19del',
+          confidence: 0.87
+        }
+      }
+    }])
+
+    expect(out.diagnosis).toBe('肺腺癌')
+    expect(out.stage).toBe('IV期')
+    expect(out.age).toBe(66)
+    expect(out.ecog).toBe('1')
+    expect(out.geneMutation).toBe('EGFR 19del')
+    expect(out.confidence).toBe(0.87)
+  })
+})
+
+describe('syncActiveParseBatch storage contract', () => {
+  test('批量完成后 structuredRecordDraft 写 mergedEntities，而不是最后一张单图结果', async () => {
+    setActiveParseBatch({
+      fileIds: ['f1', 'f2'],
+      startedAt: Date.now()
+    })
+    api.getParseStatusBatch.mockResolvedValueOnce({
+      data: {
+        total: 2,
+        completedCount: 2,
+        erroredCount: 0,
+        done: true,
+        entries: [
+          {
+            fileId: 'f1',
+            recordId: 'r1',
+            status: 'completed',
+            result: {
+              entities: {
+                diagnosis: '肺腺癌',
+                stage: 'IV期'
+              }
+            }
+          },
+          {
+            fileId: 'f2',
+            recordId: 'r2',
+            status: 'completed',
+            result: {
+              entities: {
+                age: 66,
+                ecog: '1',
+                geneMutation: 'EGFR 19del'
+              }
+            }
+          }
+        ]
+      }
+    })
+
+    const out = await syncActiveParseBatch()
+    const draft = storage.get('structuredRecordDraft')
+
+    expect(out.done).toBe(true)
+    expect(draft).toEqual(expect.objectContaining({
+      diagnosis: '肺腺癌',
+      stage: 'IV期',
+      age: 66,
+      ecog: '1',
+      geneMutation: 'EGFR 19del',
+      recordId: 'r2'
+    }))
+    expect(draft.sourceRecordIds).toEqual(['r1', 'r2'])
+    expect(storage.get('currentRecordId')).toBe('r2')
   })
 })

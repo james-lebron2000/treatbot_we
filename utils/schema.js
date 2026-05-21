@@ -356,6 +356,81 @@ const FIELD_SCHEMAS = [
   }
 })()
 
+const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value)
+
+const isBlankStructuredValue = (value) => {
+  if (value === 0 || value === '0' || value === false) {
+    return false
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0
+  }
+  return value === null || value === undefined || value === ''
+}
+
+const mergeStructuredSources = (...sources) => {
+  return sources.reduce((acc, source) => {
+    if (!isObject(source)) {
+      return acc
+    }
+    Object.keys(source).forEach((key) => {
+      if (!isBlankStructuredValue(source[key])) {
+        acc[key] = source[key]
+      }
+    })
+    return acc
+  }, {})
+}
+
+const stringifyAliasValue = (value) => {
+  if (!Array.isArray(value)) {
+    return value
+  }
+  const parts = value
+    .map((item) => {
+      if (item === null || item === undefined || item === '') return ''
+      if (typeof item !== 'object') return `${item}`.trim()
+      const fields = [
+        item.name,
+        item.title,
+        item.regimen,
+        item.drug,
+        item.event,
+        item.startDate,
+        item.endDate,
+        item.date,
+        item.detail,
+        item.response,
+        item.value
+      ].filter((v) => v !== null && v !== undefined && `${v}`.trim() !== '')
+      if (fields.length) return fields.map((v) => `${v}`.trim()).join(' ')
+      try { return JSON.stringify(item) } catch (_e) { return '' }
+    })
+    .filter(Boolean)
+  return parts.join('；')
+}
+
+const unwrapStructuredSource = (raw) => {
+  const source = isObject(raw) ? raw : {}
+  const result = isObject(source.result) ? source.result : {}
+  const structured = isObject(source.structured) ? source.structured : {}
+  const structuredPayload = isObject(source.structuredPayload) ? source.structuredPayload : {}
+  const nested = mergeStructuredSources(
+    source.entities,
+    structured.entities,
+    structuredPayload.entities,
+    result.entities,
+    result
+  )
+  const flat = mergeStructuredSources(source)
+  Object.keys(source).forEach((key) => {
+    if (['entities', 'structured', 'structuredPayload', 'result'].includes(key)) {
+      delete flat[key]
+    }
+  })
+  return { ...nested, ...flat }
+}
+
 const pickValueByAlias = (raw, aliases) => {
   if (!raw || typeof raw !== 'object') {
     return ''
@@ -364,7 +439,10 @@ const pickValueByAlias = (raw, aliases) => {
   for (let i = 0; i < aliases.length; i += 1) {
     const key = aliases[i]
     if (raw[key] !== undefined && raw[key] !== null && raw[key] !== '') {
-      return raw[key]
+      const normalized = stringifyAliasValue(raw[key])
+      if (normalized !== undefined && normalized !== null && normalized !== '') {
+        return normalized
+      }
     }
   }
 
@@ -372,7 +450,7 @@ const pickValueByAlias = (raw, aliases) => {
 }
 
 const normalizeStructuredRecord = (raw) => {
-  const source = raw || {}
+  const source = unwrapStructuredSource(raw)
   const normalized = {}
 
   FIELD_SCHEMAS.forEach((field) => {
@@ -537,6 +615,7 @@ const buildRecordPreview = (record) => {
 module.exports = {
   GROUP_META,
   FIELD_SCHEMAS,
+  unwrapStructuredSource,
   normalizeStructuredRecord,
   getMissingFields,
   getRequiredFieldCount,

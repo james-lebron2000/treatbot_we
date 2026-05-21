@@ -15,7 +15,8 @@ jest.mock('../../../utils/parse-task', () => ({
   getActiveParseTask: jest.fn(() => null),
   getActiveParseBatch: jest.fn(() => null),
   syncActiveParseTask: jest.fn(() => Promise.resolve(null)),
-  getCachedParseResult: jest.fn(() => null)
+  getCachedParseResult: jest.fn(() => null),
+  mergeStructuredEntities: jest.fn((entries) => entries)
 }))
 
 jest.mock('../../../utils/auth', () => ({
@@ -68,6 +69,34 @@ const buildCtx = (overrides = {}) => {
   }
   return {
     data,
+    setData(patch) { Object.assign(this.data, patch) }
+  }
+}
+
+const buildCompletedCtx = (overrides = {}) => {
+  const data = {
+    collapsedGroups: {},
+    currentStep: 2,
+    fileId: 'fid-001',
+    gapSections: [],
+    hasPdfUpload: false,
+    missingFields: [],
+    parsedData: {},
+    pdfQualityHintShown: true,
+    recordId: 'rec-001',
+    streamingPartialGroups: [],
+    uploading: true,
+    ...overrides
+  }
+  return {
+    data,
+    completionHandled: false,
+    _initialGapTotal: 0,
+    clearPollTimer: jest.fn(),
+    setProgressTarget: jest.fn(),
+    buildParsedPresentation: pageOptions.buildParsedPresentation,
+    buildCollapsedGroupsState: pageOptions.buildCollapsedGroupsState,
+    applyParsedPresentation: pageOptions.applyParsedPresentation,
     setData(patch) { Object.assign(this.data, patch) }
   }
 }
@@ -126,5 +155,35 @@ describe('startMatching contract', () => {
     expect(api.enrichMedicalRecord).toHaveBeenCalledWith('rec-001', expect.any(Object))
     expect(parseTask.clearCachedMatches).toHaveBeenCalledWith('rec-001')
     expect(wxMock.switchTab).toHaveBeenCalledWith({ url: '/pages/matches/matches' })
+  })
+})
+
+describe('handleCompletedResult contract', () => {
+  test('嵌套 result.entities 完成态进入 Step 3 且病历卡片字段非空', () => {
+    const ctx = buildCompletedCtx()
+
+    pageOptions.handleCompletedResult.call(ctx, {
+      entities: {
+        diagnosis: '肺腺癌',
+        stage: 'IV期',
+        age: 65,
+        ecog: '1',
+        geneMutation: 'EGFR L858R'
+      }
+    })
+
+    expect(ctx.data.currentStep).toBe(3)
+    expect(ctx.data.uploading).toBe(false)
+    expect(ctx.data.parsedData).toEqual(expect.objectContaining({
+      diagnosis: '肺腺癌',
+      stage: 'IV期',
+      age: 65,
+      ecog: '1',
+      geneMutation: 'EGFR L858R'
+    }))
+    expect(wxMock.setStorageSync).toHaveBeenCalledWith(
+      'structuredRecordDraft',
+      expect.objectContaining({ diagnosis: '肺腺癌', stage: 'IV期' })
+    )
   })
 })
