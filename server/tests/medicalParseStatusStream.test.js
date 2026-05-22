@@ -27,6 +27,7 @@ jest.mock('../services/queue', () => ({ addOCRTask: jest.fn() }));
 jest.mock('../services/matchEngine', () => ({ scoreRecordAgainstTrial: () => ({ score: 0 }) }));
 jest.mock('../services/recordEvents', () => ({
   subscribeRecordEvents: jest.fn(),
+  replayRecordEvents: jest.fn(),
   publishRecordEvent: jest.fn(),
   isHealthy: jest.fn(() => true)
 }));
@@ -71,6 +72,7 @@ const recordRow = (id, status = 'pending', extra = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  recordEvents.replayRecordEvents.mockResolvedValue([]);
 });
 
 describe('Phase 2.3: handleParseStatusStream', () => {
@@ -188,6 +190,91 @@ describe('Phase 2.3: handleParseStatusStream', () => {
     expect(res.writes.some((s) => s.startsWith('event: done\n'))).toBe(true);
     expect(res.end).toHaveBeenCalled();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  test('多 record stream：单个终态不关闭，全部终态才 done', async () => {
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'pending'), recordRow('b', 'pending')]);
+
+    let savedCb = null;
+    const unsubscribe = jest.fn(async () => {});
+    recordEvents.subscribeRecordEvents.mockImplementation(async (_ids, cb) => {
+      savedCb = cb;
+      return unsubscribe;
+    });
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a,b' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    savedCb({ recordId: 'a', status: 'completed', progress: 100, result: { diagnosis: 'A' } });
+    expect(res.writes.some((s) => s.startsWith('event: done\n'))).toBe(false);
+    expect(res.end).not.toHaveBeenCalled();
+
+    savedCb({ recordId: 'b', status: 'error', progress: 0, errorMsg: 'bad' });
+    expect(res.writes.some((s) => s.startsWith('event: done\n'))).toBe(true);
+    expect(res.end).toHaveBeenCalled();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  test('afterSeq replay：补发 Redis Stream 历史事件，带 SSE id，默认不透出 rawText', async () => {
+    delete process.env.OCR_STREAM_RAW_TEXT_ENABLED;
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'pending')]);
+    recordEvents.subscribeRecordEvents.mockResolvedValue(async () => {});
+    recordEvents.replayRecordEvents.mockResolvedValue([
+      {
+        recordId: 'a',
+        seq: 6,
+        status: 'running',
+        statusPhase: 'streaming',
+        progress: 66,
+        fieldGroup: 'diagnosis',
+        fields: { diagnosis: '肺腺癌' },
+        fieldPatch: true,
+        rawText: '敏感原文'
+      }
+    ]);
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a', afterSeq: 'a:5' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    expect(recordEvents.replayRecordEvents).toHaveBeenCalledWith('a', 5);
+    const replayFrame = res.writes.find((s) => s.includes('"seq":6'));
+    expect(replayFrame).toMatch(/^id: a:6\n/);
+    expect(replayFrame).toContain('"diagnosis":"肺腺癌"');
+    expect(replayFrame).toContain('"fieldPatch":true');
+    expect(replayFrame).toContain('"textLength":4');
+    expect(replayFrame).not.toContain('敏感原文');
+    expect(res.end).not.toHaveBeenCalled();
+  });
+
+  test('subscribe 与 replay 竞态：同一 recordId+seq 只发送一次', async () => {
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'pending')]);
+    const event = {
+      recordId: 'a',
+      seq: 8,
+      status: 'running',
+      progress: 60,
+      fieldGroup: 'diagnosis',
+      fields: { diagnosis: '肺腺癌' }
+    };
+    const unsubscribe = jest.fn(async () => {});
+    recordEvents.subscribeRecordEvents.mockImplementation(async (_ids, cb) => {
+      cb(event);
+      return unsubscribe;
+    });
+    recordEvents.replayRecordEvents.mockResolvedValue([event]);
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a', afterSeq: 'a:7' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    const seqFrames = res.writes.filter((s) => s.includes('"seq":8'));
+    expect(seqFrames).toHaveLength(1);
+    expect(seqFrames[0]).toMatch(/^id: a:8\n/);
   });
 
   test('客户端 close → unsubscribe + heartbeat 清理', async () => {

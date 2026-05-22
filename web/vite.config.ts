@@ -7,9 +7,53 @@ import path from 'node:path'
 // PRD-2026Q2 §3.7：通过 `@shared` alias 让 Treatbot Web 与小程序共享仓库根 `shared/` 下的文案字典；
 // Vite 默认的 server.fs.allow 只包含 project root，需要显式把仓库根加进来。
 const repoRoot = path.resolve(__dirname, '..')
+const sharedRoot = path.resolve(repoRoot, 'shared')
+
+const sharedCommonjsInterop = () => ({
+  name: 'treatbot-shared-commonjs-interop',
+  enforce: 'pre' as const,
+  transform(code: string, id: string) {
+    const filename = id.split('?')[0]
+    if (!filename.startsWith(sharedRoot) || !filename.endsWith('.js') || !code.includes('module.exports')) {
+      return null
+    }
+    const exportNames = new Set<string>()
+    const declaredNames = new Set<string>()
+    const declarationPattern = /^\s*(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm
+    let match: RegExpExecArray | null
+    while ((match = declarationPattern.exec(code))) {
+      declaredNames.add(match[1])
+    }
+    const keyPattern = /^\s*([A-Za-z_$][\w$]*)\s*:/gm
+    while ((match = keyPattern.exec(code))) {
+      exportNames.add(match[1])
+    }
+    const shorthandPattern = /^\s*([A-Za-z_$][\w$]*)\s*,?\s*$/gm
+    while ((match = shorthandPattern.exec(code))) {
+      exportNames.add(match[1])
+    }
+    const namedExports = Array.from(exportNames)
+      .filter((name) => !['module', 'exports', 'default'].includes(name))
+      .map((name) => declaredNames.has(name)
+        ? `export { ${name} }`
+        : `export const ${name} = __cjsExports.${name}`)
+      .join('\n')
+    return {
+      code: [
+        'const module = { exports: {} }',
+        'const exports = module.exports',
+        code,
+        'const __cjsExports = module.exports',
+        'export default __cjsExports',
+        namedExports
+      ].filter(Boolean).join('\n'),
+      map: null
+    }
+  }
+})
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [sharedCommonjsInterop(), vue()],
   base: '/treatbot/',
   resolve: {
     alias: {

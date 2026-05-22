@@ -187,6 +187,56 @@ const observeParseState = (entry, source) => {
   }
 };
 
+const parseAfterSeqMap = (req, recordIds) => {
+  const ids = (recordIds || []).map((id) => String(id));
+  const out = new Map(ids.map((id) => [id, 0]));
+  const candidates = [];
+  if (req && req.query && req.query.afterSeq) candidates.push(req.query.afterSeq);
+  const headerValue = (req && req.headers && (req.headers['last-event-id'] || req.headers['Last-Event-ID']))
+    || (req && typeof req.get === 'function' ? req.get('Last-Event-ID') : '');
+  if (headerValue) candidates.push(headerValue);
+
+  const applyToken = (token) => {
+    const raw = `${token || ''}`.trim();
+    if (!raw) return;
+    const colon = raw.lastIndexOf(':');
+    if (colon > 0) {
+      const rid = raw.slice(0, colon);
+      const seq = Number(raw.slice(colon + 1));
+      if (out.has(rid) && Number.isFinite(seq) && seq >= 0) out.set(rid, seq);
+      return;
+    }
+    const seq = Number(raw);
+    if (Number.isFinite(seq) && seq >= 0) {
+      if (ids.length === 1) {
+        out.set(ids[0], seq);
+      } else {
+        ids.forEach((id) => out.set(id, seq));
+      }
+    }
+  };
+
+  candidates.forEach((value) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => `${item || ''}`.split(',').forEach(applyToken));
+    } else {
+      `${value || ''}`.split(',').forEach(applyToken);
+    }
+  });
+  return out;
+};
+
+const observeStreamEvent = (event, payload) => {
+  try {
+    if (!metrics.ocrStreamEventTotal) return;
+    metrics.ocrStreamEventTotal
+      .labels(event || 'unknown', payload && payload.status ? payload.status : 'unknown')
+      .inc();
+  } catch (_e) {
+    // metrics must never affect streaming
+  }
+};
+
 const buildStructuredResult = (record) => {
   const structured = normalizeStructured(record.structured);
   const entities = normalizeEntities(structured.entities);
@@ -1602,10 +1652,30 @@ const handleParseStatusStream = async (req, res, next) => {
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    const writeFrame = (event, data) => {
+    const allowRawTextInStream = truthyText(process.env.OCR_STREAM_RAW_TEXT_ENABLED);
+    const sanitizeStreamData = (data) => {
+      if (allowRawTextInStream || !data || typeof data !== 'object') return data;
+      const nextData = { ...data };
+      if (typeof nextData.rawText === 'string') {
+        if (typeof nextData.textLength !== 'number') nextData.textLength = nextData.rawText.length;
+        delete nextData.rawText;
+      }
+      if (nextData.result && typeof nextData.result === 'object' && typeof nextData.result.rawText === 'string') {
+        nextData.result = { ...nextData.result };
+        if (typeof nextData.result.textLength !== 'number') nextData.result.textLength = nextData.result.rawText.length;
+        delete nextData.result.rawText;
+      }
+      return nextData;
+    };
+
+    const writeFrame = (event, data, opts = {}) => {
       if (res.writableEnded) return;
       try {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        const frameData = event === 'state' ? sanitizeStreamData(data) : data;
+        const id = opts.id || (frameData && frameData.recordId && frameData.seq ? `${frameData.recordId}:${frameData.seq}` : '');
+        const idLine = id ? `id: ${id}\n` : '';
+        observeStreamEvent(event, frameData);
+        res.write(`${idLine}event: ${event}\ndata: ${JSON.stringify(frameData)}\n\n`);
       } catch (e) {
         // socket 已断 / pipe 已关：忽略，下一次 close 事件会清理
       }
@@ -1631,15 +1701,16 @@ const handleParseStatusStream = async (req, res, next) => {
     const TERMINAL = new Set(['completed', 'error', 'cancelled']);
 
     const ownedIds = records.map((r) => String(r.id));
-    let allTerminal = true;
+    const afterSeqByRecord = parseAfterSeqMap(req, ownedIds);
+    const terminalRecordIds = new Set();
     for (const r of records) {
       const entry = buildParseStatusEntry(r);
       observeParseState(entry, 'stream_initial');
       writeFrame('state', entry);
-      if (!TERMINAL.has(entry.status)) allTerminal = false;
+      if (TERMINAL.has(entry.status)) terminalRecordIds.add(String(r.id));
     }
 
-    if (allTerminal) {
+    if (terminalRecordIds.size >= ownedIds.length) {
       writeFrame('done', { reason: 'all_terminal' });
       clearInterval(heartbeatTimer);
       try { res.end(); } catch (e) { /* noop */ }
@@ -1664,10 +1735,19 @@ const handleParseStatusStream = async (req, res, next) => {
     };
 
     const ownedSet = new Set(ownedIds);
-    const onEvent = (payload) => {
+    const lastSentSeqByRecord = new Map();
+    const handleRecordEvent = (payload) => {
       if (ended || !payload || !payload.recordId) return;
       const rid = String(payload.recordId);
       if (!ownedSet.has(rid)) return;
+      if (payload.seq !== undefined && payload.seq !== null) {
+        const seq = Number(payload.seq);
+        if (Number.isFinite(seq)) {
+          const lastSeq = Number(lastSentSeqByRecord.get(rid) || 0);
+          if (seq <= lastSeq) return;
+          lastSentSeqByRecord.set(rid, seq);
+        }
+      }
       const status = payload.status || 'unknown';
       // PRD-2026Q4 流式 OCR：额外透传 statusPhase / fieldGroup / fields / rawText 给前端。
       // 这些字段仅在 worker 进入 streaming 阶段时被 publishRecordEventSafe 注入；
@@ -1684,24 +1764,48 @@ const handleParseStatusStream = async (req, res, next) => {
         cancelledAt: payload.cancelledAt || null,
         ts: payload.ts || Date.now()
       };
+      if (payload.seq !== undefined && payload.seq !== null) frame.seq = payload.seq;
       if (payload.statusPhase) frame.statusPhase = payload.statusPhase;
       if (payload.fieldGroup) frame.fieldGroup = payload.fieldGroup;
       if (payload.fields && typeof payload.fields === 'object') frame.fields = payload.fields;
-      if (typeof payload.rawText === 'string' && payload.rawText.length) frame.rawText = payload.rawText;
+      if (payload.fieldPatch) frame.fieldPatch = true;
+      if (typeof payload.textLength === 'number') frame.textLength = payload.textLength;
+      if (typeof payload.pageCount === 'number') frame.pageCount = payload.pageCount;
+      if (typeof payload.rawText === 'string' && payload.rawText.length) {
+        if (allowRawTextInStream) {
+          frame.rawText = payload.rawText;
+        } else if (typeof frame.textLength !== 'number') {
+          frame.textLength = payload.rawText.length;
+        }
+      }
       if (payload.message) frame.message = payload.message;
       if (payload.providerWait) frame.providerWait = payload.providerWait;
       writeFrame('state', frame);
-      if (TERMINAL.has(status)) finishStream('terminal');
+      if (TERMINAL.has(status)) {
+        terminalRecordIds.add(rid);
+        if (terminalRecordIds.size >= ownedIds.length) {
+          finishStream('all_terminal');
+        }
+      }
     };
 
     const recordEvents = require('../services/recordEvents');
-    unsubscribe = await recordEvents.subscribeRecordEvents(ownedIds, onEvent);
+    unsubscribe = await recordEvents.subscribeRecordEvents(ownedIds, handleRecordEvent);
 
     if (!unsubscribe) {
       writeFrame('noredis', { reason: 'redis_unavailable' });
       clearInterval(heartbeatTimer);
       try { res.end(); } catch (e) { /* noop */ }
       return;
+    }
+
+    for (const rid of ownedIds) {
+      // eslint-disable-next-line no-await-in-loop
+      const replayed = await recordEvents.replayRecordEvents(rid, afterSeqByRecord.get(rid) || 0);
+      for (const event of replayed) {
+        handleRecordEvent(event);
+      }
+      if (ended) return;
     }
 
     // 客户端断开 → 立即清理（防 zombie 订阅 + 防心跳 timer 泄漏）

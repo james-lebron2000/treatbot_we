@@ -5,7 +5,7 @@
 //
 // 验收点（每条都是产品端的硬约束，违反就会"让中年家属看不懂"）：
 //   ① 首屏期望管理 onboarding 展示我们做什么 / 您要做什么 / 大约多久
-//   ② 全局求助 FAB 在所有患者页面可见，包含「想找真人聊聊」「看 1 分钟教学视频」「看常见问题」
+//   ② 全局求助 FAB 在非上传患者页面可见，包含「想找真人聊聊」「看 1 分钟教学视频」「看常见问题」
 //   ③ UploadView 字段「？」展开后说人话（plain），并提供「我不知道」逃生通道
 //   ④ ConsentModal 三条同意文案 ≤ 30 字 / 条；没有「数据共享」「合规」之类的术语堆叠
 //   ⑤ MatchesView 卡片置顶有「✓ 为什么适合」一句话，不靠分数说事
@@ -159,12 +159,16 @@ test.describe('患者满意度测试 - 60 岁病人女儿视角', () => {
     expect(errors, errors.join('\n')).toEqual([])
   })
 
-  test('② 全局求助 FAB 在 upload / matches / records 三处都能看到', async ({ page }) => {
+  test('② 全局求助 FAB 不遮挡上传流，仍在 matches / records 可见', async ({ page }) => {
     const errors = collectPageErrors(page)
     await installCommonMocks(page)
     await primeAuthAndOnboarded(page)
 
-    for (const path of ['/treatbot/upload', '/treatbot/matches', '/treatbot/records']) {
+    await page.goto('/treatbot/upload')
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('.help-fab-btn').first()).toBeHidden({ timeout: 10_000 })
+
+    for (const path of ['/treatbot/matches', '/treatbot/records']) {
       await page.goto(path)
       await page.waitForLoadState('networkidle')
       // FAB 用 class 选择器更稳；HelpFab.vue 渲染 .help-fab-btn
@@ -367,9 +371,12 @@ test.describe('患者满意度测试 - 60 岁病人女儿视角', () => {
     await expect(page).toHaveURL(/\/onboarding/, { timeout: 10_000 })
     await expect(page.getByText(/全程免费.*您的数据您说了算/)).toBeVisible()
 
-    // b) 点开 FAB 也看到同款承诺
+    // b) 上传页不展示 FAB（避免遮挡上传流），切到匹配页后 FAB 仍看到同款承诺
     await page.getByRole('button', { name: /好的，开始|跳过/ }).first().click()
     await expect(page).toHaveURL(/\/upload/, { timeout: 10_000 })
+    await expect(page.locator('.help-fab-btn').first()).toBeHidden({ timeout: 10_000 })
+    await page.goto('/treatbot/matches')
+    await page.waitForLoadState('networkidle')
     await page.locator('.help-fab-btn').first().click()
     // FAB 底部 footer 有 promise；用更宽松断言（promise 行就在 .help-sheet-footer）
     await expect(page.locator('.help-sheet-footer')).toContainText(/全程免费/)

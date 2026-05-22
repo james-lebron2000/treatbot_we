@@ -151,17 +151,36 @@ const splitFrames = (raw) => {
  */
 const parseFrame = (frame) => {
   let event = 'message'
+  let id = ''
   const dataLines = []
   for (const line of frame.split(/\r?\n/)) {
     if (!line) continue
     if (line.startsWith(':')) continue // SSE 注释 / 心跳
-    if (line.startsWith('event:')) event = line.slice(6).trim()
+    if (line.startsWith('id:')) id = line.slice(3).trim()
+    else if (line.startsWith('event:')) event = line.slice(6).trim()
     else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
   }
   if (!dataLines.length) return null
   let data
   try { data = JSON.parse(dataLines.join('\n')) } catch (e) { return null }
+  if (id && data && typeof data === 'object' && data.seq === undefined) {
+    const colon = id.lastIndexOf(':')
+    const seq = colon > 0 ? Number(id.slice(colon + 1)) : Number(id)
+    if (Number.isFinite(seq)) data.seq = seq
+  }
   return { event, data }
+}
+
+const withAfterSeq = (url, fileIds, afterSeq) => {
+  if (!url || !afterSeq || typeof afterSeq !== 'object') return url
+  const pairs = (fileIds || [])
+    .map((id) => `${id || ''}`.trim())
+    .filter(Boolean)
+    .filter((id) => Number.isFinite(Number(afterSeq[id])) && Number(afterSeq[id]) >= 0)
+    .map((id) => `${id}:${Number(afterSeq[id])}`)
+  if (!pairs.length) return url
+  const sep = url.indexOf('?') >= 0 ? '&' : '?'
+  return `${url}${sep}afterSeq=${encodeURIComponent(pairs.join(','))}`
 }
 
 /**
@@ -186,6 +205,7 @@ const openParseStatusStream = (opts) => {
     onDone,
     onError,
     openTimeoutMs = 10000,
+    afterSeq,
     wx: wxObj
   } = opts || {}
 
@@ -220,7 +240,7 @@ const openParseStatusStream = (opts) => {
   }
 
   const requestTask = wxRef.request({
-    url,
+    url: withAfterSeq(url, fileIds, afterSeq),
     method: 'GET',
     header: token ? { Authorization: `Bearer ${token}` } : {},
     enableChunked: true,
@@ -301,5 +321,5 @@ const openParseStatusStream = (opts) => {
 module.exports = {
   openParseStatusStream,
   // 暴露给单测：纯函数，无副作用
-  __testables: { splitFrames, parseFrame, arrayBufferToString, createUtf8Decoder }
+  __testables: { splitFrames, parseFrame, withAfterSeq, arrayBufferToString, createUtf8Decoder }
 }

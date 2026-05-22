@@ -92,13 +92,15 @@
     </div>
 
     <!-- 解析中（PRD-2026Q4 流式 OCR）：边收 SSE 边渐显字段 -->
-    <div v-if="parseStatus && parseStatus !== 'error' && parseStatus !== 'completed'" class="grid">
+    <div v-if="isParsingVisible" class="grid">
       <StreamingRecordCard
         :record="parsedRecord"
         :filled-groups="filledGroups"
         :raw-text="streamRawText"
         :stage="currentStage"
         :upload-percent="uploadPercent"
+        :progress="parseProgress"
+        :status-hint="streamStatusHint"
       />
       <p v-if="isBatchParse && batchStats.total > 1" style="color:#2563eb;font-weight:500;text-align:center;margin:0;">
         已处理 {{ batchStats.completedCount + batchStats.erroredCount }} / {{ batchStats.total }} 份
@@ -133,7 +135,7 @@
     </div>
 
     <!-- 解析完成 — 结果展示 -->
-    <div v-if="Object.keys(parsedRecord).length" class="grid">
+    <div v-if="reviewReady" class="grid">
       <div class="card" style="background:#f0fdf4;border-color:#86efac;">
         <h3 style="margin:0 0 8px;color:#166534;">好了</h3>
         <p style="font-size:0.85rem;color:#374151;margin:0;">以下是我们从病历里看到的信息 —— 请您过一遍，哪里不对直接改。<strong>您改过的就是对的。</strong></p>
@@ -260,9 +262,12 @@ const timelineSummary = ref<any | null>(null)
 type GroupName = 'basic' | 'diagnosis' | 'treatment' | 'timeline'
 const filledGroups = ref<GroupName[]>([])
 const streamRawText = ref<string>('')
+const streamStatusHint = ref<string>('')
+const streamTextLength = ref<number | null>(null)
 const currentStage = ref<'received' | 'preprocess' | 'ocr_text' | 'field_group' | 'completed' | 'error'>('received')
 const uploadPercent = ref<number>(0)
 let streamCloser: (() => void) | null = null
+let lastSeqByRecordId: Record<string, number> = {}
 const submitting = ref(false)
 type UploadErrorKind = 'rate_limit' | 'parse' | 'network' | ''
 interface UploadErrorState {
@@ -342,6 +347,11 @@ let elapsedTimer: number | null = null
 const elapsedSeconds = ref(0)
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
+const hasParsedRecord = computed(() => Object.keys(parsedRecord.value).length > 0)
+// 流式字段可以先渐显，但最终结果卡必须等 parse-status / records 读档确认终态。
+// 否则一个 field_patch 就会把“好了”和下一步 CTA 提前露出，用户会在 OCR 仍运行时误入下一步。
+const reviewReady = computed(() => parseStatus.value === 'completed' && hasParsedRecord.value)
+const isParsingVisible = computed(() => Boolean(parseStatus.value) && parseStatus.value !== 'error' && !reviewReady.value)
 // 已声明「不知道」的字段从展示里剔除；其余流程（验证、提交）逻辑不变
 const visibleMissingFields = computed(() =>
   missingFields.value.filter((f) => !unknownFieldKeys.value.includes(f.key))
@@ -429,8 +439,11 @@ const resetUpload = () => {
   unknownFieldKeys.value = []
   filledGroups.value = []
   streamRawText.value = ''
+  streamStatusHint.value = ''
+  streamTextLength.value = null
   currentStage.value = 'received'
   uploadPercent.value = 0
+  lastSeqByRecordId = {}
   if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
 }
 
@@ -570,7 +583,7 @@ const pollBatchOnce = async (): Promise<{ done: boolean; mergedResult: Record<st
 
   // 整体进度：完成 + 失败 占总数的比例
   const ratio = status.total > 0 ? (status.completedCount + status.erroredCount) / status.total : 0
-  parseProgress.value = Math.floor(ratio * 100)
+  parseProgress.value = Math.max(parseProgress.value, Math.floor(ratio * 100))
 
   // 合并所有 completed 条目的 result
   let merged: Record<string, unknown> = {}
@@ -662,33 +675,78 @@ const uploadAndParse = async () => {
     parseProgress.value = 5
     filledGroups.value = []
     streamRawText.value = ''
+    streamStatusHint.value = ''
+    streamTextLength.value = null
     currentStage.value = 'received'
 
     await new Promise<void>((resolve, reject) => {
       let settled = false
       const safeResolve = () => { if (!settled) { settled = true; resolve() } }
       const safeReject = (e: Error) => { if (!settled) { settled = true; reject(e) } }
+      let streamSafetyTimer: number | null = null
+      let terminalConfirming = false
+      const stopStreamSafetyPoll = () => {
+        if (streamSafetyTimer) {
+          window.clearTimeout(streamSafetyTimer)
+          streamSafetyTimer = null
+        }
+      }
+      const applyPollTerminal = async (): Promise<boolean> => {
+        const { done, mergedResult, firstError } = await pollBatchOnce()
+        if (!done) return false
+        if (Object.keys(mergedResult).length) {
+          parseStatus.value = 'completed'
+          currentStage.value = 'completed'
+          if (batchStats.completedCount >= 2) await fetchTimeline()
+          safeResolve()
+        } else {
+          safeReject(new Error(firstError || '所有文件解析均失败'))
+        }
+        return true
+      }
+      const scheduleStreamSafetyPoll = () => {
+        if (settled || streamSafetyTimer) return
+        streamSafetyTimer = window.setTimeout(async () => {
+          streamSafetyTimer = null
+          if (settled) return
+          try {
+            const done = await applyPollTerminal()
+            if (!done) scheduleStreamSafetyPoll()
+          } catch (err) {
+            console.warn('parse-stream safety poll failed:', err)
+            scheduleStreamSafetyPoll()
+          }
+        }, 8000)
+      }
+      const confirmTerminalViaPolling = async () => {
+        if (terminalConfirming || settled) return
+        terminalConfirming = true
+        stopStreamSafetyPoll()
+        try {
+          const done = await applyPollTerminal()
+          if (!done) {
+            terminalConfirming = false
+            scheduleStreamSafetyPoll()
+          }
+        } catch (err: any) {
+          terminalConfirming = false
+          safeReject(err)
+        }
+      }
 
       // 兜底：进入轮询直到所有 record 都是终态（与原 while 循环等价）
       let pollingActive = false
       const startPollingFallback = async (reason: string) => {
         if (pollingActive) return
         pollingActive = true
+        stopStreamSafetyPoll()
         // 关闭当前 SSE，避免双路径都在写 parsedRecord
         if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
         console.warn('parse-stream fallback to polling:', reason)
         while (true) {
           try {
-            const { done, mergedResult, firstError } = await pollBatchOnce()
-            if (done) {
-              if (Object.keys(mergedResult).length) {
-                parseStatus.value = 'completed'
-                currentStage.value = 'completed'
-                if (batchStats.completedCount >= 2) await fetchTimeline()
-                return safeResolve()
-              }
-              return safeReject(new Error(firstError || '所有文件解析均失败'))
-            }
+            const done = await applyPollTerminal()
+            if (done) return
           } catch (err: any) {
             return safeReject(err)
           }
@@ -704,6 +762,10 @@ const uploadAndParse = async () => {
 
       const onState = (evt: StreamEvent) => {
         sseReceivedAnyState = true
+        if (evt.recordId && typeof evt.seq === 'number') {
+          lastSeqByRecordId[evt.recordId] = Math.max(lastSeqByRecordId[evt.recordId] || 0, evt.seq)
+        }
+        scheduleStreamSafetyPoll()
         currentStage.value = evt.stage as typeof currentStage.value
         if (typeof evt.progress === 'number' && evt.progress > parseProgress.value) {
           parseProgress.value = evt.progress
@@ -711,6 +773,11 @@ const uploadAndParse = async () => {
         if (evt.stage === 'ocr_text' && evt.rawText) {
           streamRawText.value = evt.rawText
         }
+        if (typeof evt.textLength === 'number' && evt.textLength > 0) {
+          streamTextLength.value = evt.textLength
+        }
+        const nextHint = buildStreamStatusHint(evt)
+        if (nextHint) streamStatusHint.value = nextHint
         if (evt.stage === 'field_group' && evt.fieldGroup && evt.fields) {
           // 增量 merge：保留已有"有意义"值（保护用户编辑过的字段不被回填覆盖），
           // 但**空数组 / 空对象**不算"已有值"——partial-json 早期可能把 treatmentHistory 之类
@@ -723,7 +790,10 @@ const uploadAndParse = async () => {
           }
           const next = { ...parsedRecord.value }
           for (const [k, v] of Object.entries(evt.fields)) {
-            if (isEmpty(next[k])) {
+            if (isEmpty(v)) continue
+            if (evt.fieldPatch) {
+              if (isEmpty(next[k])) next[k] = v as unknown
+            } else {
               next[k] = v as unknown
             }
           }
@@ -747,23 +817,15 @@ const uploadAndParse = async () => {
           if (missing.length) {
             filledGroups.value = [...filledGroups.value, ...missing]
           }
+          confirmTerminalViaPolling()
         }
         if (evt.stage === 'error' && evt.recordId) {
           terminalRecordIds.add(String(evt.recordId))
           batchStats.erroredCount += 1
+          confirmTerminalViaPolling()
         }
         if (terminalRecordIds.size >= fileIds.value.length) {
-          if (Object.keys(parsedRecord.value).length) {
-            parseStatus.value = 'completed'
-            currentStage.value = 'completed'
-            if (batchStats.completedCount >= 2) {
-              fetchTimeline().finally(() => { safeResolve() })
-            } else {
-              safeResolve()
-            }
-          } else {
-            safeReject(new Error(evt.errorMsg || '所有文件解析均失败'))
-          }
+          confirmTerminalViaPolling()
         }
       }
 
@@ -771,10 +833,7 @@ const uploadAndParse = async () => {
         onState,
         onDone: () => {
           // 服务端通知"全部终态"——若我们这边 onState 还没走完，也用本回调收尾
-          if (!settled && terminalRecordIds.size === 0) {
-            // 没收到任何 state？不太可能，但安全起见走 fallback
-            startPollingFallback('done_without_state')
-          }
+          if (!settled) confirmTerminalViaPolling()
         },
         onError: (e) => { startPollingFallback(e.message || 'sse_error') },
         onNoredis: () => {
@@ -786,7 +845,7 @@ const uploadAndParse = async () => {
             }
           }, 8000)
         }
-      })
+      }, { afterSeq: lastSeqByRecordId })
     })
 
     track('upload_success', {
@@ -802,6 +861,35 @@ const uploadAndParse = async () => {
     stopPolling()
     if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
   }
+}
+
+const formatCount = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return ''
+  if (value >= 10000) return `${Math.round(value / 1000) / 10} 万`
+  return `${Math.round(value)}`
+}
+
+const buildStreamStatusHint = (evt: StreamEvent) => {
+  const waiting = Number(evt.providerWait?.waiting || 0)
+  if (waiting > 1) return `模型资源排队中，前面还有 ${waiting - 1} 个请求，我们会自动继续。`
+  if (waiting === 1) return '模型资源排队中，排到后会自动继续。'
+  if (typeof evt.pageCount === 'number' && evt.pageCount > 1) {
+    return `已读取 ${evt.pageCount} 页，正在逐页整理关键信息。`
+  }
+  if (typeof evt.textLength === 'number' && evt.textLength > 0) {
+    return `已识别约 ${formatCount(evt.textLength)} 字，正在整理诊断、分期和治疗信息。`
+  }
+  if (evt.stage === 'field_group' && evt.fieldGroup) {
+    const labels: Record<GroupName, string> = {
+      basic: '基本信息',
+      diagnosis: '诊断信息',
+      treatment: '治疗记录',
+      timeline: '病程时间线'
+    }
+    const textPrefix = streamTextLength.value ? `已识别约 ${formatCount(streamTextLength.value)} 字，` : ''
+    return `${textPrefix}${labels[evt.fieldGroup]}已开始补齐，最终结果还会再确认一次。`
+  }
+  return ''
 }
 
 const toMatches = async () => {
@@ -877,7 +965,7 @@ onUnmounted(() => {
 .upload-toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.92);
   color: #fff;

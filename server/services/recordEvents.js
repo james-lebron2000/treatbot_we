@@ -19,6 +19,10 @@ const logger = require('../utils/logger');
 
 const CHANNEL_PREFIX = 'ocr:record:';
 const channelOf = (recordId) => `${CHANNEL_PREFIX}${recordId}`;
+const streamKeyOf = (recordId) => `${CHANNEL_PREFIX}${recordId}:events`;
+const seqKeyOf = (recordId) => `${CHANNEL_PREFIX}${recordId}:seq`;
+const STREAM_MAXLEN = Math.max(20, parseInt(process.env.OCR_EVENT_STREAM_MAXLEN || '200', 10));
+const STREAM_TTL_SECONDS = Math.max(60, parseInt(process.env.OCR_EVENT_STREAM_TTL_SECONDS || '86400', 10));
 
 const buildRedisOptions = () => ({
   host: process.env.REDIS_HOST || 'localhost',
@@ -111,13 +115,73 @@ const publishRecordEvent = async (recordId, payload) => {
   const pub = ensurePublisher();
   if (!pub) return false;
   try {
-    const message = JSON.stringify({ ...payload, recordId, ts: Date.now() });
+    const seq = typeof pub.incr === 'function'
+      ? await pub.incr(seqKeyOf(recordId))
+      : Date.now();
+    const event = {
+      ...payload,
+      recordId,
+      seq,
+      ts: payload && payload.ts ? payload.ts : Date.now()
+    };
+    const message = JSON.stringify(event);
+    if (typeof pub.xadd === 'function') {
+      await pub.xadd(streamKeyOf(recordId), 'MAXLEN', '~', STREAM_MAXLEN, '*', 'payload', message);
+    }
+    if (typeof pub.expire === 'function') {
+      await pub.expire(streamKeyOf(recordId), STREAM_TTL_SECONDS);
+      await pub.expire(seqKeyOf(recordId), STREAM_TTL_SECONDS);
+    }
     await pub.publish(channelOf(recordId), message);
     return true;
   } catch (e) {
     redisHealthy = false;
     logger.warn('recordEvents.publish 失败（已忽略）', { recordId, error: e.message });
     return false;
+  }
+};
+
+const parseStreamPayload = (entry) => {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const fields = entry[1] || [];
+  let raw = null;
+  for (let i = 0; i < fields.length; i += 2) {
+    if (fields[i] === 'payload') {
+      raw = fields[i + 1];
+      break;
+    }
+  }
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    logger.warn('recordEvents.replay: payload JSON 解析失败，丢弃', {
+      streamId: entry[0],
+      error: e.message
+    });
+    return null;
+  }
+};
+
+/**
+ * 按业务 seq 补发历史事件。
+ * afterSeq 是 publishRecordEvent 写入 payload.seq 的单调整数，而不是 Redis Stream ID。
+ */
+const replayRecordEvents = async (recordId, afterSeq = 0, limit = STREAM_MAXLEN) => {
+  if (!recordId) return [];
+  const pub = ensurePublisher();
+  if (!pub || typeof pub.xrange !== 'function') return [];
+  try {
+    const count = Math.max(1, Math.min(Number(limit) || STREAM_MAXLEN, STREAM_MAXLEN));
+    const rows = await pub.xrange(streamKeyOf(recordId), '-', '+', 'COUNT', count);
+    const minSeq = Number(afterSeq) || 0;
+    return (rows || [])
+      .map(parseStreamPayload)
+      .filter((event) => event && Number(event.seq || 0) > minSeq);
+  } catch (e) {
+    redisHealthy = false;
+    logger.warn('recordEvents.replay 失败（已忽略）', { recordId, error: e.message });
+    return [];
   }
 };
 
@@ -198,9 +262,19 @@ const __reset = () => {
 
 module.exports = {
   publishRecordEvent,
+  replayRecordEvents,
   subscribeRecordEvents,
   isHealthy,
   __setTestables,
   __reset,
-  __testables: { CHANNEL_PREFIX, channelOf, listeners }
+  __testables: {
+    CHANNEL_PREFIX,
+    STREAM_MAXLEN,
+    STREAM_TTL_SECONDS,
+    channelOf,
+    streamKeyOf,
+    seqKeyOf,
+    listeners,
+    parseStreamPayload
+  }
 };

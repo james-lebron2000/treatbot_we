@@ -6,6 +6,7 @@ const { runStreamingPipeline } = require('./ocrPipeline');
 // 然后 buildEmitAdapter 把它折成 main 的 status-based 形状（statusPhase + fields 附加）发给 SSE。
 const { STAGE } = require('../../shared/streaming/events');
 const { MedicalRecord, OcrJobFailure } = require('../models');
+const metrics = require('../middleware/metrics');
 // Plan §Phase 1.2：OCR 结果缓存（按 file_hash + prompt_version）
 const ocrCache = require('./ocrCache');
 // Q3-红线 §A.3：Sentry 软依赖（DSN 未配置时退化为 noop）
@@ -212,6 +213,17 @@ const runOcrTask = async (data, opts = {}) => {
   const { recordId, imageUrl, mimeType, fileKey, userId } = data;
   const { jobId } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
+  const streamStartTs = Date.now();
+  let firstStreamFrameObserved = false;
+  let firstFieldObserved = false;
+  const observeStreamLatency = (phase) => {
+    try {
+      if (!metrics.ocrStreamLatency) return;
+      metrics.ocrStreamLatency.labels(phase).observe((Date.now() - streamStartTs) / 1000);
+    } catch (_e) {
+      // metrics must never affect OCR
+    }
+  };
 
   // PRD-2026Q4 流式 OCR：把 ocrPipeline 发出的 stage-based 事件折成 main 的 status-based SSE payload。
   // 设计点：
@@ -240,6 +252,14 @@ const runOcrTask = async (data, opts = {}) => {
     if (!evt || !evt.stage) return;
     if (evt.stage === STAGE.RECEIVED || evt.stage === STAGE.PREPROCESS) return;
     if (evt.stage === STAGE.COMPLETED || evt.stage === STAGE.ERROR) return;
+    if (!firstStreamFrameObserved) {
+      firstStreamFrameObserved = true;
+      observeStreamLatency('first_frame');
+    }
+    if (!firstFieldObserved && evt.fields && typeof evt.fields === 'object' && Object.keys(evt.fields).length) {
+      firstFieldObserved = true;
+      observeStreamLatency('first_field');
+    }
     // 中段取消闸（节流）—— 抛 OcrCancelledError 会冒泡到 runOcrTask 的 catch，
     // 走 cancelled 分支（不写 error、不进 Sentry、不入 Bull DLQ）。
     const now = Date.now();
@@ -261,6 +281,9 @@ const runOcrTask = async (data, opts = {}) => {
     if (typeof evt.progress === 'number') payload.progress = evt.progress;
     if (evt.fieldGroup) payload.fieldGroup = evt.fieldGroup;
     if (evt.fields && typeof evt.fields === 'object') payload.fields = evt.fields;
+    if (evt.fieldPatch) payload.fieldPatch = true;
+    if (typeof evt.textLength === 'number') payload.textLength = evt.textLength;
+    if (typeof evt.pageCount === 'number') payload.pageCount = evt.pageCount;
     if (typeof evt.rawText === 'string' && evt.rawText.length) payload.rawText = evt.rawText;
     if (evt.message) payload.message = evt.message;
     if (evt.providerWait) payload.providerWait = evt.providerWait;

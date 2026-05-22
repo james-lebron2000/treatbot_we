@@ -39,12 +39,22 @@ export interface StreamEvent {
   recordId: string
   stage: StreamStage
   progress: number | null
+  seq?: number
   ts: number
   // stage='ocr_text'
   rawText?: string
+  textLength?: number
+  pageCount?: number
+  providerWait?: {
+    waiting?: number
+    capacity?: number
+    [key: string]: unknown
+  }
+  message?: string
   // stage='field_group'
   fieldGroup?: 'basic' | 'diagnosis' | 'treatment' | 'timeline'
   fields?: Record<string, unknown>
+  fieldPatch?: boolean
   // stage='completed'
   result?: {
     entities: Record<string, unknown>
@@ -66,6 +76,9 @@ export interface ParseStreamHandlers {
 }
 
 const SSE_DELIMITER = '\n\n'
+export interface ParseStreamOptions {
+  afterSeq?: Record<string, number>
+}
 
 /**
  * 把 main 的 status-based frame 折成 UploadView 早期版本用的 stage-based StreamEvent。
@@ -81,6 +94,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
   if (!payload || !payload.recordId) return null
   const recordId = String(payload.recordId)
   const progress = typeof payload.progress === 'number' ? payload.progress : null
+  const seq = typeof payload.seq === 'number' ? payload.seq : undefined
   const ts = typeof payload.ts === 'number' ? payload.ts : Date.now()
   const status = String(payload.status || 'unknown')
 
@@ -90,19 +104,26 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       recordId,
       stage: 'field_group',
       progress,
+      seq,
       ts,
       fieldGroup: payload.fieldGroup,
-      fields: payload.fields
+      fields: payload.fields,
+      fieldPatch: !!payload.fieldPatch
     }
   }
   // streaming 扩展：rawText（取得 OCR 全文，前端展开 raw text 折叠面板）
-  if (typeof payload.rawText === 'string' && payload.rawText.length) {
+  if ((typeof payload.rawText === 'string' && payload.rawText.length) || typeof payload.textLength === 'number') {
     return {
       recordId,
       stage: 'ocr_text',
       progress,
+      seq,
       ts,
-      rawText: payload.rawText
+      rawText: typeof payload.rawText === 'string' ? payload.rawText : undefined,
+      textLength: typeof payload.textLength === 'number' ? payload.textLength : undefined,
+      pageCount: typeof payload.pageCount === 'number' ? payload.pageCount : undefined,
+      providerWait: payload.providerWait && typeof payload.providerWait === 'object' ? payload.providerWait : undefined,
+      message: typeof payload.message === 'string' ? payload.message : undefined
     }
   }
 
@@ -125,6 +146,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       recordId,
       stage: 'completed',
       progress,
+      seq,
       ts,
       result: {
         entities,
@@ -143,6 +165,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       recordId,
       stage: 'error',
       progress,
+      seq,
       ts,
       errorMsg: typeof payload.errorMsg === 'string' ? payload.errorMsg : '解析失败'
     }
@@ -152,6 +175,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       recordId,
       stage: 'error',
       progress,
+      seq,
       ts,
       errorMsg: '已取消'
     }
@@ -163,24 +187,31 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
     recordId,
     stage: 'preprocess',
     progress,
-    ts
+    seq,
+    ts,
+    pageCount: typeof payload.pageCount === 'number' ? payload.pageCount : undefined,
+    providerWait: payload.providerWait && typeof payload.providerWait === 'object' ? payload.providerWait : undefined,
+    message: typeof payload.message === 'string' ? payload.message : undefined
   }
 }
 
-const parseSseBlock = (block: string): { event: string; data: string } | null => {
+const parseSseBlock = (block: string): { event: string; data: string; id?: string } | null => {
   let event = 'message'
+  let id = ''
   const dataLines: string[] = []
   for (const rawLine of block.split('\n')) {
     const line = rawLine.replace(/\r$/, '')
     if (!line || line.startsWith(':')) continue
-    if (line.startsWith('event:')) {
+    if (line.startsWith('id:')) {
+      id = line.slice(3).trim()
+    } else if (line.startsWith('event:')) {
       event = line.slice(6).trim()
     } else if (line.startsWith('data:')) {
       dataLines.push(line.slice(5).replace(/^ /, ''))
     }
   }
   if (!dataLines.length) return null
-  return { event, data: dataLines.join('\n') }
+  return { event, data: dataLines.join('\n'), id: id || undefined }
 }
 
 const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
@@ -191,6 +222,11 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
     payload = JSON.parse(parsed.data)
   } catch {
     return  // 心跳行或损坏数据，忽略
+  }
+  if (parsed.id && payload && typeof payload === 'object' && payload.seq === undefined) {
+    const colon = parsed.id.lastIndexOf(':')
+    const seq = colon > 0 ? Number(parsed.id.slice(colon + 1)) : Number(parsed.id)
+    if (Number.isFinite(seq)) payload.seq = seq
   }
   switch (parsed.event) {
     case 'noredis': handlers.onNoredis?.(payload); break
@@ -211,7 +247,8 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
  */
 export const openParseStream = (
   recordIds: string[],
-  handlers: ParseStreamHandlers
+  handlers: ParseStreamHandlers,
+  options: ParseStreamOptions = {}
 ): (() => void) => {
   const ids = recordIds.map((s) => `${s ?? ''}`.trim()).filter(Boolean)
   if (!ids.length) {
@@ -221,7 +258,12 @@ export const openParseStream = (
 
   const baseURL = http.defaults.baseURL || ''
   const token = localStorage.getItem('token') || ''
-  const url = `${baseURL}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(ids.join(','))}`
+  const query = new URLSearchParams({ recordIds: ids.join(',') })
+  const afterPairs = Object.entries(options.afterSeq || {})
+    .filter(([id, seq]) => ids.includes(id) && Number.isFinite(Number(seq)) && Number(seq) >= 0)
+    .map(([id, seq]) => `${id}:${Number(seq)}`)
+  if (afterPairs.length) query.set('afterSeq', afterPairs.join(','))
+  const url = `${baseURL}/api/medical/parse-status-stream?${query.toString()}`
 
   const ctrl = new AbortController()
   let closed = false

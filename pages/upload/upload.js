@@ -136,6 +136,44 @@ const formatEtaText = (secondsRemaining, isOverdue) => {
   return `预计还需 ~${s} 秒`
 }
 
+const formatStreamCount = (value) => {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n >= 10000) return `${Math.round(n / 1000) / 10} 万`
+  return `${Math.round(n)}`
+}
+
+const buildStreamStatusHint = (payload, previousTextLength = 0) => {
+  if (!payload || typeof payload !== 'object') return ''
+  const wait = payload.providerWait && typeof payload.providerWait === 'object'
+    ? payload.providerWait
+    : null
+  const waiting = Number(wait && wait.waiting)
+  if (waiting > 1) return `模型资源排队中，前面还有 ${waiting - 1} 个请求，我们会自动继续。`
+  if (waiting === 1) return '模型资源排队中，排到后会自动继续。'
+  const pageCount = Number(payload.pageCount)
+  if (Number.isFinite(pageCount) && pageCount > 1) {
+    return `已读取 ${pageCount} 页，正在逐页整理关键信息。`
+  }
+  const textLength = Number(payload.textLength)
+  if (Number.isFinite(textLength) && textLength > 0) {
+    return `已识别约 ${formatStreamCount(textLength)} 字，正在整理诊断、分期和治疗信息。`
+  }
+  const groupLabels = {
+    basic: '基本信息',
+    diagnosis: '诊断信息',
+    treatment: '治疗记录',
+    timeline: '病程时间线'
+  }
+  if (payload.fieldGroup && groupLabels[payload.fieldGroup]) {
+    const prefix = Number(previousTextLength) > 0
+      ? `已识别约 ${formatStreamCount(previousTextLength)} 字，`
+      : ''
+    return `${prefix}${groupLabels[payload.fieldGroup]}已开始补齐，最终结果还会再确认一次。`
+  }
+  return ''
+}
+
 // PRD-2026Q3 §U5（增量修复 errCode 80051）：
 //   wx.uploadFile 生产硬上限 10MB；WeChat DevTools 默认 2MB（详情→本地设置可调高）。
 //   服务端 multer fileSize=30MB（server/controllers/medical.js:14）—— 瓶颈始终在客户端这一层。
@@ -649,6 +687,7 @@ Page({
     // 修复方案 Track 3.7：把 pollingActive 也清掉，让 scheduleNextPoll 自然 short-circuit。
     // 兼容 setInterval（旧固定 1500ms）+ setTimeout（新自适应链）两种 timer 句柄。
     this.pollingActive = false
+    this.streamHealthy = false
     if (this.pollTimer) {
       clearInterval(this.pollTimer)
       clearTimeout(this.pollTimer)
@@ -833,6 +872,8 @@ Page({
     this.completionHandled = false
     // 累积流式字段的 instance bucket 也清掉，配 streamingPartialGroups 双清
     this.streamingPartial = {}
+    this.lastStreamSeqByRecordId = {}
+    this.lastStreamTextLength = 0
   },
 
   async uploadFiles() {
@@ -1158,7 +1199,8 @@ Page({
       onState: (payload) => this.handleStreamState(payload),
       onDone: () => this.handleStreamDone(),
       onError: (reason) => this.handleStreamError(reason),
-      openTimeoutMs: 10000
+      openTimeoutMs: 10000,
+      afterSeq: this.lastStreamSeqByRecordId || {}
     })
 
     if (!handle) {
@@ -1179,6 +1221,19 @@ Page({
   // 这样我们不用把 parse-task.js 里 batch merge 的逻辑复制到这里。
   handleStreamState(payload) {
     if (!payload || this.completionHandled) return
+    const rid = payload.recordId || payload.fileId
+    if (rid && Number.isFinite(Number(payload.seq))) {
+      this.lastStreamSeqByRecordId = {
+        ...(this.lastStreamSeqByRecordId || {}),
+        [rid]: Math.max(Number((this.lastStreamSeqByRecordId || {})[rid] || 0), Number(payload.seq))
+      }
+    }
+    if (!this.streamHealthy) {
+      this.streamHealthy = true
+      // SSE 有首帧后，轮询降为低频安全网；终态帧仍会立即 kick checkParseStatus。
+      this.pollIntervalMs = Math.max(Number(this.pollIntervalMs || 3000), 8000)
+      this.scheduleNextPoll()
+    }
     const status = `${payload.status || ''}`.toLowerCase()
     const progress = Number(payload.progress)
     const isTerminal = status === 'completed' || status === 'error' || status === 'cancelled'
@@ -1192,6 +1247,13 @@ Page({
       //  · 中段帧仍封顶 99，把 100 留给真正的完成态写库
       const cap = isTerminal ? 100 : 99
       this.setProgressTarget(uiStatus, Math.min(cap, progress))
+    }
+    if (Number.isFinite(Number(payload.textLength)) && Number(payload.textLength) > 0) {
+      this.lastStreamTextLength = Number(payload.textLength)
+    }
+    const streamHint = buildStreamStatusHint(payload, this.lastStreamTextLength)
+    if (streamHint && !this.completionHandled && this.data.currentStep !== 3) {
+      this.setData({ processingStatus: streamHint })
     }
     // Wave 1 §F2：SSE 终态帧立刻 kick 一次 checkParseStatus —— 不等批次 done 帧、不等下一个 3s 轮询周期。
     // 这是把「99% 卡 1–3 秒」死区从客户端这一侧消掉的关键：服务端推 completed 帧的瞬间，
@@ -1262,6 +1324,9 @@ Page({
     try {
       console.warn('[upload] SSE 失败，fallback 到轮询：', reason && reason.code)
     } catch (_e) { /* noop */ }
+    this.streamHealthy = false
+    this.pollIntervalMs = 3000
+    this.scheduleNextPoll()
     this.closeStatusStream()
   },
 
@@ -1278,6 +1343,7 @@ Page({
     this.pollIntervalMs = 3000
     this.pollMaxIntervalMs = 10000
     this.pollingActive = true
+    this.streamHealthy = false
 
     this.checkParseStatus()
     this.scheduleNextPoll()

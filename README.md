@@ -201,7 +201,7 @@ TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
   BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 ```
 
-期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 Treatbot Web 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
+期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 Treatbot Web 测试账号的 smoke 能完成登录、上传、解析轮询和 SSE 终态回放。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`，断线恢复可带 `afterSeq=recordId:seq`；默认不会在 SSE 中返回 `rawText`，只返回结构化字段和文本长度。
 
 **自动部署所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
 

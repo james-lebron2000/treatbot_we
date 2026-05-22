@@ -51,7 +51,7 @@ const route = useRoute()
 const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 const showTabBar = computed(() => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value)
 const showHelpFab = computed(
-  () => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value && route.path !== '/onboarding'
+  () => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value && route.path !== '/onboarding' && route.path !== '/upload'
 )
 
 onMounted(() => {

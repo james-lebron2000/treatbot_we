@@ -206,9 +206,13 @@ describe('streamChatJson 集成（mock stream）', () => {
     })
 
     const emitted = []
+    const patches = []
     // 处理 emit-throttle：测试用 0ms 阻塞让所有 emit 都过
     const onFieldGroup = (group, fields, progress) => {
       emitted.push({ group, fields, progress })
+    }
+    const onFieldPatch = (group, fields, progress) => {
+      patches.push({ group, fields, progress })
     }
 
     // 先 stub provider env var 让 PROVIDER_REGISTRY['doubao'] 拿到 apiKey
@@ -218,6 +222,7 @@ describe('streamChatJson 集成（mock stream）', () => {
       provider: 'doubao',
       messages: [{ role: 'user', content: 'x' }],
       schema: passSchema,
+      onFieldPatch,
       onFieldGroup
     })
 
@@ -233,6 +238,8 @@ describe('streamChatJson 集成（mock stream）', () => {
     // basic group 的 progress 应该是 50（来自 GROUPS.basic.progress）
     expect(emitted[0].progress).toBe(50)
     expect(emitted[3].progress).toBe(95)
+    expect(patches.some((p) => p.group === 'basic' && p.fields.age === 60)).toBe(true)
+    expect(patches.some((p) => p.group === 'diagnosis' && p.fields.diagnosis === 'NSCLC')).toBe(true)
 
     // 最终结果包含全部字段
     expect(result.age).toBe(60)

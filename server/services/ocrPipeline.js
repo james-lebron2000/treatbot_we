@@ -57,6 +57,7 @@ const OCR_STRUCTURED_STREAM_TIMEOUT_MS = Math.max(
 // 默认 ON：实测视觉 entities 命中率高（同一个 prompt 体系）。
 // 出问题可设 OCR_SKIP_SECOND_LLM=0 退回原行为。
 const OCR_SKIP_SECOND_LLM = (process.env.OCR_SKIP_SECOND_LLM || '1') !== '0'
+const OCR_STREAM_RAW_TEXT_ENABLED = (process.env.OCR_STREAM_RAW_TEXT_ENABLED || '0') === '1'
 
 const readPositiveFloatEnv = (name, fallback) => {
   const value = Number(process.env[name])
@@ -205,8 +206,10 @@ const runStreamingPipeline = async ({ source, emit }) => {
     throw err
   }
 
-  // 3) ocr_text 阶段事件——把识别到的全文丢给前端先展示
-  await safeEmit(composeEvent(null, STAGE.OCR_TEXT, { rawText }))
+  // 3) ocr_text 阶段事件。默认不把原文通过 SSE 下发，只给客户端一个可信的识别进度信号。
+  await safeEmit(composeEvent(null, STAGE.OCR_TEXT, OCR_STREAM_RAW_TEXT_ENABLED
+    ? { rawText, textLength: rawText.length }
+    : { textLength: rawText.length }))
 
   // Wave 2 §F4：快路径 —— 视觉 LLM 已经返回了 schema 形状的 entities，
   // 如果核心字段已经齐了就 fake-stream 出去，跳过二次 streamChatJson（省 20–45s）。
@@ -237,7 +240,7 @@ const runStreamingPipeline = async ({ source, emit }) => {
         progress: group.progress
       }))
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 80))
+      await new Promise((resolve) => setTimeout(resolve, 260))
     }
     return {
       entities: fastShape,
@@ -275,6 +278,16 @@ const runStreamingPipeline = async ({ source, emit }) => {
       provider: 'doubao',
       messages,
       schema: OcrExtractionSchema,
+      onFieldPatch: async (groupName, fields, progress) => {
+        if (!RENDERABLE_GROUPS.includes(groupName)) return
+        const restored = restoreFromLlm(fields, mapping)
+        await safeEmit(composeEvent(null, STAGE.FIELD_GROUP, {
+          fieldGroup: groupName,
+          fields: restored,
+          progress,
+          fieldPatch: true
+        }))
+      },
       onFieldGroup: async (groupName, fields, progress) => {
         if (groupName === 'preview') {
           // rawText 在 ocr_text 已发过；不重复
@@ -315,7 +328,7 @@ const runStreamingPipeline = async ({ source, emit }) => {
       }))
       // 让浏览器/小程序有时间画一帧
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 80))
+      await new Promise((resolve) => setTimeout(resolve, 260))
     }
   }
 

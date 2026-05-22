@@ -17,6 +17,11 @@
       </div>
     </div>
 
+    <div v-if="statusHint || progressText" class="stream-status-hint" role="status">
+      <span v-if="progressText" class="stream-status-progress">{{ progressText }}</span>
+      <span v-if="statusHint" class="stream-status-text">{{ statusHint }}</span>
+    </div>
+
     <!-- 错误态 -->
     <div v-if="errorStage" class="stream-error">
       ⚠️ 解析失败：{{ errorMsg || '未知错误' }}
@@ -193,11 +198,15 @@ const props = withDefaults(defineProps<{
   // PRD-2026Q4：父组件用 axios onUploadProgress 推上来的上传百分比（0-100）。
   // 仅当 stage 还在 received/preprocess 时显示——之后被取文/提取阶段替代。
   uploadPercent?: number
+  progress?: number | null
+  statusHint?: string | null
 }>(), {
   rawText: '',
   stage: 'received',
   errorMsg: '',
-  uploadPercent: 0
+  uploadPercent: 0,
+  progress: null,
+  statusHint: ''
 })
 
 const groups: { name: GroupName; label: string; emoji: string }[] = [
@@ -256,6 +265,12 @@ const currentStageLabel = computed(() => {
   if (s === 'field_group') return '正在提取病例字段'
   if (s === 'ocr_text') return '正在识别原文'
   return '正在准备'
+})
+
+const progressText = computed(() => {
+  const n = typeof props.progress === 'number' ? Math.round(props.progress) : 0
+  if (n <= 0 || n >= 100 || props.stage === 'completed') return ''
+  return `${n}%`
 })
 
 const errorStage = computed(() => props.stage === 'error')
@@ -339,6 +354,27 @@ const hasAnyBasicValue = computed(() => {
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 0.85rem;
+}
+
+.stream-status-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.stream-status-progress {
+  flex: 0 0 auto;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+.stream-status-text {
+  min-width: 0;
 }
 
 /* 原文折叠区 */

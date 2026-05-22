@@ -121,6 +121,21 @@ const ocrParseStateTotal = new client.Counter({
   registers: [register]
 });
 
+const ocrStreamEventTotal = new client.Counter({
+  name: 'ocr_stream_event_total',
+  help: 'OCR streaming SSE 事件计数，按 event/status 维度',
+  labelNames: ['event', 'status'],
+  registers: [register]
+});
+
+const ocrStreamLatency = new client.Histogram({
+  name: 'ocr_stream_latency_seconds',
+  help: 'OCR streaming 用户体感延迟（秒），按 phase 维度：first_frame/first_field/terminal_to_confirm',
+  labelNames: ['phase'],
+  buckets: [0.1, 0.3, 0.5, 1, 2, 5, 10, 30, 60],
+  registers: [register]
+});
+
 // Q3-红线 §B.2：业务漏斗事件计数器（POST /api/track 落库时同步 inc）
 // 标签 event 取自白名单（landing_view / upload_start / upload_success /
 // match_view / trial_apply / application_submitted）；
@@ -202,6 +217,8 @@ module.exports = {
   // Plan §Phase 1.2：OCR 结果缓存 hit/miss 计数器
   ocrCacheTotal,
   ocrParseStateTotal,
+  ocrStreamEventTotal,
+  ocrStreamLatency,
   // Q3-红线 §B.2：漏斗事件计数器
   userFunnelEventTotal
 };

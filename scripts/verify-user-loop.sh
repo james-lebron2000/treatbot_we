@@ -107,6 +107,17 @@ require_code_zero "$detail_resp"
 printf '%s' "$detail_resp" | json_get "return data.data&&data.data.structured&&data.data.structured.entities&&Object.keys(data.data.structured.entities).length?1:null" >/dev/null
 echo "ok: records/:id structured readback"
 
+stream_resp="$(curl -fsS -N -m 20 "$BASE_URL/api/medical/parse-status-stream?recordIds=$record_id&afterSeq=$record_id:0" \
+  -H "Authorization: Bearer $TOKEN" || true)"
+printf '%s' "$stream_resp" | grep -q '^event: state'
+printf '%s' "$stream_resp" | grep -q '^event: done'
+printf '%s' "$stream_resp" | grep -q '"entities"'
+if printf '%s' "$stream_resp" | grep -q '"rawText"'; then
+  echo "parse-status-stream leaked rawText while OCR_STREAM_RAW_TEXT_ENABLED is default-off" >&2
+  exit 1
+fi
+echo "ok: parse-status-stream replay"
+
 matches_resp="$(curl -fsS -m 30 "$BASE_URL/api/matches?recordId=$record_id&page=1&pageSize=20" -H "Authorization: Bearer $TOKEN")"
 require_code_zero "$matches_resp"
 echo "ok: matches read"

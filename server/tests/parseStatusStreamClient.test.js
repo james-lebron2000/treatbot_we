@@ -29,6 +29,14 @@ describe('parse-status-stream: pure parsing', () => {
     expect(r).toEqual({ event: 'state', data: { status: 'analyzing', progress: 65 } });
   });
 
+  test('parseFrame: preserves SSE id as business seq', () => {
+    const r = __testables.parseFrame('id: rec-1:9\nevent: state\ndata: {"recordId":"rec-1","status":"running"}');
+    expect(r).toEqual({
+      event: 'state',
+      data: { recordId: 'rec-1', status: 'running', seq: 9 }
+    });
+  });
+
   test('parseFrame: 没有 event 行 → 默认 message', () => {
     const r = __testables.parseFrame('data: {"x":1}');
     expect(r).toEqual({ event: 'message', data: { x: 1 } });
@@ -88,6 +96,20 @@ describe('parse-status-stream: openParseStatusStream', () => {
   test('参数缺失 → 返回 null', () => {
     expect(openParseStatusStream({ wx: mockWx, url: 'x', fileIds: [] })).toBeNull();
     expect(openParseStatusStream({ wx: mockWx, url: '', fileIds: ['a'] })).toBeNull();
+  });
+
+  test('afterSeq is appended to request url', () => {
+    openParseStatusStream({
+      wx: mockWx,
+      url: 'https://x/api/medical/parse-status-stream?recordIds=a%2Cb',
+      fileIds: ['a', 'b'],
+      afterSeq: { a: 3, b: 8 },
+      onState: jest.fn(),
+      onDone: jest.fn(),
+      onError: jest.fn()
+    });
+    expect(mockWx.request.mock.calls[0][0].url)
+      .toContain('afterSeq=a%3A3%2Cb%3A8');
   });
 
   test('chunkResp 推 state → onState 被调', () => {

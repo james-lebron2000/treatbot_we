@@ -31,6 +31,7 @@ a {
   max-width: 960px;
   margin: 0 auto;
   padding: var(--s-3);
+  padding-bottom: calc(var(--s-3) + 76px + env(safe-area-inset-bottom, 0px));
 }
 
 .app-shell-admin {
@@ -70,7 +71,7 @@ a {
   background: var(--bg);
   border-radius: var(--r-lg);
   padding: var(--s-4);
-  padding-bottom: var(--s-12);
+  padding-bottom: calc(var(--s-12) + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-1);
 }
 
@@ -222,5 +223,6 @@ textarea:focus-visible {
 
   .app-main {
     padding: var(--s-3);
+    padding-bottom: calc(var(--s-12) + env(safe-area-inset-bottom, 0px));
   }
 }

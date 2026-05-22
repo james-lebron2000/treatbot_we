@@ -20,6 +20,7 @@ const llmRateLimiter = require('./llmRateLimiter')
 const {
   GROUP_ORDER,
   GROUPS,
+  FIELD_TO_GROUP,
   findCompletedGroups,
   pickGroupFields
 } = require('../../shared/streaming/fieldGroups')
@@ -140,11 +141,12 @@ const extractDeltaContents = (buffer) => {
  * @param {'doubao'|'kimi'|'openai'} args.provider
  * @param {Array} args.messages OpenAI 风格 messages（已 PII 脱敏）
  * @param {import('zod').ZodTypeAny} args.schema 最终 zod 校验
+ * @param {(group: string, fields: object, progress: number) => void} [args.onFieldPatch]
  * @param {(group: string, fields: object, progress: number) => void} [args.onFieldGroup]
  * @param {object} [args.opts] 透传给 axios（如 timeoutMs、fallbackToChatJson）
  * @returns {Promise<any>} schema 校验通过的最终对象
  */
-const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts = {} }) => {
+const streamChatJson = async ({ provider, messages, schema, onFieldPatch, onFieldGroup, opts = {} }) => {
   if (!schema || typeof schema.safeParse !== 'function') {
     throw new Error('streamChatJson: schema 必须是 zod schema')
   }
@@ -213,6 +215,7 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
   return new Promise((resolve, reject) => {
     let sseBuffer = ''
     let contentBuffer = ''
+    const emittedFields = new Set()
     const emittedGroups = new Set()
     let lastEmitTs = 0
     const EMIT_THROTTLE_MS = 150
@@ -244,6 +247,22 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
       lastEmitTs = now
 
       const partial = parsePartialObject(contentBuffer)
+      if (typeof onFieldPatch === 'function') {
+        for (const [key, value] of Object.entries(partial)) {
+          if (emittedFields.has(key)) continue
+          const groupName = FIELD_TO_GROUP[key]
+          if (!groupName || groupName === 'preview') continue
+          emittedFields.add(key)
+          try {
+            Promise.resolve(onFieldPatch(groupName, { [key]: value }, GROUPS[groupName].progress))
+              .catch((cbErr) => {
+                logger.warn('streamChatJson onFieldPatch 回调异常（忽略）', { error: cbErr.message })
+              })
+          } catch (cbErr) {
+            logger.warn('streamChatJson onFieldPatch 回调异常（忽略）', { error: cbErr.message })
+          }
+        }
+      }
       const completed = findCompletedGroups(partial)
       for (const groupName of GROUP_ORDER) {
         if (completed.includes(groupName) && !emittedGroups.has(groupName)) {
@@ -251,7 +270,10 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
           const fields = pickGroupFields(partial, groupName)
           try {
             if (typeof onFieldGroup === 'function') {
-              onFieldGroup(groupName, fields, GROUPS[groupName].progress)
+              Promise.resolve(onFieldGroup(groupName, fields, GROUPS[groupName].progress))
+                .catch((cbErr) => {
+                  logger.warn('streamChatJson onFieldGroup 回调异常（忽略）', { error: cbErr.message })
+                })
             }
           } catch (cbErr) {
             logger.warn('streamChatJson onFieldGroup 回调异常（忽略）', { error: cbErr.message })

@@ -104,7 +104,9 @@ const buildCtx = (overrides = {}) => {
     statusStreamHandle: null,
     pollTimer: null,
     pollingActive: false,
+    pollIntervalMs: 3000,
     progressTimer: null,
+    scheduleNextPoll: jest.fn(),
     // 真实方法 —— 让 handle*/clear* 之间能互相 this.xxx() 调用
     closeStatusStream: pageOptions.closeStatusStream,
     startStatusStream: pageOptions.startStatusStream,
@@ -219,6 +221,8 @@ describe('handleStreamState — monotonic progress contract', () => {
     pageOptions.handleStreamState.call(ctx, { status: 'running', progress: 50 })
 
     expect(ctx.setProgressTarget).toHaveBeenCalledWith('analyzing', 50)
+    expect(ctx.pollIntervalMs).toBe(8000)
+    expect(ctx.scheduleNextPoll).toHaveBeenCalled()
   })
 
   test('S2: 进度倒退（new=30 < current=60）→ 不调 setProgressTarget（单调）', () => {
@@ -326,6 +330,41 @@ describe('handleStreamState — monotonic progress contract', () => {
     expect(() => pageOptions.handleStreamState.call(ctx, undefined)).not.toThrow()
     expect(ctx.setProgressTarget).not.toHaveBeenCalled()
   })
+
+  test('S7: textLength/pageCount/providerWait 转成用户可理解的实时文案', () => {
+    const ctx = buildCtx({ data: { parseProgress: 10, currentStep: 2 } })
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 41,
+      textLength: 1280
+    })
+    expect(ctx.data.processingStatus).toContain('已识别约 1280 字')
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 42,
+      fieldGroup: 'diagnosis',
+      fields: { diagnosis: '非小细胞肺癌' }
+    })
+    expect(ctx.data.processingStatus).toContain('已识别约 1280 字')
+    expect(ctx.data.processingStatus).toContain('诊断信息已开始补齐')
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 43,
+      pageCount: 3
+    })
+    expect(ctx.data.processingStatus).toContain('已读取 3 页')
+
+    pageOptions.handleStreamState.call(ctx, {
+      status: 'running',
+      progress: 44,
+      providerWait: { waiting: 2, capacity: 1 }
+    })
+    expect(ctx.data.processingStatus).toContain('模型资源排队中')
+    expect(ctx.data.processingStatus).toContain('前面还有 1 个请求')
+  })
 })
 
 describe('handleStreamDone & handleStreamError — terminal handoff', () => {
@@ -364,6 +403,8 @@ describe('handleStreamDone & handleStreamError — terminal handoff', () => {
     expect(wxMock.showModal).not.toHaveBeenCalled()
     // 第一次 error 调用后流就被关掉了；后两次 close 已经是 null，不应抛
     expect(close).toHaveBeenCalledTimes(1)
+    expect(ctx.pollIntervalMs).toBe(3000)
+    expect(ctx.scheduleNextPoll).toHaveBeenCalled()
   })
 })
 
