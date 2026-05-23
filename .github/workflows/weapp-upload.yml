@@ -51,9 +51,9 @@ jobs:
       WEAPP_VERSION: ${{ github.event.inputs.version || format('{0}-{1}', github.ref_name, github.run_number) }}
       WEAPP_DESC: ${{ github.event.inputs.desc || format('Treatbot {0}', github.sha) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
 
@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload preview QR
         if: ${{ steps.weapp_secrets.outputs.should_upload == '1' && github.event.inputs.mode == 'preview' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: weapp-preview-qrcode
           path: weapp-preview-qrcode.jpg

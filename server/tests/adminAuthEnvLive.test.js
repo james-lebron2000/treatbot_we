@@ -4,16 +4,6 @@
 // 紧急吊销）必须无需重启进程即可生效；老实现把三份 Set 写在 module 顶层 const，
 // 改名单要重启——这跟 OCR_PROVIDER=kimi 残留事故是同一类 bug。
 
-const httpMocks = (req = {}) => {
-  const res = {
-    statusCode: 200,
-    body: null,
-    status(code) { this.statusCode = code; return this; },
-    json(payload) { this.body = payload; return this; }
-  };
-  return { req: { headers: {}, ...req }, res };
-};
-
 describe('adminAuth allowlist envs are live (not frozen at require time)', () => {
   const ORIGINAL_ENV = { ...process.env };
   let requireAdmin;

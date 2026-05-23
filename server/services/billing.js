@@ -20,7 +20,7 @@
  */
 
 const { Op } = require('sequelize');
-const { sequelize, ApplicationStatusEvent, TrialApplication, CroCompany } = require('../models');
+const { ApplicationStatusEvent, TrialApplication, CroCompany } = require('../models');
 const logger = require('../utils/logger');
 // PRD-2026Q4 T0-7 followup（CSV formula injection / CWE-1236）：cro_name 是 CRO 自填字段，
 // 历史只 `"`-quote 但没拦 = + - @ 起头 → Excel 仍按公式求值。集中式转义。

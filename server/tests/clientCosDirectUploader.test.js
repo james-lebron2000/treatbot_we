@@ -109,7 +109,7 @@ describe('utils/cosDirectUploader.directUploadFiles', () => {
         new Uint8Array(ab).set(buf);
         return ab;
       },
-      requestImpl: ({ url, method }) => {
+      requestImpl: ({ method }) => {
         if (method === 'PUT') return { statusCode: 200, header: { etag: 'mock' } };
         throw new Error('unexpected non-PUT call');
       }

@@ -12,7 +12,7 @@
  */
 const logger = require('../utils/logger');
 const { redisClient } = require('../middleware/rateLimit');
-const { scrubForLog, _maskPhone: maskPhone } = require('../utils/piiScrubber');
+const { _maskPhone: maskPhone } = require('../utils/piiScrubber');
 
 // 模块内持有一个 redis 客户端引用；测试时通过 jest.mock('../middleware/rateLimit') 注入
 const redis = redisClient;

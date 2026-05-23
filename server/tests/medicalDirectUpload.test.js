@@ -17,9 +17,6 @@
  *  11) 同批 dedup：同一批内重复 hash 仅入队一次
  *  12) 队列入队失败：record 写 status=error，但响应仍 200
  */
-
-const { PassThrough } = require('stream');
-
 // mock services & models —— 不打 DB，不打 COS。
 jest.mock('../services/oss', () => ({
   getDirectUploadInfo: jest.fn(),

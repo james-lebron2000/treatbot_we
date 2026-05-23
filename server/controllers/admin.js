@@ -1676,7 +1676,7 @@ const getTrialFieldReviewQueue = async (req, res, next) => {
 // rejected 语义：上游抽风，库内值保持。仅打 status='rejected'。
 //
 // 全程在事务里跑，先 lock review 行避免双人同时点。
-const resolveTrialFieldReview = async (req, res, next) => {
+const resolveTrialFieldReview = async (req, res, _next) => {
   const { TrialFieldChangeReview, Trial, sequelize } = require('../models');
   const { id } = req.params;
   const { decision, note } = req.body || {};

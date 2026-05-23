@@ -34,6 +34,9 @@
  */
 
 const logger = require('../utils/logger');
+// metrics 在异步 catch 里也会用到。提前加载可避免测试进程 teardown 后
+// promise rejection 再触发 lazy require，产生 Jest "import after teardown" 噪声。
+const metrics = require('../middleware/metrics');
 
 // 8 个事件枚举常量（事件名也是 funnel_event.event_name 的取值集合）
 const EVENTS = Object.freeze({
@@ -54,6 +57,14 @@ let _queueInitTried = false;
 const QUEUE_NAME = 'funnel_event_queue';
 const JOB_ATTEMPTS = 3;
 const JOB_BACKOFF_DELAY = 2000; // 2s 起步指数退避，4s / 8s
+
+const incFunnelDrop = (reason) => {
+  try {
+    if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
+      metrics.funnelEventDropTotal.labels(reason).inc();
+    }
+  } catch (_e) { /* metrics 也挂掉就没办法了 */ }
+};
 
 /**
  * 懒初始化 Bull 队列。撞 Redis 不可用时立即降级为 null，调用方走 drop 路径。
@@ -96,7 +107,6 @@ const processJob = async (job) => {
   const data = job.data || {};
   // 懒 require 避免循环依赖（models/index 在启动时也会 require 本模块的兄弟）
   const { FunnelEvent } = require('../models');
-  const metrics = require('../middleware/metrics');
 
   try {
     await FunnelEvent.create(data, { ignoreDuplicates: true });
@@ -113,9 +123,7 @@ const processJob = async (job) => {
     }
     return { ok: true };
   } catch (err) {
-    if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
-      metrics.funnelEventDropTotal.labels('persist_failed').inc();
-    }
+    incFunnelDrop('persist_failed');
     logger.warn('[funnelTracker] persist failed', {
       event: data.event_name,
       error: err.message
@@ -133,12 +141,7 @@ const handleJobFailed = (job, err) => {
   const attemptsMade = (job && job.attemptsMade) || 0;
   const maxAttempts = (job && job.opts && job.opts.attempts) || 0;
   if (!maxAttempts || attemptsMade < maxAttempts) return; // 中途失败：交给 Bull 继续重试
-  try {
-    const metrics = require('../middleware/metrics');
-    if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
-      metrics.funnelEventDropTotal.labels('dlq').inc();
-    }
-  } catch (_e) { /* metrics 也挂掉就没办法了 */ }
+  incFunnelDrop('dlq');
   logger.warn('[funnelTracker] event 入 DLQ', {
     event: job && job.data && job.data.event_name,
     error: err && err.message
@@ -196,12 +199,7 @@ const track = (eventName, ctx = {}) => {
     const q = _queue || initQueue();
     if (!q) {
       // 队列不可用 —— 直接 drop。指标 inc 防止业务漏斗看板出现"零事件"误判。
-      try {
-        const metrics = require('../middleware/metrics');
-        if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
-          metrics.funnelEventDropTotal.labels('enqueue_failed').inc();
-        }
-      } catch (_e) { /* noop */ }
+      incFunnelDrop('enqueue_failed');
       return;
     }
 
@@ -212,12 +210,7 @@ const track = (eventName, ctx = {}) => {
       removeOnComplete: 50,
       removeOnFail: 20
     }).catch((err) => {
-      try {
-        const metrics = require('../middleware/metrics');
-        if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
-          metrics.funnelEventDropTotal.labels('enqueue_failed').inc();
-        }
-      } catch (_e) { /* noop */ }
+      incFunnelDrop('enqueue_failed');
       logger.warn('[funnelTracker] enqueue 失败（不影响主流程）', {
         event: eventName,
         error: err && err.message
@@ -225,12 +218,7 @@ const track = (eventName, ctx = {}) => {
     });
   } catch (err) {
     // 兜底：任何同步异常都吞掉，调用方完全无感
-    try {
-      const metrics = require('../middleware/metrics');
-      if (metrics.funnelEventDropTotal && metrics.funnelEventDropTotal.labels) {
-        metrics.funnelEventDropTotal.labels('enqueue_failed').inc();
-      }
-    } catch (_e) { /* noop */ }
+    incFunnelDrop('enqueue_failed');
     logger.warn('[funnelTracker] track() 同步异常已吞', {
       eventName,
       error: err && err.message
