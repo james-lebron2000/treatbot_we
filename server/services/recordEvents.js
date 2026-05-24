@@ -40,6 +40,7 @@ const buildRedisOptions = () => ({
 let publisher = null;
 let subscriber = null;
 let redisHealthy = true;
+const pendingConnects = new WeakMap();
 
 // recordId → Set<callback>
 const listeners = new Map();
@@ -53,10 +54,6 @@ const ensurePublisher = () => {
       logger.warn('recordEvents publisher Redis 错误', { error: err.message });
     });
     publisher.on('ready', () => { redisHealthy = true; });
-    publisher.connect().catch((err) => {
-      redisHealthy = false;
-      logger.warn('recordEvents publisher 连接失败', { error: err.message });
-    });
   } catch (e) {
     publisher = null;
     redisHealthy = false;
@@ -93,16 +90,68 @@ const ensureSubscriber = () => {
         }
       });
     });
-    subscriber.connect().catch((err) => {
-      redisHealthy = false;
-      logger.warn('recordEvents subscriber 连接失败', { error: err.message });
-    });
   } catch (e) {
     subscriber = null;
     redisHealthy = false;
     logger.warn('recordEvents subscriber 初始化失败', { error: e.message });
   }
   return subscriber;
+};
+
+const isRedisClientLike = (client) => (
+  client
+  && typeof client.connect === 'function'
+  && typeof client.once === 'function'
+  && typeof client.status === 'string'
+);
+
+const waitForReady = async (client, role) => {
+  if (!client) return false;
+  // Tests inject lightweight stubs; treat them as already ready.
+  if (!isRedisClientLike(client)) return true;
+  if (client.status === 'ready') return true;
+  if (pendingConnects.has(client)) return pendingConnects.get(client);
+
+  const promise = new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (typeof client.off === 'function') {
+        client.off('ready', onReady);
+        client.off('error', onError);
+        client.off('end', onEnd);
+      }
+    };
+    const finish = (ok, err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      redisHealthy = ok;
+      if (!ok && err) {
+        logger.warn(`recordEvents ${role} 连接失败`, { error: err.message || String(err) });
+      }
+      resolve(ok);
+    };
+    const onReady = () => finish(true);
+    const onEnd = () => finish(false, new Error('redis connection ended'));
+    const onError = (err) => finish(false, err);
+
+    client.once('ready', onReady);
+    client.once('error', onError);
+    client.once('end', onEnd);
+    timer = setTimeout(() => finish(false, new Error('redis connection timeout')), 3500);
+    if (typeof timer.unref === 'function') timer.unref();
+
+    if (client.status === 'wait' || client.status === 'close') {
+      client.connect().catch(onError);
+    }
+  }).finally(() => {
+    pendingConnects.delete(client);
+  });
+
+  pendingConnects.set(client, promise);
+  return promise;
 };
 
 /**
@@ -115,6 +164,8 @@ const publishRecordEvent = async (recordId, payload) => {
   const pub = ensurePublisher();
   if (!pub) return false;
   try {
+    const ready = await waitForReady(pub, 'publisher');
+    if (!ready) return false;
     const seq = typeof pub.incr === 'function'
       ? await pub.incr(seqKeyOf(recordId))
       : Date.now();
@@ -172,6 +223,8 @@ const replayRecordEvents = async (recordId, afterSeq = 0, limit = STREAM_MAXLEN)
   const pub = ensurePublisher();
   if (!pub || typeof pub.xrange !== 'function') return [];
   try {
+    const ready = await waitForReady(pub, 'publisher');
+    if (!ready) return [];
     const count = Math.max(1, Math.min(Number(limit) || STREAM_MAXLEN, STREAM_MAXLEN));
     const rows = await pub.xrange(streamKeyOf(recordId), '-', '+', 'COUNT', count);
     const minSeq = Number(afterSeq) || 0;
@@ -194,6 +247,8 @@ const subscribeRecordEvents = async (recordIds, onEvent) => {
   if (!Array.isArray(recordIds) || !recordIds.length) return null;
   const sub = ensureSubscriber();
   if (!sub) return null;
+  const ready = await waitForReady(sub, 'subscriber');
+  if (!ready) return null;
 
   const ownChannels = [];
   for (const rid of recordIds) {

@@ -49,6 +49,61 @@ describe('recordEvents Redis Stream replay contract', () => {
     }));
   });
 
+  test('publishRecordEvent waits for lazy Redis publisher before issuing commands', async () => {
+    const handlers = {};
+    const publisher = {
+      status: 'wait',
+      once: jest.fn((event, cb) => {
+        handlers[event] = cb;
+        return publisher;
+      }),
+      off: jest.fn(),
+      connect: jest.fn(() => {
+        publisher.status = 'ready';
+        handlers.ready();
+        return Promise.resolve();
+      }),
+      incr: jest.fn().mockResolvedValue(1),
+      xadd: jest.fn().mockResolvedValue('1-0'),
+      expire: jest.fn().mockResolvedValue(1),
+      publish: jest.fn().mockResolvedValue(1)
+    };
+    recordEvents.__setTestables({ publisher });
+
+    await expect(recordEvents.publishRecordEvent('rec-lazy', { status: 'queued' })).resolves.toBe(true);
+
+    expect(publisher.connect).toHaveBeenCalledTimes(1);
+    expect(publisher.incr).toHaveBeenCalledWith('ocr:record:rec-lazy:seq');
+  });
+
+  test('subscribeRecordEvents waits for lazy Redis subscriber before subscribing', async () => {
+    const handlers = {};
+    const subscriber = {
+      status: 'wait',
+      once: jest.fn((event, cb) => {
+        handlers[event] = cb;
+        return subscriber;
+      }),
+      on: jest.fn(),
+      off: jest.fn(),
+      connect: jest.fn(() => {
+        subscriber.status = 'ready';
+        handlers.ready();
+        return Promise.resolve();
+      }),
+      subscribe: jest.fn().mockResolvedValue(1),
+      unsubscribe: jest.fn().mockResolvedValue(1)
+    };
+    recordEvents.__setTestables({ subscriber });
+
+    const unsubscribe = await recordEvents.subscribeRecordEvents(['rec-lazy'], jest.fn());
+
+    expect(typeof unsubscribe).toBe('function');
+    expect(subscriber.connect).toHaveBeenCalledTimes(1);
+    expect(subscriber.subscribe).toHaveBeenCalledWith('ocr:record:rec-lazy');
+    await unsubscribe();
+  });
+
   test('replayRecordEvents filters by business seq', async () => {
     const publisher = {
       connect: jest.fn().mockResolvedValue(undefined),

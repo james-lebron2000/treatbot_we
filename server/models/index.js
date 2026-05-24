@@ -3,6 +3,7 @@ const User = require('./user');
 const Trial = require('./trial');
 // Q3-红线 §B.2：漏斗埋点事件模型
 const UserFunnelEvent = require('./userFunnelEvent');
+const FunnelEvent = require('./funnelEvent');
 
 // 病历模型
 const MedicalRecord = sequelize.define('MedicalRecord', {
@@ -441,6 +442,7 @@ module.exports = {
   UserActionLog,
   // Q3-红线 §B.2：漏斗埋点事件
   UserFunnelEvent,
+  FunnelEvent,
   // Plan §Phase 3.5（deferred）：微信订阅消息预埋
   SubscribeIntent
 };
