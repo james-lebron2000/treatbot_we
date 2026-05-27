@@ -82,7 +82,8 @@ const ocrConfig = require('../utils/ocrConfig');
 const {
   getDoubaoApiKey,
   getDoubaoBaseUrl,
-  getDoubaoVisionModel
+  getDoubaoVisionModel,
+  getDoubaoTextModel
 } = require('../utils/doubaoEnv');
 const {
   getVolcengineOcrConfig
@@ -1077,9 +1078,9 @@ const requestDoubaoText = async (text, opts = {}) => {
   ];
 
   const parsed = await instrumentLlmCall(
-    { provider: 'doubao', model: getArkVisionModel(), operation: 'ocr_text' },
+    { provider: 'doubao', model: getDoubaoTextModel(), operation: 'ocr_text' },
     () => chatJson('doubao', messages, OcrExtractionSchema, {
-      model: getArkVisionModel(),
+      model: getDoubaoTextModel(),
       // Wave 2 §F6：透传 caller 给的 timeoutMs；未传时 chatJson 自己回落到 cfg.timeoutMs。
       ...(typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}),
       onWait: opts.onProviderWait
@@ -1289,6 +1290,24 @@ const structureOcrTextResult = async (ocrResult, providerPrefix, opts = {}) => {
   const text = `${ocrResult?.text || ''}`.trim();
   if (!text) {
     throw new Error(`${providerPrefix} 未识别到可结构化文本`);
+  }
+
+  if (opts.deferTextStructuring) {
+    const entities = extractMedicalEntities(text);
+    return {
+      success: true,
+      provider: `${providerPrefix}+raw_text`,
+      text,
+      entities,
+      confidence: Math.max(estimateConfidence(entities), Math.min(0.98, Number(ocrResult.confidence || 0.5))),
+      detections: ocrResult.detections || [],
+      providerMeta: {
+        ...(ocrResult.providerMeta || {}),
+        deferredStructuring: true,
+        textLength: text.length,
+        ocrConfidence: ocrResult.confidence
+      }
+    };
   }
 
   if (hasDoubaoCredential()) {
@@ -1646,6 +1665,22 @@ const tryMarkitdownPipeline = async ({ fileKey, sourceUrl, mimeType: _mimeType }
     markdownLength: markdown.length
   });
 
+  if (opts.deferTextStructuring) {
+    const entities = extractMedicalEntities(markdown);
+    return {
+      success: true,
+      text: markdown,
+      entities,
+      confidence: estimateConfidence(entities),
+      detections: [],
+      provider: 'markitdown+raw_text',
+      providerMeta: {
+        deferredStructuring: true,
+        textLength: markdown.length
+      }
+    };
+  }
+
   // 优先用 Doubao/ARK 进行结构化抽取，缺失则回退 Kimi。
   if (hasDoubaoCredential()) {
     try {
@@ -1772,6 +1807,7 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
                 confidence: volcPdfResult.confidence,
                 detections: volcPdfResult.detections || [],
                 provider: volcPdfResult.provider || 'volcengine_ocr_pdf',
+                providerMeta: volcPdfResult.providerMeta || null,
                 pageCount: volcPdfResult.pageCount
               };
             } catch (volcPdfErr) {
@@ -1820,6 +1856,7 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
             confidence: volcPdfResult.confidence,
             detections: volcPdfResult.detections || [],
             provider: volcPdfResult.provider || 'volcengine_ocr_pdf',
+            providerMeta: volcPdfResult.providerMeta || null,
             pageCount: volcPdfResult.pageCount
           };
         } catch (volcPdfErr) {
@@ -1856,6 +1893,22 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
         text = (parsed.text || '').trim();
       } catch (pdfError) {
         logger.warn('PDF 文本层解析失败', { error: pdfError.message });
+      }
+
+      if (text && opts.deferTextStructuring) {
+        const entities = extractMedicalEntities(text);
+        return {
+          success: true,
+          text,
+          entities,
+          confidence: estimateConfidence(entities),
+          detections: [],
+          provider: 'pdf_raw_text',
+          providerMeta: {
+            deferredStructuring: true,
+            textLength: text.length
+          }
+        };
       }
 
       // 有文本则优先用 Doubao 文本模式结构化
@@ -1917,7 +1970,9 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
       entities: result.entities,
       confidence: result.confidence,
       detections: result.detections,
-      provider: result.provider || 'image'
+      provider: result.provider || 'image',
+      providerMeta: result.providerMeta || null,
+      pageCount: result.pageCount || null
     };
   } catch (error) {
     logger.error('医疗图片处理失败:', error);

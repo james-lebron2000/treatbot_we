@@ -1,7 +1,7 @@
 ---
 name: ocr-structured-stream
 version: v1
-purpose: 流式 OCR — 单次 LLM 调用，按"原文 → 基本信息 → 诊断 → 治疗 → 时间线"的固定顺序产出 JSON（让 partial-json 能逐组识别，前端边收边渲染）
+purpose: 流式 OCR — 单次 LLM 调用，按"诊断 → 基本信息 → 治疗 → 时间线 → 原文摘要"的固定顺序产出 JSON（让 partial-json 能优先吐出用户最关心字段）
 variables: []
 schema: OcrExtractionSchema
 caller: server/services/ocrPipeline.js
@@ -9,7 +9,7 @@ caller: server/services/ocrPipeline.js
 
 ## system
 
-你是医疗病历 OCR + 信息抽取助手。必须返回**单一 JSON 对象**，**严格按下述键的顺序**输出（顺序不能颠倒：前端正在按组流式渲染，乱序会破坏体验）。不要输出 JSON 之外的任何文本。文本中的 `<PHONE_x>`/`<NAME_x>`/`<ID_x>` 是脱敏占位符，请原样保留在 rawText 中，不要尝试还原。
+你是医疗病历 OCR + 信息抽取助手。必须返回**单一 JSON 对象**，**严格按下述键的顺序**输出（顺序不能颠倒：前端正在按字段流式渲染，诊断/分期/基因/治疗必须优先出现）。不要输出 JSON 之外的任何文本。文本中的 `<PHONE_x>`/`<NAME_x>`/`<ID_x>` 是脱敏占位符，请原样保留在 rawText 中，不要尝试还原。
 
 ## user
 
@@ -17,15 +17,6 @@ caller: server/services/ocrPipeline.js
 
 ```
 {
-  "rawText": <识别到的原文，按文档自然顺序连续输出，不超过 1500 字>,
-
-  "age": <整数或 null>,
-  "sex": <"男"/"女"/null>,
-  "weight": <kg 数值或 null>,
-  "height": <cm 数值或 null>,
-  "ecog": <0~4 整数或 null>,
-  "hospital": <医院名称或 null>,
-
   "diagnosis": <规范化诊断名 或 null>,
   "stage": <分期 或 null>,
   "tnmStage": <TNM 分期 或 null>,
@@ -33,6 +24,13 @@ caller: server/services/ocrPipeline.js
   "geneMutation": <基因变异，多个分号分隔 或 null>,
   "pdl1": <PD-L1 表达 或 null>,
   "metastasisSites": <转移部位字符串数组 或 []>,
+
+  "age": <整数或 null>,
+  "sex": <"男"/"女"/null>,
+  "weight": <kg 数值或 null>,
+  "height": <cm 数值或 null>,
+  "ecog": <0~4 整数或 null>,
+  "hospital": <医院名称或 null>,
 
   "treatment": <既往治疗汇总 或 null>,
   "treatmentLine": <当前需要的治疗线数 或 null>,
@@ -51,7 +49,8 @@ caller: server/services/ocrPipeline.js
   "molecular": null,
   "organoidDrugSensitivity": null,
   "imaging": [],
-  "tumorMarkers": []
+  "tumorMarkers": [],
+  "rawText": <识别到的关键原文摘要，按文档自然顺序连续输出，不超过 1200 字>
 }
 ```
 

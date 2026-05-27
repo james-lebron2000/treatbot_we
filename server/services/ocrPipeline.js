@@ -27,13 +27,16 @@
  */
 
 const logger = require('../utils/logger')
+const crypto = require('crypto')
 const { getPrompt } = require('./promptRegistry')
 const { processMedicalImage } = require('./ocr')
 const { streamChatJson } = require('./llmClientStream')
 const { OcrExtractionSchema } = require('./llmSchemas')
 const { scrubForLlm, restoreFromLlm } = require('../utils/piiScrubber')
+const { getDoubaoTextModel } = require('../utils/doubaoEnv')
 const { STAGE, composeEvent } = require('../../shared/streaming/events')
 const {
+  FIELD_TO_GROUP,
   GROUPS,
   RENDERABLE_GROUPS
 } = require('../../shared/streaming/fieldGroups')
@@ -66,6 +69,30 @@ const OCR_FAST_PATH_MIN_CONFIDENCE = readPositiveFloatEnv('OCR_FAST_PATH_MIN_CON
 const OCR_FAST_PATH_MIN_TEXT_CHARS = readPositiveIntEnv('OCR_FAST_PATH_MIN_TEXT_CHARS', 80)
 const OCR_FAST_PATH_PDF_MIN_TEXT_CHARS = readPositiveIntEnv('OCR_FAST_PATH_PDF_MIN_TEXT_CHARS', 200)
 const OCR_FAST_PATH_MIN_FIELD_COUNT = readPositiveIntEnv('OCR_FAST_PATH_MIN_FIELD_COUNT', 4)
+
+const readRatioEnv = (name, fallback = 0) => {
+  const raw = Number(process.env[name])
+  if (!Number.isFinite(raw) || raw < 0) return fallback
+  if (raw > 1) return Math.min(1, raw / 100)
+  return raw
+}
+
+const hashToRatio = (seed = '') => {
+  const digest = crypto.createHash('sha1').update(`${seed || ''}`).digest('hex').slice(0, 8)
+  return parseInt(digest, 16) / 0xffffffff
+}
+
+const resolveStructuredStreamModel = (seed = '') => {
+  const baseModel = `${process.env.OCR_STRUCTURED_MODEL || getDoubaoTextModel()}`.trim()
+  const fastModel = `${process.env.OCR_STRUCTURED_FAST_MODEL || process.env.ARK_FAST_TEXT_MODEL || process.env.DOUBAO_FAST_TEXT_MODEL || ''}`.trim()
+  const fastRatio = readRatioEnv('OCR_STRUCTURED_FAST_MODEL_RATIO', 0)
+  const useFast = Boolean(fastModel && fastRatio > 0 && hashToRatio(seed || Date.now()) < fastRatio)
+  return {
+    model: useFast ? fastModel : baseModel,
+    variant: useFast ? 'fast' : 'base',
+    fastRatio
+  }
+}
 
 const hasValue = (v) => {
   if (v === null || v === undefined) return false
@@ -191,7 +218,10 @@ const runStreamingPipeline = async ({ source, emit }) => {
 
   let ocrResult
   try {
-    ocrResult = await processMedicalImage(source, { onProviderWait: emitProviderWait })
+    ocrResult = await processMedicalImage(source, {
+      onProviderWait: emitProviderWait,
+      deferTextStructuring: true
+    })
   } finally {
     clearInterval(ocrHeartbeatInterval)
   }
@@ -222,7 +252,8 @@ const runStreamingPipeline = async ({ source, emit }) => {
       ? ocrResult.entities.confidence
       : ocrResult.confidence
   }
-  if (OCR_SKIP_SECOND_LLM && entitiesAreComplete(ocrEntities, rawText, provider)) {
+  const deferredStructuring = Boolean(ocrResult.providerMeta && ocrResult.providerMeta.deferredStructuring)
+  if (OCR_SKIP_SECOND_LLM && !deferredStructuring && entitiesAreComplete(ocrEntities, rawText, provider)) {
     const fastShape = entitiesToSchemaShape(ocrEntities, rawText)
     logger.info('ocrPipeline 快路径：视觉 entities 已完整，跳过二次 LLM', { provider })
     // 按组 emit field_group，节奏 ~80ms 一组，模拟流式 UX
@@ -270,11 +301,27 @@ const runStreamingPipeline = async ({ source, emit }) => {
   ]
 
   let schemaValidated = null
+  const modelSelection = resolveStructuredStreamModel(source && (source.recordId || source.fileKey || source.sourceUrl || ''))
+  logger.info('ocrPipeline 结构化流式模型选择', {
+    provider: 'doubao',
+    modelVariant: modelSelection.variant,
+    fastRatio: modelSelection.fastRatio
+  })
   try {
     schemaValidated = await streamChatJson({
       provider: 'doubao',
       messages,
       schema: OcrExtractionSchema,
+      onFieldPatch: async (fieldKey, fields, progress) => {
+        const groupName = FIELD_TO_GROUP[fieldKey]
+        if (!groupName || !RENDERABLE_GROUPS.includes(groupName)) return
+        const restored = restoreFromLlm(fields, mapping)
+        await safeEmit(composeEvent(null, STAGE.FIELD_GROUP, {
+          fieldGroup: groupName,
+          fields: restored,
+          progress
+        }))
+      },
       onFieldGroup: async (groupName, fields, progress) => {
         if (groupName === 'preview') {
           // rawText 在 ocr_text 已发过；不重复
@@ -292,6 +339,7 @@ const runStreamingPipeline = async ({ source, emit }) => {
       opts: {
         timeoutMs: OCR_STRUCTURED_STREAM_TIMEOUT_MS,
         fallbackToChatJson: false,
+        model: modelSelection.model,
         operation: 'ocr_structured_stream',
         onWait: emitProviderWait
       }

@@ -243,6 +243,68 @@ describe('streamChatJson 集成（mock stream）', () => {
     delete process.env.ARK_API_KEY
   })
 
+  test('onFieldPatch 在分组未凑齐时也会逐字段 emit', async () => {
+    const fakeStream = new stream.Readable({ read() {} })
+    mockAxios.post.mockResolvedValue({ data: fakeStream })
+    const objectText = JSON.stringify({
+      diagnosis: 'NSCLC',
+      stage: 'IV',
+      geneMutation: 'EGFR',
+      age: 60
+    })
+
+    setImmediate(() => {
+      const firstComma = objectText.indexOf(',') + 1
+      fakeStream.push(Buffer.from(buildSseLine(objectText.slice(0, firstComma))))
+      fakeStream.push(Buffer.from(buildSseLine(objectText.slice(firstComma))))
+      fakeStream.push(Buffer.from('data: [DONE]\n\n'))
+      fakeStream.push(null)
+    })
+
+    const emitted = []
+    process.env.ARK_API_KEY = 'test-key'
+    const result = await streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      onFieldPatch: (fieldKey, fields, progress) => emitted.push({ type: 'patch', fieldKey, fields, progress }),
+      onFieldGroup: (group, fields, progress) => emitted.push({ type: 'group', group, fields, progress })
+    })
+
+    expect(result.diagnosis).toBe('NSCLC')
+    expect(emitted[0]).toMatchObject({
+      type: 'patch',
+      fieldKey: 'diagnosis',
+      fields: { diagnosis: 'NSCLC' },
+      progress: 65
+    })
+    expect(emitted.some((event) => event.type === 'group' && event.group === 'diagnosis')).toBe(false)
+    delete process.env.ARK_API_KEY
+  })
+
+  test('ocr_structured_stream 默认使用 Doubao text model', async () => {
+    const fakeStream = new stream.Readable({ read() {} })
+    mockAxios.post.mockResolvedValue({ data: fakeStream })
+    setImmediate(() => {
+      fakeStream.push(Buffer.from(buildSseLine('{"diagnosis":"NSCLC"}')))
+      fakeStream.push(Buffer.from('data: [DONE]\n\n'))
+      fakeStream.push(null)
+    })
+
+    process.env.ARK_API_KEY = 'test-key'
+    process.env.DOUBAO_TEXT_MODEL = 'doubao-fast-text-test'
+    await streamChatJson({
+      provider: 'doubao',
+      messages: [{ role: 'user', content: 'x' }],
+      schema: passSchema,
+      opts: { operation: 'ocr_structured_stream' }
+    })
+
+    expect(mockAxios.post.mock.calls[0][1].model).toBe('doubao-fast-text-test')
+    delete process.env.DOUBAO_TEXT_MODEL
+    delete process.env.ARK_API_KEY
+  })
+
   test('axios.post 直接抛错 → 降级到 chatJson', async () => {
     mockAxios.post.mockRejectedValue(new Error('connection refused'))
     mockChatJson.mockResolvedValue({ age: 60 })

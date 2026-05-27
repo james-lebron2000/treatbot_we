@@ -81,4 +81,16 @@ describe('Volcengine OCRNormal provider', () => {
     expect(result.entities.geneMutation).toMatch(/EGFR/i);
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
+
+  test('processMedicalImage preserves deferred providerMeta for streaming pipeline', async () => {
+    const result = await ocr.processMedicalImage({
+      fileKey: sampleKey,
+      mimeType: 'image/jpeg'
+    }, { deferTextStructuring: true });
+
+    expect(result.provider).toBe('volcengine_ocr+raw_text');
+    expect(result.providerMeta.deferredStructuring).toBe(true);
+    expect(result.providerMeta.lineCount).toBe(4);
+    expect(result.text).toContain('诊断：直肠癌');
+  });
 });

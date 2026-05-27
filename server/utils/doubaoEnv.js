@@ -18,6 +18,10 @@ const getDoubaoVisionModel = () => {
   return `${process.env.ARK_VISION_MODEL || process.env.DOUBAO_MODEL || 'doubao-seed-1-6-vision-250815'}`.trim();
 };
 
+const getDoubaoTextModel = () => {
+  return `${process.env.ARK_TEXT_MODEL || process.env.DOUBAO_TEXT_MODEL || process.env.DOUBAO_MODEL || getDoubaoVisionModel()}`.trim();
+};
+
 const hasDoubaoCredential = () => {
   return Boolean(getDoubaoApiKey());
 };
@@ -26,5 +30,6 @@ module.exports = {
   getDoubaoApiKey,
   getDoubaoBaseUrl,
   getDoubaoVisionModel,
+  getDoubaoTextModel,
   hasDoubaoCredential
 };

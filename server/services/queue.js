@@ -402,7 +402,7 @@ const runOcrTask = async (data, opts = {}) => {
 
     // 2) 走流式管线：内部会发 preprocess(15) → ocr_text(40) → field_group(50–95)
     const result = await runStreamingPipeline({
-      source: { sourceUrl: imageUrl, mimeType, fileKey },
+      source: { recordId, sourceUrl: imageUrl, mimeType, fileKey },
       emit
     });
 

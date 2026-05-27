@@ -34,6 +34,9 @@ describe('ocrPipeline §F4 fast path', () => {
     jest.clearAllMocks();
     jest.resetModules();
     delete process.env.OCR_SKIP_SECOND_LLM;
+    delete process.env.OCR_STRUCTURED_MODEL;
+    delete process.env.OCR_STRUCTURED_FAST_MODEL;
+    delete process.env.OCR_STRUCTURED_FAST_MODEL_RATIO;
   });
 
   test('核心字段齐 + 默认开启 → 跳过 streamChatJson，按组 emit field_group', async () => {
@@ -62,7 +65,8 @@ describe('ocrPipeline §F4 fast path', () => {
     expect(result.provider).toBe('doubao-vision');
     expect(result.text).toContain('诊断');
     expect(mockProcessMedicalImage.mock.calls[0][1]).toEqual(expect.objectContaining({
-      onProviderWait: expect.any(Function)
+      onProviderWait: expect.any(Function),
+      deferTextStructuring: true
     }));
     // 4 个 RENDERABLE_GROUPS 都应该 emit
     const fieldGroupEmits = emitted.filter((e) => e.stage === 'field_group');
@@ -81,6 +85,40 @@ describe('ocrPipeline §F4 fast path', () => {
       treatment: null, treatmentLine: null, ecog: null, age: null,
       weight: null, height: null, comorbidities: [], priorTherapies: [],
       labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.3,
+      tnmStage: null, pathologyType: null, sex: null, hospital: null,
+      diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
+      timeline: [], molecular: {}, organoidDrugSensitivity: {},
+      imaging: [], tumorMarkers: [], treatmentHistory: []
+    });
+
+    const { runStreamingPipeline } = require('../services/ocrPipeline');
+    await runStreamingPipeline({
+      source: { sourceUrl: 'https://x/y.jpg' },
+      emit: () => {}
+    });
+
+    expect(mockStreamChatJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('deferred text provider 即使规则字段齐也必须走 streamChatJson 做字段级渐进输出', async () => {
+    mockProcessMedicalImage.mockResolvedValueOnce({
+      text: LONG_OCR_TEXT,
+      provider: 'volcengine_ocr+raw_text',
+      providerMeta: { deferredStructuring: true },
+      entities: {
+        diagnosis: '肺腺癌',
+        geneMutation: 'EGFR 19del',
+        treatment: '吉非替尼',
+        stage: 'IV',
+        confidence: 0.88
+      }
+    });
+    mockStreamChatJson.mockResolvedValueOnce({
+      rawText: LONG_OCR_TEXT,
+      diagnosis: '肺腺癌', stage: 'IV', geneMutation: 'EGFR 19del', pdl1: null,
+      treatment: '吉非替尼', treatmentLine: 1, ecog: null, age: null,
+      weight: null, height: null, comorbidities: [], priorTherapies: [],
+      labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.9,
       tnmStage: null, pathologyType: null, sex: null, hospital: null,
       diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
       timeline: [], molecular: {}, organoidDrugSensitivity: {},
@@ -122,6 +160,43 @@ describe('ocrPipeline §F4 fast path', () => {
     });
 
     expect(mockStreamChatJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('OCR_STRUCTURED_FAST_MODEL_RATIO=1 → 结构化流式调用使用快模型', async () => {
+    process.env.OCR_SKIP_SECOND_LLM = '0';
+    process.env.OCR_STRUCTURED_MODEL = 'base-structured-model';
+    process.env.OCR_STRUCTURED_FAST_MODEL = 'fast-structured-model';
+    process.env.OCR_STRUCTURED_FAST_MODEL_RATIO = '1';
+    mockProcessMedicalImage.mockResolvedValueOnce({
+      text: LONG_OCR_TEXT,
+      provider: 'volcengine_ocr+raw_text',
+      providerMeta: { deferredStructuring: true },
+      entities: { diagnosis: '肺腺癌', stage: 'IV', confidence: 0.9 }
+    });
+    mockStreamChatJson.mockResolvedValueOnce({
+      rawText: LONG_OCR_TEXT,
+      diagnosis: '肺腺癌', stage: 'IV', geneMutation: null, pdl1: null,
+      treatment: null, treatmentLine: null, ecog: null, age: null,
+      weight: null, height: null, comorbidities: [], priorTherapies: [],
+      labValues: {}, bloodCounts: {}, fertilityStatus: null, confidence: 0.9,
+      tnmStage: null, pathologyType: null, sex: null, hospital: null,
+      diagnosisDate: null, metastasisSites: [], surgicalHistory: [],
+      timeline: [], molecular: {}, organoidDrugSensitivity: {},
+      imaging: [], tumorMarkers: [], treatmentHistory: []
+    });
+
+    const { runStreamingPipeline } = require('../services/ocrPipeline');
+    await runStreamingPipeline({
+      source: { recordId: 'rec-canary', sourceUrl: 'https://x/y.jpg' },
+      emit: () => {}
+    });
+
+    expect(mockStreamChatJson).toHaveBeenCalledWith(expect.objectContaining({
+      opts: expect.objectContaining({ model: 'fast-structured-model' })
+    }));
+    delete process.env.OCR_STRUCTURED_MODEL;
+    delete process.env.OCR_STRUCTURED_FAST_MODEL;
+    delete process.env.OCR_STRUCTURED_FAST_MODEL_RATIO;
   });
 
   test('只有 diagnosis 一个核心字段 → 不跳过二次 LLM', async () => {

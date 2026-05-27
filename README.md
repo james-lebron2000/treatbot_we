@@ -269,6 +269,10 @@ TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
 env:
   OCR_PROVIDER: 'auto'                                       # 主用 Doubao，按凭证可达性 fallback
   ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
+  ARK_TEXT_MODEL: ''                           # 可选：文本结构化专用模型；空值回退 ARK_VISION_MODEL/DOUBAO_MODEL
+  OCR_STRUCTURED_MODEL: ''                     # 可选：OCR streaming 结构化基线模型
+  OCR_STRUCTURED_FAST_MODEL: ''                # 可选：更快结构化模型灰度，空值表示关闭
+  OCR_STRUCTURED_FAST_MODEL_RATIO: '0'         # 0-1 或 0-100；按 recordId 稳定分桶
   ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
   ARK_TIMEOUT_MS: '180000'
   OCR_JOB_TIMEOUT_MS: '900000'                 # Bull worker 防僵尸兜底，不是客户端等待上限
@@ -644,6 +648,7 @@ BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 | `REDIS_HOST / REDIS_PORT` | ✅ | Bull 队列 |
 | `VOLCENGINE_AK / VOLCENGINE_SK` | ✅ | 火山 OCRNormal 第一跳；不要配置到腾讯云 OCR 变量 |
 | `ARK_API_KEY / DOUBAO_API_KEY` | ✅ | Doubao 文本结构化与 vision fallback |
+| `ARK_TEXT_MODEL / OCR_STRUCTURED_*` | 否 | 文本结构化模型与快模型灰度；默认关闭灰度 |
 | `KIMI_API_KEY` | 否 | OCR/结构化 fallback |
 | `PUBLIC_BASE_URL` | ✅ | 非 development 必须 HTTPS |
 | `ALLOWED_ORIGINS` | ✅ | 生产至少包含 `https://inseq.top` |

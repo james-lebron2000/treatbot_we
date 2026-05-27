@@ -139,6 +139,36 @@ describe('llmSchemas + chatJson', () => {
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
+  test('rich OCR fields tolerate null objects and sparse history items without retry', async () => {
+    axios.post.mockResolvedValueOnce(buildResponse({
+      diagnosis: '肝细胞癌',
+      molecular: null,
+      organoidDrugSensitivity: null,
+      surgicalHistory: [{ date: '2024-01' }],
+      treatmentHistory: [{ response: 'PD' }],
+      timeline: [{ date: null, event: '复查进展' }]
+    }));
+
+    const result = await chatJson('kimi', [{ role: 'user', content: 'hi' }], OcrExtractionSchema);
+    expect(result.diagnosis).toBe('肝细胞癌');
+    expect(result.molecular).toBeUndefined();
+    expect(result.organoidDrugSensitivity).toBeUndefined();
+    expect(result.surgicalHistory[0]).toEqual({ date: '2024-01' });
+    expect(result.treatmentHistory[0]).toEqual({ response: 'PD' });
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  test('confidence string is coerced to number without retry', async () => {
+    axios.post.mockResolvedValueOnce(buildResponse({
+      diagnosis: '肺腺癌',
+      confidence: '0.87'
+    }));
+
+    const result = await chatJson('kimi', [{ role: 'user', content: 'hi' }], OcrExtractionSchema);
+    expect(result.confidence).toBe(0.87);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   test('两次都 schema 失败 → 抛 LlmSchemaError', async () => {
     axios.post.mockResolvedValueOnce(buildResponse({ ecog: 'bad' }));
     axios.post.mockResolvedValueOnce(buildResponse({ ecog: 'still-bad' }));

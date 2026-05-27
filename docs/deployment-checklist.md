@@ -98,6 +98,9 @@ ssh ubuntu@your-server-ip 'nano ~/treatbot-deploy-secrets/ocr.env'
 # DOUBAO_API_KEY=<redacted-rotated-key>
 # VOLCENGINE_AK=<redacted-ak>
 # VOLCENGINE_SK=<redacted-sk>
+# 可选：结构化快模型灰度
+# OCR_STRUCTURED_FAST_MODEL=<fast-model-id>
+# OCR_STRUCTURED_FAST_MODEL_RATIO=0.1
 
 ./scripts/deploy-production.sh --prod ubuntu@your-server-ip
 ```

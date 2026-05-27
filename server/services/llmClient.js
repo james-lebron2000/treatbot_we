@@ -18,7 +18,8 @@ const logger = require('../utils/logger');
 const {
   getDoubaoApiKey,
   getDoubaoBaseUrl,
-  getDoubaoVisionModel
+  getDoubaoVisionModel,
+  getDoubaoTextModel
 } = require('../utils/doubaoEnv');
 // Plan §Phase 1.1：进程内 LLM 并发闸（token bucket / semaphore）。每次 axios 调用前 acquire，
 // finally release，永远不会让同一 provider 在本进程内超出配额。
@@ -67,6 +68,14 @@ const PROVIDER_REGISTRY = {
   })
 };
 
+const resolveDefaultModel = (providerKey, cfg, opts = {}) => {
+  if (opts.model) return opts.model;
+  if (providerKey === 'doubao' && `${opts.operation || ''}`.includes('ocr_text')) {
+    return getDoubaoTextModel();
+  }
+  return cfg.model;
+};
+
 const cleanJsonContent = (content) => {
   if (!content) return '';
   const trimmed = String(content).trim();
@@ -97,7 +106,7 @@ const callOnce = async (providerKey, messages, opts = {}) => {
   }
 
   const body = {
-    model: opts.model || cfg.model,
+    model: resolveDefaultModel(providerKey, cfg, opts),
     temperature: typeof opts.temperature === 'number' ? opts.temperature : 1,
     messages,
     response_format: { type: 'json_object' }

@@ -20,9 +20,11 @@ const llmRateLimiter = require('./llmRateLimiter')
 const {
   getDoubaoApiKey,
   getDoubaoBaseUrl,
-  getDoubaoVisionModel
+  getDoubaoVisionModel,
+  getDoubaoTextModel
 } = require('../utils/doubaoEnv')
 const {
+  FIELD_TO_GROUP,
   GROUP_ORDER,
   GROUPS,
   findCompletedGroups,
@@ -48,6 +50,18 @@ const PROVIDER_REGISTRY = {
     model: getDoubaoVisionModel(),
     timeoutMs: parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10)
   })
+}
+
+const resolveDefaultModel = (providerKey, cfg, opts = {}) => {
+  if (opts.model) return opts.model
+  if (providerKey === 'doubao' && `${opts.operation || ''}`.includes('ocr_structured')) {
+    return getDoubaoTextModel()
+  }
+  return cfg.model
+}
+
+const stableStringify = (value) => {
+  try { return JSON.stringify(value) } catch (_e) { return String(value) }
 }
 
 /**
@@ -146,10 +160,11 @@ const extractDeltaContents = (buffer) => {
  * @param {Array} args.messages OpenAI 风格 messages（已 PII 脱敏）
  * @param {import('zod').ZodTypeAny} args.schema 最终 zod 校验
  * @param {(group: string, fields: object, progress: number) => void} [args.onFieldGroup]
+ * @param {(fieldKey: string, fields: object, progress: number) => void} [args.onFieldPatch]
  * @param {object} [args.opts] 透传给 axios（如 timeoutMs、fallbackToChatJson）
  * @returns {Promise<any>} schema 校验通过的最终对象
  */
-const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts = {} }) => {
+const streamChatJson = async ({ provider, messages, schema, onFieldGroup, onFieldPatch, opts = {} }) => {
   if (!schema || typeof schema.safeParse !== 'function') {
     throw new Error('streamChatJson: schema 必须是 zod schema')
   }
@@ -167,7 +182,7 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
   }
 
   const body = {
-    model: opts.model || cfg.model,
+    model: resolveDefaultModel(provider, cfg, opts),
     temperature: typeof opts.temperature === 'number' ? opts.temperature : 1,
     messages,
     response_format: { type: 'json_object' },
@@ -219,6 +234,7 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
     let sseBuffer = ''
     let contentBuffer = ''
     const emittedGroups = new Set()
+    const emittedFieldValues = new Map()
     let lastEmitTs = 0
     const EMIT_THROTTLE_MS = 150
     // utf-8 chunk 边界保护：Buffer.toString('utf8') 在 chunk 末尾落在多字节序列中间时，
@@ -249,6 +265,21 @@ const streamChatJson = async ({ provider, messages, schema, onFieldGroup, opts =
       lastEmitTs = now
 
       const partial = parsePartialObject(contentBuffer)
+      for (const [fieldKey, value] of Object.entries(partial)) {
+        if (fieldKey === 'rawText') continue
+        const groupName = FIELD_TO_GROUP[fieldKey]
+        if (!groupName) continue
+        const serialized = stableStringify(value)
+        if (emittedFieldValues.get(fieldKey) === serialized) continue
+        emittedFieldValues.set(fieldKey, serialized)
+        try {
+          if (typeof onFieldPatch === 'function') {
+            onFieldPatch(fieldKey, { [fieldKey]: value }, GROUPS[groupName].progress)
+          }
+        } catch (cbErr) {
+          logger.warn('streamChatJson onFieldPatch 回调异常（忽略）', { error: cbErr.message })
+        }
+      }
       const completed = findCompletedGroups(partial)
       for (const groupName of GROUP_ORDER) {
         if (completed.includes(groupName) && !emittedGroups.has(groupName)) {

@@ -16,6 +16,11 @@ const { z } = require('zod');
 const optionalNumber = z.union([z.number(), z.null()]).optional();
 const optionalString = z.union([z.string(), z.null()]).optional();
 const optionalStringArray = z.array(z.string()).optional().default([]);
+const optionalCoercedNumber = z.preprocess((value) => {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}, z.number().optional());
 
 const normalizeLabValueInput = (value) => {
   if (Array.isArray(value)) {
@@ -45,19 +50,19 @@ const LabValueDictSchema = z.record(z.string(), LabValueSchema).optional().defau
 
 // ---- 灯塔癌症导航报告 12 节富字段 schema 片段（与 demo 富化保持一致）----
 const GeneVariantSchema = z.object({
-  gene: z.string(),
+  gene: optionalString,
   variant: optionalString,
   impact: optionalString
 }).passthrough();
 
 const SurgicalHistoryItemSchema = z.object({
-  name: z.string(),
+  name: optionalString,
   date: optionalString
 }).passthrough();
 
 const TimelineEventSchema = z.object({
-  date: z.string(),
-  event: z.string(),
+  date: optionalString,
+  event: z.string().optional().default(''),
   type: optionalString
 }).passthrough();
 
@@ -68,14 +73,14 @@ const ImagingItemSchema = z.object({
 }).passthrough();
 
 const TumorMarkerItemSchema = z.object({
-  name: z.string(),
+  name: optionalString,
   value: z.union([z.number(), z.string()]).optional(),
   unit: optionalString,
   flag: optionalString
 }).passthrough();
 
 const TreatmentHistoryItemSchema = z.object({
-  name: z.string(),
+  name: optionalString,
   startDate: optionalString,
   endDate: optionalString,
   response: optionalString
@@ -87,7 +92,12 @@ const TmbValueSchema = z.union([
   z.object({}).passthrough()
 ]).optional();
 
-const BiomarkersSchema = z.object({
+const optionalObjectSchema = (schema) => z.preprocess(
+  (value) => (value === null ? undefined : value),
+  schema.optional()
+);
+
+const BiomarkersSchema = optionalObjectSchema(z.object({
   tmb: TmbValueSchema,
   msi: optionalString,
   mmr: optionalString,
@@ -95,21 +105,21 @@ const BiomarkersSchema = z.object({
   her2: optionalString,
   claudin182: optionalString,
   hla: optionalString
-}).passthrough().optional();
+}).passthrough());
 
-const MolecularSchema = z.object({
+const MolecularSchema = optionalObjectSchema(z.object({
   drivers: z.array(GeneVariantSchema).optional().default([]),
   actionable: z.array(GeneVariantSchema).optional().default([]),
   lossOfFunction: z.array(GeneVariantSchema).optional().default([]),
   vus: z.array(GeneVariantSchema).optional().default([]),
   biomarkers: BiomarkersSchema,
   drugMetabolism: z.array(GeneVariantSchema).optional().default([])
-}).passthrough().optional();
+}).passthrough());
 
-const OrganoidDrugSensitivitySchema = z.object({
+const OrganoidDrugSensitivitySchema = optionalObjectSchema(z.object({
   sensitive: z.array(z.string()).optional().default([]),
   resistant: z.array(z.string()).optional().default([])
-}).passthrough().optional();
+}).passthrough());
 
 /**
  * OcrExtractionSchema — 与 services/ocr.js 中 parseKimiEntities 的字段集对齐。
@@ -141,7 +151,7 @@ const OcrExtractionSchema = z.object({
   labValues: LabValueDictSchema,
   bloodCounts: LabValueDictSchema,
   fertilityStatus: optionalString,
-  confidence: z.number().optional(),
+  confidence: optionalCoercedNumber,
   // ---- 富化字段（demo 12 节口径）----
   tnmStage: optionalString,
   pathologyType: optionalString,
