@@ -16,7 +16,7 @@
 | **Kimi** `moonshot-v1-128k-vision-preview` | ✅ | ¥0.059 / 页 | 29.7s | 平铺直叙，**有重复循环风险** | 推荐 fallback |
 | **MiniMax** `MiniMax-M2`（Coding Plan key） | ❌ | — | — | **完全幻觉**，文本模型无视觉能力 | **不可用于 OCR** |
 
-> 用户提供的 MiniMax key 前缀 `sk-cp-` 是 Coding Plan 凭证，仅可访问 `MiniMax-M2`（纯文本推理模型）。M2 接收 image_url 但**完全忽略图像内容并编造文本**（详见 §3.3）。生产部署不应把它纳入视觉路径，需要切换到 **Standard Plan / Pay-as-you-go** key 才能用 `abab6.5s-chat`、`MiniMax-VL-01` 等真正的多模态模型。
+> 用户提供的 MiniMax key 属于 Coding Plan 凭证（前缀已隐藏且凭证已要求轮换），仅可访问 `MiniMax-M2`（纯文本推理模型）。M2 接收 image_url 但**完全忽略图像内容并编造文本**（详见 §3.3）。生产部署不应把它纳入视觉路径，需要切换到 **Standard Plan / Pay-as-you-go** key 才能用 `abab6.5s-chat`、`MiniMax-VL-01` 等真正的多模态模型。
 
 ---
 
@@ -115,7 +115,7 @@ doubao   |     6   |   0  |  ¥0.2364  |     85,191     |    3,246   |    4,421
 | `t1.png` | **3KB 完全编造的内容**：编造了 "陈某 49 岁妇科二病区 卵巢囊肿" 病例（真实 t1.png 是 71 岁直肠癌患者） |
 | `LSLI-胰腺Ca` | timeout 45s — 大文件上传 + 推理 |
 
-**根因**: `sk-cp-` 是 MiniMax **Coding Plan** 凭证，整个 plan 仅授权 `MiniMax-M2`（纯文本推理模型）。M2 不支持 image_url，但接口不报错而是静默忽略图像 → 模型基于 system prompt 凭空生成内容。
+**根因**: 测试使用的 MiniMax **Coding Plan** 凭证（前缀已隐藏且凭证已要求轮换）整个 plan 仅授权 `MiniMax-M2`（纯文本推理模型）。M2 不支持 image_url，但接口不报错而是静默忽略图像 → 模型基于 system prompt 凭空生成内容。
 
 **对生产的影响**:
 1. 当前 key **绝对不能**进 `recognizeGeneral` / `processMedicalImage` 视觉路径
@@ -197,10 +197,10 @@ RUN pip install --no-cache-dir 'markitdown[pdf]' 'markitdown[xlsx]' 'markitdown[
 
 ## 7. 安全提醒
 
-⚠️ **请在测试结束后立即轮换以下三把 key**（已在本次 chat 文本中泄露）：
-- `KIMI_API_KEY=sk-2Wefcnyc...`
-- `MINIMAX_API_KEY=sk-cp--E601dm-w...`
-- `ARK_API_KEY=ark-771ee019-321e-4dbf-89b9-...`
+⚠️ **请在测试结束后立即轮换以下三把 key**（已在本次 chat 文本中泄露；此处不展示任何可识别前缀或片段）：
+- `KIMI_API_KEY=<redacted-rotated-key>`
+- `MINIMAX_API_KEY=<redacted-rotated-key>`
+- `ARK_API_KEY=<redacted-rotated-key>`
 
 轮换路径：
 - Kimi: https://platform.moonshot.cn/console/api-keys

@@ -36,6 +36,11 @@ const OCR_JOB_TIMEOUT_MS = Math.max(60000, readPositiveIntEnv('OCR_JOB_TIMEOUT_M
 // （services/llmRateLimiter）兜底，永远不会撞 LLM provider 端的配额上限。
 // 仍可通过 OCR_QUEUE_CONCURRENCY 环境变量覆盖（运维灰度回退用）。
 const OCR_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.OCR_QUEUE_CONCURRENCY || '4', 10));
+const OCR_MAX_ACTIVE_PER_USER = Math.max(1, parseInt(process.env.OCR_MAX_ACTIVE_PER_USER || '3', 10));
+const OCR_MAX_WAITING_JOBS = Math.max(1, parseInt(process.env.OCR_MAX_WAITING_JOBS || '2000', 10));
+const OCR_INPROC_FALLBACK_ENABLED = String(process.env.OCR_INPROC_FALLBACK_ENABLED || 'true').toLowerCase() !== 'false';
+const OCR_INPROC_FALLBACK_MAX = Math.max(0, parseInt(process.env.OCR_INPROC_FALLBACK_MAX || '1', 10));
+let inprocOcrInflight = 0;
 
 // Redis 连接配置
 //
@@ -139,6 +144,75 @@ const publishRecordEventSafe = async (recordId, payload) => {
   }
 };
 
+const createQueueBusyError = (message, data = {}) => {
+  const err = new Error(message);
+  err.code = 'OCR_QUEUE_BUSY';
+  err.statusCode = 429;
+  err.data = data;
+  return err;
+};
+
+const incQueueAdmissionRejected = (reason) => {
+  try {
+    const metrics = require('../middleware/metrics');
+    if (metrics && metrics.ocrQueueAdmissionRejectedTotal && metrics.ocrQueueAdmissionRejectedTotal.labels) {
+      metrics.ocrQueueAdmissionRejectedTotal.labels(reason).inc();
+    }
+  } catch (_e) { /* metrics 不影响业务 */ }
+};
+
+const getUserActiveJobCount = async (userId) => {
+  if (!userId || typeof ocrQueue.getJobs !== 'function') return 0;
+  try {
+    const jobs = await ocrQueue.getJobs(['active'], 0, -1, false);
+    return (jobs || []).filter((job) => `${job?.data?.userId || ''}` === `${userId}`).length;
+  } catch (e) {
+    logger.warn('[queue] getUserActiveJobCount 失败，跳过用户级准入', {
+      userId,
+      error: e && e.message
+    });
+    return 0;
+  }
+};
+
+const assertQueueAdmission = async (userId) => {
+  const counts = typeof ocrQueue.getJobCounts === 'function'
+    ? await ocrQueue.getJobCounts().catch((e) => {
+      logger.warn('[queue] getJobCounts 失败，跳过全局准入', { error: e && e.message });
+      return null;
+    })
+    : null;
+  const waiting = Number(counts?.waiting || 0);
+  const active = Number(counts?.active || 0);
+  if (waiting + active >= OCR_MAX_WAITING_JOBS) {
+    incQueueAdmissionRejected('global_depth');
+    throw createQueueBusyError('OCR队列繁忙，请稍后重试', {
+      waiting,
+      active,
+      maxWaitingJobs: OCR_MAX_WAITING_JOBS
+    });
+  }
+
+  // 用户级 active 上限只描述 worker 实际并发，不作为入队准入。
+  // 达到 active 上限时，新上传应继续进入 waiting 队列；否则 9 份批量上传会被默认 3 active
+  // 错误打成失败。真正拒绝只发生在全局队列深度超限或 Bull/Redis admission 失败。
+  await getUserActiveJobCount(userId);
+};
+
+const buildResultSummary = (recordId, resultOrStructured = {}) => {
+  const structured = resultOrStructured.structured || resultOrStructured;
+  const entities = resultOrStructured.entities || structured.entities || {};
+  const rawText = resultOrStructured.text || structured.text || entities.rawText || '';
+  const confidence = resultOrStructured.confidence || structured.confidence || entities.confidence || null;
+  return {
+    ...entities,
+    id: recordId,
+    recordId,
+    confidence,
+    rawText: typeof rawText === 'string' ? rawText.substring(0, 500) : rawText
+  };
+};
+
 /**
  * Wave 3 §1：上传期同步缓存命中 —— 把原本由 worker 拿到任务后才执行的
  * `ocrCache.get -> buildUpdateArgsFromPayload -> publish completed` 一段，
@@ -182,7 +256,12 @@ const tryHydrateOcrFromCache = async (recordId, fileHash, userId) => {
   }
 
   // 主链路已经写完，下面的 SSE / notify 都是 best-effort。
-  publishRecordEventSafe(recordId, { status: 'completed', progress: 100, fromCache: true })
+  publishRecordEventSafe(recordId, {
+    status: 'completed',
+    progress: 100,
+    fromCache: true,
+    result: buildResultSummary(recordId, updateArgs.structured || {})
+  })
     .catch((e) => {
       logger.warn('tryHydrateOcrFromCache: publish completed 失败（忽略）', {
         recordId, error: e && e.message
@@ -210,7 +289,7 @@ const tryHydrateOcrFromCache = async (recordId, fileHash, userId) => {
 
 const runOcrTask = async (data, opts = {}) => {
   const { recordId, imageUrl, mimeType, fileKey, userId } = data;
-  const { jobId } = opts;
+  const { jobId, finalAttempt = true } = opts;
   logger.info('开始OCR处理:', { recordId, jobId: jobId || 'inproc' });
 
   // PRD-2026Q4 流式 OCR：把 ocrPipeline 发出的 stage-based 事件折成 main 的 status-based SSE payload。
@@ -282,7 +361,12 @@ const runOcrTask = async (data, opts = {}) => {
       if (updateArgs) {
         await MedicalRecord.update(updateArgs, { where: { id: recordId } });
         logger.info('OCR 缓存命中，跳过 LLM 调用', { recordId, fileHash });
-        await publishRecordEventSafe(recordId, { status: 'completed', progress: 100, fromCache: true });
+        await publishRecordEventSafe(recordId, {
+          status: 'completed',
+          progress: 100,
+          fromCache: true,
+          result: buildResultSummary(recordId, updateArgs.structured || {})
+        });
         // Wave 1 §F1：cache hit 路径也用 setImmediate 移出关键路径。
         if (userId) {
           setImmediate(() => {
@@ -359,6 +443,9 @@ const runOcrTask = async (data, opts = {}) => {
       treatment_line: result.entities.treatmentLine || null,
       pdl1: result.entities.pdl1 || null,
       structured: {
+        schemaVersion: 1,
+        promptVersion: ocrCache.PROMPT_VERSION,
+        updatedAt: new Date().toISOString(),
         text: result.text,
         entities: result.entities,
         confidence: result.confidence,
@@ -367,6 +454,10 @@ const runOcrTask = async (data, opts = {}) => {
           provider: result.provider || 'unknown',
           pageCount: result.pageCount || null,
           completedAt: new Date().toISOString()
+        },
+        providerMeta: {
+          provider: result.provider || 'unknown',
+          pageCount: result.pageCount || null
         }
       }
     }, {
@@ -379,7 +470,11 @@ const runOcrTask = async (data, opts = {}) => {
     // tail 死区从 (DB UPDATE + cache.set + notify.add + SSE) 缩到只剩 (DB UPDATE + SSE)。
     // Wave 1 §F2：附带 progress:100 让客户端 handleStreamState 把进度条推到 100，
     // 不再视觉上停在 99 等下一次 polling tick。
-    await publishRecordEventSafe(recordId, { status: 'completed', progress: 100 });
+    await publishRecordEventSafe(recordId, {
+      status: 'completed',
+      progress: 100,
+      result: buildResultSummary(recordId, result)
+    });
 
     // Plan §Phase 1.2：OCR 成功后写回缓存（best-effort）。同 hash 后续上传 → 直接命中。
     // Wave 1 §F1：用 setImmediate 把 cache + notify 完全移出关键路径 —— 即使两者各自慢 200ms，
@@ -422,6 +517,30 @@ const runOcrTask = async (data, opts = {}) => {
       return { success: false, recordId, cancelled: true };
     }
     logger.error('OCR处理失败:', { recordId, error: error.message });
+
+    if (!finalAttempt) {
+      try {
+        await MedicalRecord.update({
+          status: 'pending',
+          status_phase: 'queued'
+        }, {
+          where: { id: recordId }
+        });
+      } catch (dbErr) {
+        logger.error('OCR 中间失败重试状态回写失败:', { recordId, error: dbErr.message });
+      }
+      try {
+        await publishRecordEventSafe(recordId, {
+          status: 'pending',
+          statusPhase: 'queued',
+          progress: 25,
+          retrying: true,
+          errorMsg: safeOcrErrorMessage(error)
+        });
+      } catch (_e) { /* noop */ }
+      throw error;
+    }
+
     // Q3-红线 §A.3：上报到 Sentry（DSN 未配置时静默 noop）
     captureException(error, {
       tags: { component: 'ocr_queue', stage: 'process' },
@@ -462,7 +581,10 @@ const runOcrTask = async (data, opts = {}) => {
 ocrQueue.process(OCR_QUEUE_CONCURRENCY, async (job) => {
   // 兼容旧 progress 接口
   try { await job.progress(50); } catch (_e) { /* progress 失败可忽略 */ }
-  return runOcrTask(job.data, { jobId: job.id });
+  const maxAttempts = Number(job?.opts?.attempts || 1);
+  const attemptsMade = Number(job?.attemptsMade || 0);
+  const finalAttempt = !maxAttempts || (attemptsMade + 1 >= maxAttempts);
+  return runOcrTask(job.data, { jobId: job.id, finalAttempt });
 });
 
 /**
@@ -501,6 +623,7 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
   };
 
   try {
+    await assertQueueAdmission(userId);
     // PRD-2026Q2 §3.2：OCR 队列 DLQ - 5 次尝试 + 带封顶指数退避；
     // 保留失败 job 以便 DLQ handler 能在最终失败时读到 opts.attempts。
     // Track D（2026-05-03）：每次 attempt 服务端硬上限，zombie protection。
@@ -547,16 +670,45 @@ const addOCRTask = async (recordId, imageUrl, userId, options = {}) => {
     }
     return job.id;
   } catch (queueErr) {
-    // Bull 入队失败（多半是 Redis 不可达 / connectTimeout 触发 / enableOfflineQueue=false 直接抛）
-    // → 进程内兜底，让用户至少能拿到结果。
+    if (queueErr && queueErr.code === 'OCR_QUEUE_BUSY') {
+      await publishRecordEventSafe(recordId, {
+        status: 'error',
+        progress: 0,
+        errorCode: 'OCR_QUEUE_BUSY',
+        errorMsg: queueErr.message
+      });
+      throw queueErr;
+    }
+    // Bull 入队失败（多半是 Redis 不可达 / connectTimeout 触发）
+    // → 进程内有限兜底。兜底有全局并发上限，避免 Redis 故障时把 API 进程拖垮。
     logger.warn('Bull 入队失败，转入进程内 OCR 兜底（不阻塞 HTTP 请求）', {
       recordId,
       error: queueErr.message
     });
-    setImmediate(() => {
-      runOcrTask(taskData).catch((err) => {
-        logger.error('进程内 OCR 兜底失败', { recordId, error: err.message });
+    if (!OCR_INPROC_FALLBACK_ENABLED || inprocOcrInflight >= OCR_INPROC_FALLBACK_MAX) {
+      incQueueAdmissionRejected('redis_unavailable');
+      const err = createQueueBusyError('OCR队列暂不可用，请稍后重试或手动录入关键信息', {
+        inprocInflight: inprocOcrInflight,
+        inprocMax: OCR_INPROC_FALLBACK_MAX,
+        reason: queueErr.message
       });
+      await publishRecordEventSafe(recordId, {
+        status: 'error',
+        progress: 0,
+        errorCode: 'OCR_QUEUE_UNAVAILABLE',
+        errorMsg: err.message
+      });
+      throw err;
+    }
+    inprocOcrInflight += 1;
+    setImmediate(() => {
+      runOcrTask(taskData)
+        .catch((err) => {
+          logger.error('进程内 OCR 兜底失败', { recordId, error: err.message });
+        })
+        .finally(() => {
+          inprocOcrInflight = Math.max(0, inprocOcrInflight - 1);
+        });
     });
     return `inproc:${recordId}`;
   }
@@ -731,6 +883,11 @@ module.exports = {
   __testables: {
     handleOcrJobFailed, classifyError, safeOcrErrorMessage,
     OCR_QUEUE_CONCURRENCY, OCR_JOB_TIMEOUT_MS, getQueueDepth,
+    OCR_MAX_ACTIVE_PER_USER, OCR_MAX_WAITING_JOBS,
+    OCR_INPROC_FALLBACK_ENABLED, OCR_INPROC_FALLBACK_MAX,
+    getUserActiveJobCount, assertQueueAdmission, createQueueBusyError,
+    getInprocOcrInflight: () => inprocOcrInflight,
+    setInprocOcrInflight: (value) => { inprocOcrInflight = Math.max(0, Number(value) || 0); },
     // Plan §Phase 3.1 单测入口
     runOcrTask, OcrCancelledError, assertNotCancelled
   }

@@ -228,12 +228,12 @@ export const api = {
     formData.append('file', file)
     formData.append('type', type)
     formData.append('remark', remark)
-    const { data } = await http.post<ApiResponse<{ fileId: string; recordId?: string }>>(
+    const { data } = await http.post<ApiResponse<{ fileId: string; recordId?: string; batchId?: string }>>(
       '/api/medical/upload',
       formData,
       { timeout: 120_000 }
     )
-    return unwrap<{ fileId: string; recordId?: string }>(data)
+    return unwrap<{ fileId: string; recordId?: string; batchId?: string }>(data)
   },
   // Phase E.2：Treatbot Web原生支持 multi-FormData（<input multiple>），所以这里直接命中
   // /api/medical/upload-batch（一次最多 10 份）。返回 { total, successCount, fileIds, records[] }。
@@ -261,6 +261,7 @@ export const api = {
         }
       : { timeout: 120_000 }
     const { data } = await http.post<ApiResponse<{
+      batchId?: string;
       total: number;
       successCount: number;
       fileIds: string[];
@@ -277,14 +278,15 @@ export const api = {
     return unwrap<any>(data)
   },
   // Phase E.2：批量查询解析状态（POST 体；最多 20 个 fileId）
-  async getParseStatusBatch(fileIds: string[]) {
+  async getParseStatusBatch(fileIds: string[], batchId?: string) {
     const { data } = await http.post<ApiResponse<{
       entries: Array<{
         fileId: string; recordId: string; status: string; progress: number;
         result?: any; errorMsg?: string; createdAt?: string; updatedAt?: string;
       }>;
       total: number; completedCount: number; erroredCount: number; done: boolean;
-    }>>('/api/medical/parse-status-batch', { fileIds })
+      batch?: any; case?: any;
+    }>>('/api/medical/parse-status-batch', { fileIds, ...(batchId ? { batchId } : {}) })
     return unwrap(data)
   },
   // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线
@@ -302,6 +304,25 @@ export const api = {
   },
   async getMedicalRecords() {
     const { data } = await http.get<ApiResponse<any>>('/api/medical/records')
+    return unwrap<any>(data)
+  },
+  async getCurrentMedicalCase() {
+    const { data } = await http.get<ApiResponse<any>>('/api/medical/cases/current')
+    return unwrap<any>(data)
+  },
+  async getMedicalCase(caseId: string) {
+    const { data } = await http.get<ApiResponse<any>>(`/api/medical/cases/${encodeURIComponent(caseId)}`)
+    return unwrap<any>(data)
+  },
+  async updateMedicalCaseRevisions(caseId: string, payload: { patches: Array<Record<string, unknown>>; reason?: string }) {
+    const { data } = await http.post<ApiResponse<any>>(
+      `/api/medical/cases/${encodeURIComponent(caseId)}/revisions`,
+      payload
+    )
+    return unwrap<any>(data)
+  },
+  async getMedicalCaseEvidence(caseId: string) {
+    const { data } = await http.get<ApiResponse<any>>(`/api/medical/cases/${encodeURIComponent(caseId)}/evidence`)
     return unwrap<any>(data)
   },
   // PRD-2026Q2 §3.5：多病历管理页 —— 软删除（后端将 deleted_at = now()，物理文件保留）。

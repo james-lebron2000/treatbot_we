@@ -17,10 +17,29 @@ const optionalNumber = z.union([z.number(), z.null()]).optional();
 const optionalString = z.union([z.string(), z.null()]).optional();
 const optionalStringArray = z.array(z.string()).optional().default([]);
 
-const LabValueSchema = z.object({
-  value: z.number(),
-  unit: z.string().optional()
-}).passthrough();
+const normalizeLabValueInput = (value) => {
+  if (Array.isArray(value)) {
+    const objectValue = value.find((item) => item && typeof item === 'object' && !Array.isArray(item));
+    if (objectValue) return objectValue;
+    const numberLike = value.find((item) => item !== null && item !== undefined && item !== '' && Number.isFinite(Number(item)));
+    if (numberLike !== undefined) {
+      const unit = value.find((item) => typeof item === 'string' && !Number.isFinite(Number(item)));
+      return { value: Number(numberLike), ...(unit ? { unit } : {}) };
+    }
+  }
+  if (typeof value === 'string') {
+    const match = value.match(/(-?\d+(?:\.\d+)?)(?:\s*([^\d\s]+.*))?/);
+    if (match) {
+      return { value: Number(match[1]), ...(match[2] ? { unit: match[2].trim() } : {}) };
+    }
+  }
+  return value;
+};
+
+const LabValueSchema = z.preprocess(normalizeLabValueInput, z.object({
+  value: z.coerce.number(),
+  unit: z.union([z.string(), z.null()]).optional().transform((value) => value || undefined)
+}).passthrough());
 
 const LabValueDictSchema = z.record(z.string(), LabValueSchema).optional().default({});
 

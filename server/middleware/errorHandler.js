@@ -53,7 +53,8 @@ const errorHandler = (err, req, res, _next) => {
   
   // 业务错误（自定义错误）
   if (err.isBusinessError) {
-    return res.status(400).json({
+    const statusCode = err.code || 400;
+    return res.status(statusCode).json({
       code: err.code || 400,
       message: err.message,
       data: err.data || null

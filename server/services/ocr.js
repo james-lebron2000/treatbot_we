@@ -33,10 +33,60 @@ const classifyLlmError = (_llmObs && _llmObs.classifyLlmError)
   ? _llmObs.classifyLlmError
   : () => 'other';
 
+let _volcengineSigner = null;
+const getVolcengineSigner = () => {
+  if (_volcengineSigner) return _volcengineSigner;
+  try {
+    const volcengineOpenapi = require('@volcengine/openapi');
+    _volcengineSigner = volcengineOpenapi.Signer;
+    return _volcengineSigner;
+  } catch (error) {
+    const err = new Error('@volcengine/openapi 未安装，无法调用火山 OCRNormal');
+    err.cause = error;
+    throw err;
+  }
+};
+
+let _metrics = null;
+let _metricsLoaded = false;
+const getMetrics = () => {
+  if (_metricsLoaded) return _metrics;
+  _metricsLoaded = true;
+  try {
+    _metrics = require('../middleware/metrics');
+  } catch (error) {
+    _metrics = null;
+  }
+  return _metrics;
+};
+
+const recordVolcengineOcrMetrics = ({ operation, status, durationMs, lineCount }) => {
+  const metrics = getMetrics();
+  if (!metrics) return;
+  try {
+    const seconds = Math.max(0, Number(durationMs || 0) / 1000);
+    metrics.volcengineOcrCallDuration?.labels(operation, status).observe(seconds);
+    metrics.volcengineOcrCallTotal?.labels(operation, status).inc();
+    if (status === 'success' && Number(lineCount) > 0) {
+      metrics.volcengineOcrLinesTotal?.labels(operation).inc(Number(lineCount));
+    }
+  } catch (error) {
+    // 指标失败不能影响 OCR 主链路。
+  }
+};
+
 // PRD-2026Q4 T0-7 followup：所有 OCR 相关 env / 凭证 / provider 选择都走 per-call
 // getter，禁止 init-time 捕获——这是 OCR_PROVIDER=kimi 残留生产事故的同 class
 // of bug。只有 base URL / 默认模型名等"运维一次设好就不再改"的常量才直接 const。
 const ocrConfig = require('../utils/ocrConfig');
+const {
+  getDoubaoApiKey,
+  getDoubaoBaseUrl,
+  getDoubaoVisionModel
+} = require('../utils/doubaoEnv');
+const {
+  getVolcengineOcrConfig
+} = require('../utils/volcengineOcrEnv');
 
 const getOcrProvider = () => (process.env.OCR_PROVIDER || 'auto').toLowerCase();
 
@@ -54,11 +104,11 @@ const hasKimiCredential = () => ocrConfig.hasKimiCredential();
 // llmClient.js 直接读 process.env.ARK_API_KEY；这里仅保留 getter 给将来需要在
 // 本文件直接发起 ARK HTTP 调用时使用，命名上保持与 getKimiApiKey 一致。
 // eslint-disable-next-line no-unused-vars
-const _getArkApiKey = () => process.env.ARK_API_KEY || '';
+const _getArkApiKey = () => getDoubaoApiKey();
 // llmClient.js 自己从 process.env.ARK_BASE_URL 读，这里只保留供日志/调试参考。
-const _ARK_BASE_URL = (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, '');
+const _ARK_BASE_URL = getDoubaoBaseUrl();
 // Ark 必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
-const getArkVisionModel = () => process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815';
+const getArkVisionModel = () => getDoubaoVisionModel();
 // 大型扫描 PDF + 多页 vision 调用需要 90s+，timeout 默认 180s
 const _ARK_TIMEOUT_MS = parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10);
 const readPositiveIntEnv = (name, fallback) => {
@@ -80,6 +130,7 @@ const getPdfFirstHopTimeoutMs = (text = '') => {
 };
 const hasDoubaoCredential = () => ocrConfig.hasDoubaoCredential();
 const hasDoubaoVisionCredential = () => ocrConfig.hasDoubaoCredential();
+const hasVolcengineOcrCredential = () => ocrConfig.hasVolcengineOcrCredential();
 
 const hasTencentCredential = () => ocrConfig.hasTencentCredential();
 
@@ -253,6 +304,41 @@ const resolveImageDataUrl = async ({ imageUrl, fileKey, mimeType }) => {
   }
 
   throw new Error(`无法读取图片内容 (${errors.join(', ') || 'no-source'})`);
+};
+
+const parseDataUrl = (dataUrl = '') => {
+  const match = `${dataUrl}`.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error('invalid_data_url');
+  }
+  return {
+    mimeType: match[1],
+    base64: match[2]
+  };
+};
+
+const resolveImageBase64 = async ({ imageDataUrl, imageUrl, fileKey, mimeType }) => {
+  if (imageDataUrl) {
+    return parseDataUrl(imageDataUrl);
+  }
+
+  const dataUrl = await resolveImageDataUrl({ imageUrl, fileKey, mimeType });
+  return parseDataUrl(dataUrl);
+};
+
+const normalizeVolcengineEndpoint = (endpoint = '') => {
+  const trimmed = `${endpoint || 'https://visual.volcengineapi.com'}`.trim().replace(/\/+$/, '');
+  return trimmed || 'https://visual.volcengineapi.com';
+};
+
+const classifyVolcengineOcrError = (error) => {
+  const status = error?.response?.status || error?.status;
+  if (status === 429) return 'rate_limit';
+  if (status >= 500) return 'server_error';
+  if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) return 'timeout';
+  if (/empty|空文本/i.test(error?.message || '')) return 'empty_text';
+  if (status >= 400) return 'client_error';
+  return 'error';
 };
 
 const estimateConfidence = (entities) => {
@@ -897,7 +983,7 @@ const requestKimiText = async (text, opts = {}) => {
 
 const requestDoubaoImages = async (imageRefs, operation = 'ocr_image', providerName = 'doubao', opts = {}) => {
   if (!hasDoubaoVisionCredential()) {
-    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
+    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY 或 DOUBAO_API_KEY）');
   }
   const refs = Array.isArray(imageRefs) ? imageRefs.filter(Boolean) : [imageRefs].filter(Boolean);
   if (!refs.length) {
@@ -947,7 +1033,7 @@ const requestDoubao = async (imageRef, opts = {}) => requestDoubaoImages(imageRe
 // 默认沿用 cfg.timeoutMs（_ARK_TIMEOUT_MS=180s），PDF 首跳由 requestDoubaoPdf 传 30s 进来。
 const requestDoubaoText = async (text, opts = {}) => {
   if (!hasDoubaoCredential()) {
-    throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
+    throw new Error('Doubao API Key 未配置（ARK_API_KEY 或 DOUBAO_API_KEY）');
   }
 
   const safeInput = (text || '').substring(0, 4000);
@@ -1023,7 +1109,7 @@ const requestDoubaoText = async (text, opts = {}) => {
  */
 const requestDoubaoPdf = async ({ sourceUrl, fileKey }, opts = {}) => {
   if (!hasDoubaoCredential()) {
-    throw new Error('Doubao API Key 未配置（ARK_API_KEY）');
+    throw new Error('Doubao API Key 未配置（ARK_API_KEY 或 DOUBAO_API_KEY）');
   }
 
   const pdfBuffer = await readPdfBuffer({ sourceUrl, fileKey });
@@ -1060,9 +1146,259 @@ const requestDoubaoPdfVision = async ({ sourceUrl, fileKey }, opts = {}) => {
   };
 };
 
+const normalizeVolcengineOcrPayload = (payload) => {
+  const data = payload?.data || payload?.Data || payload?.result || payload?.Result || {};
+  const lines = Array.isArray(data.line_texts)
+    ? data.line_texts.map((item) => `${item || ''}`.trim()).filter(Boolean)
+    : [];
+  const lineProbs = Array.isArray(data.line_probs)
+    ? data.line_probs.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+    : [];
+  const lineRects = Array.isArray(data.line_rects) ? data.line_rects : [];
+  const polygons = Array.isArray(data.polygons) ? data.polygons : [];
+  const chars = Array.isArray(data.chars) ? data.chars : [];
+  const text = lines.length ? lines.join('\n') : chars.join('');
+  const confidence = lineProbs.length
+    ? lineProbs.reduce((sum, item) => sum + item, 0) / lineProbs.length
+    : null;
+  const detections = lines.map((line, index) => ({
+    DetectedText: line,
+    Confidence: Number.isFinite(lineProbs[index]) ? lineProbs[index] : undefined,
+    LineRect: lineRects[index],
+    Polygon: polygons[index]
+  }));
+
+  return {
+    text,
+    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : null,
+    detections,
+    lineCount: lines.length,
+    charsCount: chars.length,
+    raw: data
+  };
+};
+
+const requestVolcengineOcrText = async ({ imageDataUrl, imageUrl, fileKey, mimeType }, opts = {}) => {
+  if (!hasVolcengineOcrCredential()) {
+    throw new Error('火山 OCRNormal 凭证未配置（需 VOLCENGINE_AK / VOLCENGINE_SK）');
+  }
+
+  const operation = opts.operation || 'ocr_image';
+  const startedAt = Date.now();
+  let lineCount = 0;
+  try {
+    const cfg = getVolcengineOcrConfig();
+    const { base64 } = await resolveImageBase64({ imageDataUrl, imageUrl, fileKey, mimeType });
+    const body = new URLSearchParams();
+    body.append('image_base64', base64);
+
+    const params = {
+      Action: cfg.action,
+      Version: cfg.version
+    };
+    const requestData = {
+      region: cfg.region,
+      method: 'POST',
+      pathname: '/',
+      params,
+      headers: {},
+      body
+    };
+    const Signer = getVolcengineSigner();
+    new Signer(requestData, cfg.serviceName).addAuthorization({
+      accessKeyId: cfg.accessKeyId,
+      secretKey: cfg.secretKey,
+      sessionToken: cfg.sessionToken || undefined
+    });
+
+    const response = await axios.post(
+      `${normalizeVolcengineEndpoint(cfg.endpoint)}/`,
+      body,
+      {
+        params,
+        timeout: cfg.timeoutMs,
+        maxBodyLength: 20 * 1024 * 1024,
+        maxContentLength: 20 * 1024 * 1024,
+        validateStatus: null,
+        headers: {
+          ...requestData.headers,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      const err = new Error(`火山 OCRNormal HTTP ${response.status}`);
+      err.response = response;
+      throw err;
+    }
+
+    const payload = response.data || {};
+    if (payload.code !== undefined && Number(payload.code) !== 10000) {
+      const err = new Error(`火山 OCRNormal 失败: ${payload.message || payload.code}`);
+      err.status = 400;
+      throw err;
+    }
+    if (payload.ResponseMetadata?.Error) {
+      const errMeta = payload.ResponseMetadata.Error;
+      const err = new Error(`火山 OCRNormal 失败: ${errMeta.Message || errMeta.Code || 'unknown'}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const normalized = normalizeVolcengineOcrPayload(payload);
+    lineCount = normalized.lineCount;
+    const minTextChars = cfg.minTextChars;
+    if (!normalized.text || normalized.text.trim().length < minTextChars) {
+      throw new Error(`火山 OCRNormal 返回空文本或文本过短 (${normalized.text.length}/${minTextChars})`);
+    }
+
+    recordVolcengineOcrMetrics({
+      operation,
+      status: 'success',
+      durationMs: Date.now() - startedAt,
+      lineCount
+    });
+
+    return {
+      success: true,
+      provider: 'volcengine_ocr',
+      text: normalized.text,
+      entities: extractMedicalEntities(normalized.text),
+      confidence: Number.isFinite(normalized.confidence)
+        ? Math.max(0.5, normalized.confidence)
+        : estimateConfidence(extractMedicalEntities(normalized.text)),
+      detections: normalized.detections,
+      providerMeta: {
+        lineCount: normalized.lineCount,
+        charsCount: normalized.charsCount
+      }
+    };
+  } catch (error) {
+    recordVolcengineOcrMetrics({
+      operation,
+      status: classifyVolcengineOcrError(error),
+      durationMs: Date.now() - startedAt,
+      lineCount
+    });
+    throw error;
+  }
+};
+
+const structureOcrTextResult = async (ocrResult, providerPrefix, opts = {}) => {
+  const text = `${ocrResult?.text || ''}`.trim();
+  if (!text) {
+    throw new Error(`${providerPrefix} 未识别到可结构化文本`);
+  }
+
+  if (hasDoubaoCredential()) {
+    try {
+      const structured = await requestDoubaoText(text, opts);
+      return {
+        ...structured,
+        provider: `${providerPrefix}+doubao_text`,
+        text: structured.text || text,
+        detections: ocrResult.detections || [],
+        providerMeta: {
+          ...(ocrResult.providerMeta || {}),
+          textLength: text.length,
+          ocrConfidence: ocrResult.confidence
+        }
+      };
+    } catch (doubaoErr) {
+      logger.warn('火山 OCR 文本 + Doubao 结构化失败，尝试 Kimi/规则回退', { error: doubaoErr.message });
+    }
+  }
+
+  if (hasKimiCredential()) {
+    try {
+      const structured = await requestKimiText(text, opts);
+      return {
+        ...structured,
+        provider: `${providerPrefix}+kimi_text`,
+        text: structured.text || text,
+        detections: ocrResult.detections || [],
+        providerMeta: {
+          ...(ocrResult.providerMeta || {}),
+          textLength: text.length,
+          ocrConfidence: ocrResult.confidence
+        }
+      };
+    } catch (kimiErr) {
+      logger.warn('火山 OCR 文本 + Kimi 结构化失败，降级到规则抽取', { error: kimiErr.message });
+    }
+  }
+
+  const entities = extractMedicalEntities(text);
+  return {
+    success: true,
+    provider: `${providerPrefix}+rule`,
+    text,
+    entities,
+    confidence: Math.max(estimateConfidence(entities), Math.min(0.98, Number(ocrResult.confidence || 0.5))),
+    detections: ocrResult.detections || [],
+    providerMeta: {
+      ...(ocrResult.providerMeta || {}),
+      textLength: text.length,
+      ocrConfidence: ocrResult.confidence
+    }
+  };
+};
+
+const recognizeByVolcengineOcr = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
+  const ocrResult = await requestVolcengineOcrText({ imageUrl, fileKey, mimeType }, {
+    ...opts,
+    operation: 'ocr_image'
+  });
+  return structureOcrTextResult(ocrResult, 'volcengine_ocr', opts);
+};
+
+const requestVolcenginePdfVision = async ({ sourceUrl, fileKey }, opts = {}) => {
+  const dataUrls = await renderPdfPagesToDataUrls({ sourceUrl, fileKey });
+  const pageResults = [];
+  for (let i = 0; i < dataUrls.length; i += 1) {
+    pageResults.push(await requestVolcengineOcrText({ imageDataUrl: dataUrls[i] }, {
+      ...opts,
+      operation: 'ocr_pdf_page'
+    }));
+  }
+
+  const text = pageResults
+    .map((item, index) => [`[第${index + 1}页]`, item.text].filter(Boolean).join('\n'))
+    .join('\n\n')
+    .trim();
+  const detections = pageResults.flatMap((item, index) => (
+    (item.detections || []).map((det) => ({ ...det, page: index + 1 }))
+  ));
+  const confidences = pageResults
+    .map((item) => Number(item.confidence))
+    .filter((item) => Number.isFinite(item));
+  const avgConfidence = confidences.length
+    ? confidences.reduce((sum, item) => sum + item, 0) / confidences.length
+    : null;
+  const ocrResult = {
+    success: true,
+    provider: 'volcengine_ocr_pdf',
+    text,
+    entities: extractMedicalEntities(text),
+    confidence: Number.isFinite(avgConfidence) ? avgConfidence : estimateConfidence(extractMedicalEntities(text)),
+    detections,
+    providerMeta: {
+      pageCount: dataUrls.length,
+      lineCount: pageResults.reduce((sum, item) => sum + Number(item.providerMeta?.lineCount || 0), 0),
+      charsCount: pageResults.reduce((sum, item) => sum + Number(item.providerMeta?.charsCount || 0), 0)
+    }
+  };
+  const structured = await structureOcrTextResult(ocrResult, 'volcengine_ocr_pdf', opts);
+  return {
+    ...structured,
+    pageCount: dataUrls.length
+  };
+};
+
 const recognizeByDoubao = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
   if (!hasDoubaoVisionCredential()) {
-    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY）');
+    throw new Error('Doubao 视觉模型未配置（需 ARK_API_KEY 或 DOUBAO_API_KEY）');
   }
 
   if (!imageUrl || isPrivateOrIpUrl(imageUrl)) {
@@ -1188,7 +1524,17 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
   const attemptedProviders = new Set();
 
   try {
-    // 主路径：Doubao/ARK。生产 OCR 唯一视觉 provider，coding-plan key 已弃用。
+    // 主路径：火山 OCRNormal。先用专用 OCR 低成本抽行文本，再交给 Doubao/Kimi 文本结构化。
+    if (
+      providerPreference === 'volcengine' ||
+      providerPreference === 'volcengine_ocr' ||
+      (providerPreference === 'auto' && hasVolcengineOcrCredential())
+    ) {
+      attemptedProviders.add('volcengine_ocr');
+      return await recognizeByVolcengineOcr({ imageUrl, fileKey, mimeType }, opts);
+    }
+
+    // 视觉 fallback：Doubao/ARK。
     if (providerPreference === 'doubao' || (providerPreference === 'auto' && hasDoubaoVisionCredential())) {
       attemptedProviders.add('doubao');
       return await recognizeByDoubao({ imageUrl, fileKey, mimeType }, opts);
@@ -1214,7 +1560,21 @@ const recognizeGeneral = async ({ imageUrl, fileKey, mimeType }, opts = {}) => {
     const fromProvider = [...attemptedProviders][0] || providerPreference || 'unknown';
     const fallbackReason = classifyLlmError(error);
 
-    // 回退顺序：Doubao → Kimi → Tencent → 规则。
+    // 回退顺序：Volcengine OCRNormal → Doubao → Kimi → Tencent → 规则。
+    if (
+      hasVolcengineOcrCredential() &&
+      providerPreference !== 'volcengine' &&
+      providerPreference !== 'volcengine_ocr' &&
+      !attemptedProviders.has('volcengine_ocr')
+    ) {
+      try {
+        recordLlmFallback(fromProvider, 'volcengine_ocr', fallbackReason);
+        return await recognizeByVolcengineOcr({ imageUrl, fileKey, mimeType }, opts);
+      } catch (e) {
+        logger.warn('火山 OCRNormal 回退失败', { error: e.message });
+      }
+    }
+
     if (hasDoubaoVisionCredential() && providerPreference !== 'doubao' && !attemptedProviders.has('doubao')) {
       try {
         recordLlmFallback(fromProvider, 'doubao', fallbackReason);
@@ -1351,7 +1711,7 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
     // 不再走 4 层降级让用户白等 30 秒最后落到一句通用 toast。
     // 客户端会展示 errorMsg + 让用户跳手动录入。
     if (!ocrConfig.isOcrEnabled()) {
-      const err = new Error('OCR_NOT_CONFIGURED: 该环境暂不支持自动解析，请联系管理员配置 ARK_API_KEY（Doubao，推荐）/ KIMI_API_KEY 或腾讯云 OCR 凭证');
+      const err = new Error('OCR_NOT_CONFIGURED: 该环境暂不支持自动解析，请联系管理员配置 VOLCENGINE_AK/VOLCENGINE_SK（OCRNormal，推荐）/ ARK_API_KEY/DOUBAO_API_KEY / KIMI_API_KEY 或腾讯云 OCR 凭证');
       err.code = 'OCR_NOT_CONFIGURED';
       throw err;
     }
@@ -1395,6 +1755,29 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
           };
         } catch (doubaoTextErr) {
           logger.warn('Doubao PDF 文本路径失败，尝试扫描件 vision 路径', { error: doubaoTextErr.message });
+          if (hasVolcengineOcrCredential()) {
+            try {
+              const volcPdfResult = await requestVolcenginePdfVision({
+                sourceUrl,
+                fileKey: source.fileKey
+              }, opts);
+              logger.info('PDF 走火山 OCRNormal 拆页模式完成', {
+                provider: volcPdfResult.provider,
+                pageCount: volcPdfResult.pageCount
+              });
+              return {
+                success: true,
+                text: volcPdfResult.text,
+                entities: volcPdfResult.entities,
+                confidence: volcPdfResult.confidence,
+                detections: volcPdfResult.detections || [],
+                provider: volcPdfResult.provider || 'volcengine_ocr_pdf',
+                pageCount: volcPdfResult.pageCount
+              };
+            } catch (volcPdfErr) {
+              logger.warn('火山 OCRNormal PDF 拆页路径失败，尝试 Doubao vision', { error: volcPdfErr.message });
+            }
+          }
           try {
             const doubaoVisionResult = await requestDoubaoPdfVision({
               sourceUrl,
@@ -1416,6 +1799,31 @@ const processMedicalImage = async (imageUrl, opts = {}) => {
           } catch (doubaoVisionErr) {
             logger.warn('Doubao PDF vision 路径失败，尝试 Kimi 回退', { error: doubaoVisionErr.message });
           }
+        }
+      }
+
+      // 若没有 Doubao 或 Doubao 不可用，扫描件 PDF 优先走火山 OCRNormal 拆页。
+      if (hasVolcengineOcrCredential()) {
+        try {
+          const volcPdfResult = await requestVolcenginePdfVision({
+            sourceUrl,
+            fileKey: source.fileKey
+          }, opts);
+          logger.info('PDF 走火山 OCRNormal 拆页模式完成', {
+            provider: volcPdfResult.provider,
+            pageCount: volcPdfResult.pageCount
+          });
+          return {
+            success: true,
+            text: volcPdfResult.text,
+            entities: volcPdfResult.entities,
+            confidence: volcPdfResult.confidence,
+            detections: volcPdfResult.detections || [],
+            provider: volcPdfResult.provider || 'volcengine_ocr_pdf',
+            pageCount: volcPdfResult.pageCount
+          };
+        } catch (volcPdfErr) {
+          logger.warn('火山 OCRNormal PDF 拆页路径失败，尝试 Kimi 回退', { error: volcPdfErr.message });
         }
       }
 
@@ -1527,6 +1935,9 @@ module.exports = {
   requestDoubaoText,
   requestDoubaoPdf,
   requestDoubaoPdfVision,
+  // Volcengine OCRNormal（低成本文字识别第一跳）
+  requestVolcengineOcrText,
+  requestVolcenginePdfVision,
   // Kimi（fallback；Doubao 不可用时启用）
   requestKimi,
   requestKimiText,
@@ -1537,6 +1948,7 @@ module.exports = {
     assertSafeImageUrl,
     fetchImageAsDataUrl,
     renderPdfPagesToDataUrls,
+    normalizeVolcengineOcrPayload,
     parseKimiEntities,
     getPdfFirstHopTimeoutMs
   }

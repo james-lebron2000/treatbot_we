@@ -27,6 +27,7 @@ jest.mock('../services/queue', () => ({ addOCRTask: jest.fn() }));
 jest.mock('../services/matchEngine', () => ({ scoreRecordAgainstTrial: () => ({ score: 0 }) }));
 jest.mock('../services/recordEvents', () => ({
   subscribeRecordEvents: jest.fn(),
+  replayRecordEvents: jest.fn(),
   publishRecordEvent: jest.fn(),
   isHealthy: jest.fn(() => true)
 }));
@@ -34,7 +35,7 @@ jest.mock('../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: j
 
 const { MedicalRecord } = require('../models');
 const recordEvents = require('../services/recordEvents');
-const { handleParseStatusStream } = require('../controllers/medical');
+const { handleParseStatusStream, __parseAfterSeqMap, __resetParseStreamLimits } = require('../controllers/medical');
 const { EventEmitter } = require('events');
 
 const buildReq = (opts = {}) => {
@@ -65,15 +66,36 @@ const recordRow = (id, status = 'pending', extra = {}) => ({
   stage: extra.stage || null,
   gene_mutation: extra.gene_mutation || null,
   treatment: extra.treatment || null,
+  cancelled_at: extra.cancelled_at || null,
   created_at: new Date('2026-05-08T00:00:00Z'),
   updated_at: new Date('2026-05-08T00:00:00Z')
 });
 
 beforeEach(() => {
   jest.clearAllMocks();
+  __resetParseStreamLimits();
+  recordEvents.replayRecordEvents.mockResolvedValue([]);
 });
 
 describe('Phase 2.3: handleParseStatusStream', () => {
+  test('parseAfterSeqMap 支持多 record 粒度 afterSeq', () => {
+    const req = buildReq({
+      query: { afterSeq: 'rec-a:12,rec-b:8,unknown:99' }
+    });
+    const map = __parseAfterSeqMap(req, ['rec-a', 'rec-b', 'rec-c']);
+    expect(map.get('rec-a')).toBe(12);
+    expect(map.get('rec-b')).toBe(8);
+    expect(map.get('rec-c')).toBe(0);
+  });
+
+  test('parseAfterSeqMap 支持 Last-Event-ID 单 record 覆盖', () => {
+    const req = buildReq({ query: { afterSeq: '5' } });
+    req.headers = { 'last-event-id': 'rec-b:9' };
+    const map = __parseAfterSeqMap(req, ['rec-a', 'rec-b']);
+    expect(map.get('rec-a')).toBe(5);
+    expect(map.get('rec-b')).toBe(9);
+  });
+
   test('400：缺少 recordIds', async () => {
     const req = buildReq({ query: {} });
     const res = buildRes();
@@ -190,6 +212,85 @@ describe('Phase 2.3: handleParseStatusStream', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  test('afterSeq replay：补发 Redis Stream 历史事件并带 SSE id', async () => {
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'running')]);
+    recordEvents.replayRecordEvents.mockResolvedValueOnce([
+      {
+        recordId: 'a',
+        seq: 7,
+        status: 'running',
+        progress: 75,
+        statusPhase: 'streaming',
+        fieldGroup: 'diagnosis',
+        fields: { diagnosis: '肺腺癌' },
+        createdAt: '2026-05-20T00:00:00.000Z'
+      }
+    ]);
+    recordEvents.subscribeRecordEvents.mockResolvedValue(async () => {});
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a', afterSeq: '5' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    expect(recordEvents.replayRecordEvents).toHaveBeenCalledWith('a', 5);
+    expect(res.writes.some((s) => s.startsWith('id: a:7\n'))).toBe(true);
+    expect(res.writes.some((s) => s.includes('"fieldGroup":"diagnosis"'))).toBe(true);
+  });
+
+  test('先 subscribe 再 replay：replay 窗口内 live completed 不丢 fieldGroup 且按 seq 去重', async () => {
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'running')]);
+
+    let savedCb = null;
+    recordEvents.subscribeRecordEvents.mockImplementation(async (_ids, cb) => {
+      savedCb = cb;
+      return jest.fn(async () => {});
+    });
+    recordEvents.replayRecordEvents.mockImplementationOnce(async () => {
+      savedCb({ recordId: 'a', seq: 8, status: 'completed', progress: 100 });
+      return [
+        {
+          recordId: 'a',
+          seq: 7,
+          status: 'running',
+          progress: 75,
+          statusPhase: 'streaming',
+          fieldGroup: 'diagnosis',
+          fields: { diagnosis: '肺腺癌' }
+        },
+        { recordId: 'a', seq: 8, status: 'completed', progress: 100 }
+      ];
+    });
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a', afterSeq: '5' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    expect(recordEvents.subscribeRecordEvents).toHaveBeenCalledTimes(1);
+    expect(recordEvents.replayRecordEvents).toHaveBeenCalledTimes(1);
+    expect(res.writes.some((s) => s.startsWith('id: a:7\n') && s.includes('"fieldGroup":"diagnosis"'))).toBe(true);
+    const seq8Frames = res.writes.filter((s) => s.startsWith('id: a:8\n'));
+    expect(seq8Frames).toHaveLength(1);
+    expect(res.writes.some((s) => s.startsWith('event: done\n'))).toBe(true);
+  });
+
+  test('cancelled_at sidecar 在 SSE 初始 state 中映射为 cancelled 终态', async () => {
+    MedicalRecord.findAll.mockResolvedValue([
+      recordRow('a', 'running', { cancelled_at: new Date('2026-05-08T00:01:00Z') })
+    ]);
+
+    const req = buildReq({ userId: 1, query: { recordIds: 'a' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await handleParseStatusStream(req, res, next);
+
+    expect(recordEvents.subscribeRecordEvents).not.toHaveBeenCalled();
+    expect(res.writes.some((s) => s.includes('"status":"cancelled"'))).toBe(true);
+    expect(res.writes.some((s) => s.includes('"cancelledAt":"2026-05-08T00:01:00.000Z"'))).toBe(true);
+    expect(res.writes.some((s) => s.startsWith('event: done\n'))).toBe(true);
+  });
+
   test('客户端 close → unsubscribe + heartbeat 清理', async () => {
     MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'pending')]);
     const unsubscribe = jest.fn(async () => {});
@@ -206,5 +307,28 @@ describe('Phase 2.3: handleParseStatusStream', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  test('同一用户活跃 stream 超过上限 → 429 业务错误', async () => {
+    MedicalRecord.findAll.mockResolvedValue([recordRow('a', 'pending')]);
+    recordEvents.subscribeRecordEvents.mockResolvedValue(jest.fn(async () => {}));
+
+    const openReqs = [];
+    for (let i = 0; i < 3; i += 1) {
+      const req = buildReq({ userId: 'u1', query: { recordIds: 'a' } });
+      openReqs.push(req);
+      await handleParseStatusStream(req, buildRes(), jest.fn());
+    }
+
+    const next = jest.fn();
+    await handleParseStatusStream(
+      buildReq({ userId: 'u1', query: { recordIds: 'a' } }),
+      buildRes(),
+      next
+    );
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0].code).toBe(429);
+
+    openReqs.forEach((req) => req.emit('close'));
   });
 });

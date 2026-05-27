@@ -16,12 +16,15 @@ describe('ocr.js env vars are read live (not frozen at require time)', () => {
     // 凭证 / provider，也永远不会被 ocr 服务感知到。
     delete process.env.OCR_PROVIDER;
     delete process.env.ARK_API_KEY;
+    delete process.env.DOUBAO_API_KEY;
     delete process.env.KIMI_API_KEY;
     delete process.env.OCR_SECRET_ID;
     delete process.env.OCR_SECRET_KEY;
     delete process.env.KIMI_MODEL;
     delete process.env.KIMI_VISION_MODEL;
     delete process.env.ARK_VISION_MODEL;
+    delete process.env.VOLCENGINE_AK;
+    delete process.env.VOLCENGINE_SK;
 
     // 通过 jest.isolateModules 确保 ocr.js 在「净空」env 下首次加载，
     // 之后再任何 process.env 改动都必须被它通过 getter 看到。
@@ -48,6 +51,14 @@ describe('ocr.js env vars are read live (not frozen at require time)', () => {
     expect(ocrConfig.hasDoubaoCredential()).toBe(false);
   });
 
+  test('hasDoubaoCredential() reflects post-require DOUBAO_API_KEY alias change', () => {
+    expect(ocrConfig.hasDoubaoCredential()).toBe(false);
+    process.env.DOUBAO_API_KEY = 'live-doubao-alias';
+    expect(ocrConfig.hasDoubaoCredential()).toBe(true);
+    delete process.env.DOUBAO_API_KEY;
+    expect(ocrConfig.hasDoubaoCredential()).toBe(false);
+  });
+
   test('hasKimiCredential() reflects post-require KIMI_API_KEY change', () => {
     expect(ocrConfig.hasKimiCredential()).toBe(false);
     process.env.KIMI_API_KEY = 'live-injected';
@@ -66,12 +77,27 @@ describe('ocr.js env vars are read live (not frozen at require time)', () => {
     expect(ocrConfig.hasTencentCredential()).toBe(false);
   });
 
+  test('hasVolcengineOcrCredential() reflects post-require VOLCENGINE_AK/SK change', () => {
+    expect(ocrConfig.hasVolcengineOcrCredential()).toBe(false);
+    process.env.VOLCENGINE_AK = 'volc-ak-live';
+    process.env.VOLCENGINE_SK = 'volc-sk-live';
+    expect(ocrConfig.hasVolcengineOcrCredential()).toBe(true);
+    delete process.env.VOLCENGINE_AK;
+    delete process.env.VOLCENGINE_SK;
+    expect(ocrConfig.hasVolcengineOcrCredential()).toBe(false);
+  });
+
   test('describeOcrProviders() reflects switch from none to doubao+kimi without re-require', () => {
     expect(ocrConfig.describeOcrProviders()).toBe('none');
+    process.env.VOLCENGINE_AK = 'v-ak';
+    process.env.VOLCENGINE_SK = 'v-sk';
     process.env.ARK_API_KEY = 'a';
     process.env.KIMI_API_KEY = 'k';
-    expect(ocrConfig.describeOcrProviders()).toBe('doubao+kimi');
+    expect(ocrConfig.describeOcrProviders()).toBe('volcengine_ocr+doubao+kimi');
+    delete process.env.VOLCENGINE_AK;
+    delete process.env.VOLCENGINE_SK;
     delete process.env.ARK_API_KEY;
+    delete process.env.DOUBAO_API_KEY;
     delete process.env.KIMI_API_KEY;
   });
 

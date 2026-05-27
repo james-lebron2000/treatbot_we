@@ -236,16 +236,22 @@ const directUploadFiles = async ({ tempFiles, type, remark, onProgress, concurre
 
   // Step 3：finalize
   if (typeof onProgress === 'function') onProgress({ phase: 'finalizing', done: putDone, total: tempFiles.length });
-  const finRes = await deps.finalize({ files: finalizePayload });
+  const finRes = await deps.finalize({
+    files: finalizePayload,
+    totalCount: tempFiles.length,
+    uploadErrors: putErrors
+  });
   const finData = (finRes && finRes.data) || finRes;
   const records = (finData && Array.isArray(finData.records)) ? finData.records : [];
   const fileIds = (finData && Array.isArray(finData.fileIds)) ? finData.fileIds : records.map((r) => r.fileId).filter(Boolean);
 
   return {
+    batchId: (finData && finData.batchId) || '',
     fileIds,
     records,
     total: tempFiles.length,
-    successCount: (finData && finData.successCount) || fileIds.length,
+    successCount: finData && finData.successCount !== undefined ? finData.successCount : fileIds.length,
+    failedCount: finData && finData.failedCount !== undefined ? finData.failedCount : putErrors.length,
     putErrors,
     mode: stsData.mode || 'cos',
     // Plan §Phase 3.4：finalize 响应里的队列深度（{waiting, active, total}），上层用来渲染"前面还有 N 份"

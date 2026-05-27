@@ -871,8 +871,9 @@ const getParseStatus = async (fileId) => {
  *   入参：['id1','id2',...]   出参：原始 server response（data.entries[]）
  * 服务端不可用时模拟批量 fallback —— 给每个 fileId 返回 completed 占位，让前端走手填路径。
  */
-const getParseStatusBatch = async (fileIds) => {
+const getParseStatusBatch = async (fileIds, batchId = '') => {
   const ids = (Array.isArray(fileIds) ? fileIds : []).filter(Boolean)
+  const safeBatchId = `${batchId || ''}`.trim()
   if (!ids.length) {
     return { data: { entries: [], total: 0, completedCount: 0, erroredCount: 0, done: true } }
   }
@@ -893,7 +894,7 @@ const getParseStatusBatch = async (fileIds) => {
     const res = await request({
       url: '/api/medical/parse-status-batch',
       method: 'POST',
-      data: { fileIds: ids }
+      data: { fileIds: ids, ...(safeBatchId ? { batchId: safeBatchId } : {}) }
     })
     markEndpointAvailable('parseStatusBatch')
     return res
@@ -1040,6 +1041,34 @@ const enrichMedicalRecord = async (id, payload) => {
     throw error
   }
 }
+
+const getCurrentMedicalCase = () =>
+  request({
+    url: '/api/medical/cases/current',
+    method: 'GET'
+  })
+
+const getMedicalCase = (caseId) =>
+  request({
+    url: `/api/medical/cases/${encodeURIComponent(caseId)}`,
+    method: 'GET'
+  })
+
+const updateMedicalCaseRevisions = (caseId, payload = {}) =>
+  request({
+    url: `/api/medical/cases/${encodeURIComponent(caseId)}/revisions`,
+    method: 'POST',
+    data: {
+      patches: Array.isArray(payload.patches) ? payload.patches : [],
+      reason: payload.reason || ''
+    }
+  })
+
+const getMedicalCaseEvidence = (caseId) =>
+  request({
+    url: `/api/medical/cases/${encodeURIComponent(caseId)}/evidence`,
+    method: 'GET'
+  })
 
 // ==================== 匹配相关 API ====================
 
@@ -1488,6 +1517,10 @@ module.exports = {
   getMedicalRecords,
   getMedicalRecordDetail,
   enrichMedicalRecord,
+  getCurrentMedicalCase,
+  getMedicalCase,
+  updateMedicalCaseRevisions,
+  getMedicalCaseEvidence,
   getTrials,
   getMatches,
   getTrialDetail,

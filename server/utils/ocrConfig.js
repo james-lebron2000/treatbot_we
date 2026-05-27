@@ -6,10 +6,11 @@
 //   - 测试可以临时改 env 再 isOcrEnabled() 判断
 //   - 线上 hot-reload .env（pm2 reload）也能立刻生效，不需要重启 Node 进程
 //
-// 生产 OCR 主路径：Doubao/ARK -> Kimi -> Tencent -> rule。
-const hasDoubaoCredential = () => {
-  return Boolean(`${process.env.ARK_API_KEY || ''}`.trim());
-};
+// 生产 OCR 主路径：Volcengine OCRNormal -> Doubao/ARK 文本结构化 -> Kimi -> Tencent -> rule。
+// Doubao/火山方舟兼容 ARK_API_KEY 和 DOUBAO_API_KEY；火山引擎 AK/SK
+// 是 IAM 凭证，用于 visual.volcengineapi.com 的 OCRNormal，不等价于 Ark API key。
+const { hasDoubaoCredential } = require('./doubaoEnv');
+const { hasVolcengineOcrCredential } = require('./volcengineOcrEnv');
 
 const hasKimiCredential = () => {
   return Boolean(`${process.env.KIMI_API_KEY || ''}`.trim());
@@ -23,12 +24,13 @@ const hasTencentCredential = () => {
 };
 
 const isOcrEnabled = () => {
-  return hasDoubaoCredential() || hasKimiCredential() || hasTencentCredential();
+  return hasVolcengineOcrCredential() || hasDoubaoCredential() || hasKimiCredential() || hasTencentCredential();
 };
 
-// 给日志/错误信息用的 provider 摘要：'doubao' / 'kimi' / 'tencent' / 'doubao+kimi' / 'none' 等
+// 给日志/错误信息用的 provider 摘要：'volcengine_ocr' / 'doubao' / 'kimi' / 'tencent' / 'none' 等
 const describeOcrProviders = () => {
   const providers = [];
+  if (hasVolcengineOcrCredential()) providers.push('volcengine_ocr');
   if (hasDoubaoCredential()) providers.push('doubao');
   if (hasKimiCredential()) providers.push('kimi');
   if (hasTencentCredential()) providers.push('tencent');
@@ -37,6 +39,7 @@ const describeOcrProviders = () => {
 
 module.exports = {
   hasDoubaoCredential,
+  hasVolcengineOcrCredential,
   hasKimiCredential,
   hasTencentCredential,
   isOcrEnabled,

@@ -29,6 +29,11 @@ describe('parse-status-stream: pure parsing', () => {
     expect(r).toEqual({ event: 'state', data: { status: 'analyzing', progress: 65 } });
   });
 
+  test('parseFrame: preserves SSE id for replay-aware streams', () => {
+    const r = __testables.parseFrame('id: rec-1:7\nevent: state\ndata: {"seq":7}');
+    expect(r).toEqual({ event: 'state', id: 'rec-1:7', data: { seq: 7 } });
+  });
+
   test('parseFrame: 没有 event 行 → 默认 message', () => {
     const r = __testables.parseFrame('data: {"x":1}');
     expect(r).toEqual({ event: 'message', data: { x: 1 } });
@@ -112,6 +117,36 @@ describe('parse-status-stream: openParseStatusStream', () => {
     expect(onState).toHaveBeenCalledWith({ recordId: 'a', status: 'analyzing', progress: 65 });
     expect(onDone).not.toHaveBeenCalled();
     expect(abortMock).not.toHaveBeenCalled();
+  });
+
+  test('batch_state / merge_preview 透传给对应回调', () => {
+    const onBatchState = jest.fn();
+    const onMergePreview = jest.fn();
+    openParseStatusStream({
+      wx: mockWx,
+      url: 'x',
+      fileIds: ['a', 'b'],
+      onState: jest.fn(),
+      onBatchState,
+      onMergePreview,
+      onDone: jest.fn(),
+      onError: jest.fn()
+    });
+    const text = [
+      'event: batch_state\ndata: {"batchId":"batch-1","processedCount":1,"successCount":1,"total":2}',
+      '',
+      'event: merge_preview\ndata: {"caseDraft":{"diagnosis":"直肠癌"}}',
+      '',
+      ''
+    ].join('\n');
+    chunkHandler({ data: new TextEncoder().encode(text).buffer });
+    expect(onBatchState).toHaveBeenCalledWith({
+      batchId: 'batch-1',
+      processedCount: 1,
+      successCount: 1,
+      total: 2
+    });
+    expect(onMergePreview).toHaveBeenCalledWith({ caseDraft: { diagnosis: '直肠癌' } });
   });
 
   test('chunkResp 推 done → onDone + abort + clear timer', () => {

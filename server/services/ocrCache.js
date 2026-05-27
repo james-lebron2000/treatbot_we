@@ -171,6 +171,9 @@ const buildPayloadFromResult = (result) => {
       pdl1: entities.pdl1 || null
     },
     structured: {
+      schemaVersion: 1,
+      promptVersion: PROMPT_VERSION,
+      updatedAt: new Date().toISOString(),
       text: result.text || '',
       entities,
       confidence: result.confidence || null,
@@ -179,6 +182,10 @@ const buildPayloadFromResult = (result) => {
         provider: result.provider || 'unknown',
         pageCount: result.pageCount || null,
         completedAt: new Date().toISOString()
+      },
+      providerMeta: {
+        provider: result.provider || 'unknown',
+        pageCount: result.pageCount || null
       }
     }
   };

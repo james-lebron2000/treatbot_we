@@ -18,8 +18,6 @@
  *  12) 队列入队失败：record 写 status=error，但响应仍 200
  */
 
-const { PassThrough } = require('stream');
-
 // mock services & models —— 不打 DB，不打 COS。
 jest.mock('../services/oss', () => ({
   getDirectUploadInfo: jest.fn(),
@@ -325,6 +323,41 @@ describe('handleFinalize', () => {
     expect(payload.data.records[1].message).toMatch(/同一批内重复/);
   });
 
+  test('并发同 hash create 唯一冲突 → 回查 winner 按 duplicate 成功返回', async () => {
+    ossService.headObject.mockResolvedValue({ exists: true, size: 1024 });
+    const winner = {
+      id: 'rec-winner',
+      status: 'error',
+      created_at: new Date('2026-05-25T10:00:00Z'),
+      file_key: 'uploads/1/abc.jpg',
+      file_hash: 'a'.repeat(32)
+    };
+    MedicalRecord.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(winner);
+    MedicalRecord.create.mockRejectedValueOnce({
+      name: 'SequelizeUniqueConstraintError',
+      message: 'Duplicate entry'
+    });
+
+    const req = buildReq({ userId: 1, body: { files: [buildFile()] } });
+    const res = buildRes();
+    const next = wrapNext();
+    await handleFinalize(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(queueService.addOCRTask).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.data.records[0]).toMatchObject({
+      fileId: 'rec-winner',
+      recordId: 'rec-winner',
+      status: 'pending',
+      isDuplicate: true
+    });
+    expect(payload.data.successCount).toBe(1);
+    expect(payload.data.failedCount).toBe(0);
+  });
+
   test('队列入队失败 → record 标 error，响应仍 200', async () => {
     ossService.headObject.mockResolvedValue({ exists: true, size: 1024 });
     MedicalRecord.findOne.mockResolvedValue(null);
@@ -339,8 +372,38 @@ describe('handleFinalize', () => {
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
-    // ocrQueued=false 但 successCount 仍 0（status='error' 由 record.update 触发）
+    // ocrQueued=false 且响应状态要与 DB error 保持一致，避免客户端先显示 pending。
     expect(payload.data.records[0].ocrQueued).toBe(false);
+    expect(payload.data.records[0].status).toBe('error');
+    expect(payload.data.successCount).toBe(0);
+    expect(payload.data.failedCount).toBe(1);
+  });
+
+  test('直传部分 PUT 失败时 finalize 保留原始 total 和 failedCount', async () => {
+    ossService.headObject.mockResolvedValue({ exists: true, size: 1024 });
+    MedicalRecord.findOne.mockResolvedValue(null);
+    MedicalRecord.create.mockResolvedValue({
+      id: 'rec-ok', created_at: new Date(), update: jest.fn()
+    });
+
+    const req = buildReq({
+      userId: 1,
+      body: {
+        totalCount: 2,
+        uploadErrors: [{ index: 1, originalName: 'bad.jpg', message: 'COS PUT 失败' }],
+        files: [buildFile({ originalName: 'ok.jpg' })]
+      }
+    });
+    const res = buildRes();
+    const next = wrapNext();
+    await handleFinalize(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.data.total).toBe(2);
+    expect(payload.data.successCount).toBe(1);
+    expect(payload.data.failedCount).toBe(1);
+    expect(payload.data.uploadErrors).toHaveLength(1);
   });
 
   test('files 为空数组 → 400', async () => {

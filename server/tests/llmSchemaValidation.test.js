@@ -23,6 +23,12 @@ const buildResponse = (jsonObj) => ({
 
 describe('llmSchemas + chatJson', () => {
   const ORIGINAL_KEY = process.env.KIMI_API_KEY;
+  const ORIGINAL_ARK_KEY = process.env.ARK_API_KEY;
+  const ORIGINAL_DOUBAO_KEY = process.env.DOUBAO_API_KEY;
+  const ORIGINAL_ARK_BASE_URL = process.env.ARK_BASE_URL;
+  const ORIGINAL_DOUBAO_BASE_URL = process.env.DOUBAO_BASE_URL;
+  const ORIGINAL_ARK_MODEL = process.env.ARK_VISION_MODEL;
+  const ORIGINAL_DOUBAO_MODEL = process.env.DOUBAO_MODEL;
 
   beforeAll(() => {
     process.env.KIMI_API_KEY = 'test-key';
@@ -31,6 +37,18 @@ describe('llmSchemas + chatJson', () => {
   afterAll(() => {
     if (ORIGINAL_KEY === undefined) delete process.env.KIMI_API_KEY;
     else process.env.KIMI_API_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_ARK_KEY === undefined) delete process.env.ARK_API_KEY;
+    else process.env.ARK_API_KEY = ORIGINAL_ARK_KEY;
+    if (ORIGINAL_DOUBAO_KEY === undefined) delete process.env.DOUBAO_API_KEY;
+    else process.env.DOUBAO_API_KEY = ORIGINAL_DOUBAO_KEY;
+    if (ORIGINAL_ARK_BASE_URL === undefined) delete process.env.ARK_BASE_URL;
+    else process.env.ARK_BASE_URL = ORIGINAL_ARK_BASE_URL;
+    if (ORIGINAL_DOUBAO_BASE_URL === undefined) delete process.env.DOUBAO_BASE_URL;
+    else process.env.DOUBAO_BASE_URL = ORIGINAL_DOUBAO_BASE_URL;
+    if (ORIGINAL_ARK_MODEL === undefined) delete process.env.ARK_VISION_MODEL;
+    else process.env.ARK_VISION_MODEL = ORIGINAL_ARK_MODEL;
+    if (ORIGINAL_DOUBAO_MODEL === undefined) delete process.env.DOUBAO_MODEL;
+    else process.env.DOUBAO_MODEL = ORIGINAL_DOUBAO_MODEL;
   });
 
   beforeEach(() => {
@@ -98,6 +116,29 @@ describe('llmSchemas + chatJson', () => {
     expect(axios.post.mock.calls[1][1].temperature).toBe(0);
   });
 
+  test('labValues/bloodCounts tolerate provider array/string formats without retry', async () => {
+    axios.post.mockResolvedValueOnce(buildResponse({
+      diagnosis: '直肠癌',
+      labValues: {
+        ALT: ['35', 'U/L'],
+        AST: '41 U/L'
+      },
+      bloodCounts: {
+        WBC: [{ value: 4.2, unit: '×10⁹/L' }],
+        NEUT: ['2.6', '×10⁹/L'],
+        PLT: '165 ×10⁹/L'
+      }
+    }));
+
+    const result = await chatJson('kimi', [{ role: 'user', content: 'hi' }], OcrExtractionSchema);
+    expect(result.labValues.ALT).toEqual({ value: 35, unit: 'U/L' });
+    expect(result.labValues.AST).toEqual({ value: 41, unit: 'U/L' });
+    expect(result.bloodCounts.WBC).toEqual({ value: 4.2, unit: '×10⁹/L' });
+    expect(result.bloodCounts.NEUT).toEqual({ value: 2.6, unit: '×10⁹/L' });
+    expect(result.bloodCounts.PLT).toEqual({ value: 165, unit: '×10⁹/L' });
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   test('两次都 schema 失败 → 抛 LlmSchemaError', async () => {
     axios.post.mockResolvedValueOnce(buildResponse({ ecog: 'bad' }));
     axios.post.mockResolvedValueOnce(buildResponse({ ecog: 'still-bad' }));
@@ -116,5 +157,23 @@ describe('llmSchemas + chatJson', () => {
       chatJson('kimi', [{ role: 'user', content: 'hi' }], OcrExtractionSchema)
     ).rejects.toBeInstanceOf(LlmSchemaError);
     expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
+  test('doubao provider accepts DOUBAO_* aliases when ARK_* key is absent', async () => {
+    delete process.env.ARK_API_KEY;
+    delete process.env.ARK_BASE_URL;
+    delete process.env.ARK_VISION_MODEL;
+    process.env.DOUBAO_API_KEY = 'doubao-alias-key';
+    process.env.DOUBAO_BASE_URL = 'https://example.volces.test/api/v3/';
+    process.env.DOUBAO_MODEL = 'doubao-alias-model';
+    axios.post.mockResolvedValueOnce(buildResponse({ diagnosis: '直肠癌' }));
+
+    const result = await chatJson('doubao', [{ role: 'user', content: 'hi' }], OcrExtractionSchema);
+
+    expect(result.diagnosis).toBe('直肠癌');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(axios.post.mock.calls[0][0]).toBe('https://example.volces.test/api/v3/chat/completions');
+    expect(axios.post.mock.calls[0][1].model).toBe('doubao-alias-model');
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer doubao-alias-key');
   });
 });

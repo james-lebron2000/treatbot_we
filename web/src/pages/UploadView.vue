@@ -62,7 +62,7 @@
           <div v-if="!files.length" style="text-align:center;padding:20px 0;">
             <div style="font-size:2rem;">&#128196;</div>
             <p style="margin:8px 0 0;color:#6b7280;">点这里选文件</p>
-            <p style="margin:4px 0 0;font-size:0.8rem;color:#9ca3af;">图片或 PDF 都行，可以一次选多张</p>
+            <p style="margin:4px 0 0;font-size:0.8rem;color:#9ca3af;">图片或 PDF 都行，可以一次选多张；长图会自动切段识别</p>
           </div>
           <div v-else style="padding:10px 0;">
             <p style="margin:0;color:#16a34a;">已选 {{ files.length }} 份</p>
@@ -77,8 +77,10 @@
           </details>
         </div>
 
-        <button class="btn primary" :disabled="uploading || !files.length" @click="uploadAndParse" style="width:100%;padding:12px;">
-          {{ uploading
+        <button class="btn primary" :disabled="uploading || preparingFiles || !files.length" @click="uploadAndParse" style="width:100%;padding:12px;">
+          {{ preparingFiles
+            ? '正在准备文件…'
+            : uploading
             ? (batchStats.total > 1
                 ? `已处理 ${batchStats.completedCount + batchStats.erroredCount}/${batchStats.total} 份…`
                 : '正在帮您看懂…')
@@ -243,6 +245,7 @@ const MAX_BATCH_FILES = SHARED_BATCH_UPLOAD_MAX
 
 const file = ref<File | null>(null)
 const files = ref<File[]>([])
+const preparingFiles = ref(false)
 const uploadIndex = ref(0)
 const remark = ref('')
 const uploading = ref(false)
@@ -253,6 +256,7 @@ const recordId = ref('')
 const fileId = ref('')
 // Phase E.2 / E.3：批量上传跟踪 + 时间线
 const fileIds = ref<string[]>([])
+const batchId = ref('')
 const isBatchParse = ref(false)
 const batchStats = reactive({ total: 0, completedCount: 0, erroredCount: 0 })
 const timelineSummary = ref<any | null>(null)
@@ -263,6 +267,7 @@ const streamRawText = ref<string>('')
 const currentStage = ref<'received' | 'preprocess' | 'ocr_text' | 'field_group' | 'completed' | 'error'>('received')
 const uploadPercent = ref<number>(0)
 let streamCloser: (() => void) | null = null
+let lastSeqByRecordId = new Map<string, number>()
 const submitting = ref(false)
 type UploadErrorKind = 'rate_limit' | 'parse' | 'network' | ''
 interface UploadErrorState {
@@ -340,6 +345,8 @@ let timer: number | null = null
 let pollStartTime = 0
 let elapsedTimer: number | null = null
 const elapsedSeconds = ref(0)
+let lastPersistedRecordSignature = ''
+let persistInFlight: Promise<void> | null = null
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
 // 已声明「不知道」的字段从展示里剔除；其余流程（验证、提交）逻辑不变
@@ -416,12 +423,134 @@ const previewRows = computed(() => {
   })
 })
 
+const LONG_IMAGE_MIN_HEIGHT = 2800
+const LONG_IMAGE_MIN_RATIO = 2.6
+const LONG_IMAGE_TARGET_SLICE_HEIGHT = 2200
+const LONG_IMAGE_OVERLAP = 120
+const LONG_IMAGE_MAX_OUTPUT_WIDTH = 1800
+
+const isImageFile = (f: File) =>
+  f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(f.name)
+
+const splitName = (name: string) => {
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return { base: name || 'image', ext: '' }
+  return { base: name.slice(0, dot), ext: name.slice(dot) }
+}
+
+const loadImageElement = (f: File) =>
+  new Promise<{ img: HTMLImageElement; release: () => void }>((resolve, reject) => {
+    const url = URL.createObjectURL(f)
+    const img = new Image()
+    const release = () => URL.revokeObjectURL(url)
+    img.onload = () => resolve({ img, release })
+    img.onerror = () => {
+      release()
+      reject(new Error('图片读取失败'))
+    }
+    img.src = url
+  })
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality = 0.9) =>
+  new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('图片切段失败'))
+    }, 'image/jpeg', quality)
+  })
+
+const sliceLongImage = async (f: File, maxParts: number): Promise<File[]> => {
+  if (!isImageFile(f) || maxParts <= 1) return [f]
+
+  let loaded: { img: HTMLImageElement; release: () => void } | null = null
+  try {
+    loaded = await loadImageElement(f)
+    const { img } = loaded
+    const width = img.naturalWidth || img.width
+    const height = img.naturalHeight || img.height
+    if (!width || !height) return [f]
+    const ratio = height / Math.max(1, width)
+    if (height < LONG_IMAGE_MIN_HEIGHT || ratio < LONG_IMAGE_MIN_RATIO) {
+      return [f]
+    }
+
+    const estimatedParts = Math.max(
+      2,
+      Math.ceil((height - LONG_IMAGE_OVERLAP) / (LONG_IMAGE_TARGET_SLICE_HEIGHT - LONG_IMAGE_OVERLAP))
+    )
+    const partsWanted = Math.max(2, Math.min(maxParts, estimatedParts))
+    const sliceHeight = Math.ceil((height + LONG_IMAGE_OVERLAP * (partsWanted - 1)) / partsWanted)
+    const scale = width > LONG_IMAGE_MAX_OUTPUT_WIDTH ? LONG_IMAGE_MAX_OUTPUT_WIDTH / width : 1
+    const outputWidth = Math.max(1, Math.round(width * scale))
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return [f]
+
+    const { base } = splitName(f.name)
+    const parts: File[] = []
+    let y = 0
+    while (y < height && parts.length < partsWanted) {
+      const sourceHeight = Math.min(sliceHeight, height - y)
+      canvas.width = outputWidth
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale))
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, y, width, sourceHeight, 0, 0, canvas.width, canvas.height)
+      const blob = await canvasToBlob(canvas)
+      parts.push(new File([blob], `${base}-part-${parts.length + 1}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: f.lastModified
+      }))
+      if (y + sourceHeight >= height) break
+      y += Math.max(1, sliceHeight - LONG_IMAGE_OVERLAP)
+    }
+
+    return parts.length > 1 ? parts : [f]
+  } catch (err) {
+    console.warn('长图切段失败，保留原图', err)
+    return [f]
+  } finally {
+    if (loaded) loaded.release()
+  }
+}
+
+const prepareSelectedFiles = async (selected: File[]) => {
+  const prepared: File[] = []
+  let splitSourceCount = 0
+  let splitPartCount = 0
+  let droppedCount = 0
+
+  for (const f of selected) {
+    const remaining = MAX_BATCH_FILES - prepared.length
+    if (remaining <= 0) {
+      droppedCount += 1
+      continue
+    }
+    const parts = await sliceLongImage(f, remaining)
+    if (parts.length > 1) {
+      splitSourceCount += 1
+      splitPartCount += parts.length
+    }
+    for (const part of parts) {
+      if (prepared.length < MAX_BATCH_FILES) {
+        prepared.push(part)
+      } else {
+        droppedCount += 1
+      }
+    }
+  }
+
+  const capped = prepared.slice(0, MAX_BATCH_FILES)
+  return { files: capped, splitSourceCount, splitPartCount, droppedCount }
+}
+
 const resetUpload = () => {
   parsedRecord.value = {}
   fileId.value = ''
   recordId.value = ''
+  batchId.value = ''
   files.value = []
   file.value = null
+  preparingFiles.value = false
   clearUploadError()
   parseStatus.value = ''
   parseProgress.value = 0
@@ -430,23 +559,39 @@ const resetUpload = () => {
   filledGroups.value = []
   streamRawText.value = ''
   currentStage.value = 'received'
+  lastSeqByRecordId = new Map<string, number>()
   uploadPercent.value = 0
+  lastPersistedRecordSignature = ''
+  persistInFlight = null
   if (streamCloser) { try { streamCloser() } catch (_e) {} ; streamCloser = null }
 }
 
-const onFileChange = (event: Event) => {
+const onFileChange = async (event: Event) => {
   const target = event.target as HTMLInputElement
   const selected = Array.from(target.files || [])
-  // PRD-2026Q4 followup：客户端硬上限 MAX_BATCH_FILES（与服务端 BATCH_UPLOAD_MAX 同号 = 9）。
-  // 超出部分同步切掉 + toast 友好提示，避免整批上传完才被 400 拒掉。
-  let accepted = selected
-  if (selected.length > MAX_BATCH_FILES) {
-    accepted = selected.slice(0, MAX_BATCH_FILES)
-    showToast(`一次最多上传 ${MAX_BATCH_FILES} 份，已为您保留前 ${MAX_BATCH_FILES} 份`)
-  }
-  files.value = accepted
-  file.value = accepted[0] || null
   clearUploadError()
+  files.value = []
+  file.value = null
+  if (!selected.length) return
+
+  preparingFiles.value = true
+  try {
+    const prepared = await prepareSelectedFiles(selected)
+    files.value = prepared.files
+    file.value = prepared.files[0] || null
+    if (prepared.splitSourceCount > 0) {
+      showToast(`已把 ${prepared.splitSourceCount} 张长图切成 ${prepared.splitPartCount} 段，会自动合并识别结果`)
+    } else if (prepared.droppedCount > 0) {
+      showToast(`一次最多上传 ${MAX_BATCH_FILES} 份，已为您保留前 ${MAX_BATCH_FILES} 份`)
+    }
+    if (prepared.splitSourceCount > 0 && prepared.droppedCount > 0) {
+      window.setTimeout(() => {
+        showToast(`切段后超过 ${MAX_BATCH_FILES} 份，已保留前 ${MAX_BATCH_FILES} 份`)
+      }, 2300)
+    }
+  } finally {
+    preparingFiles.value = false
+  }
 }
 
 const stopPolling = () => {
@@ -464,11 +609,32 @@ const retryParse = async () => {
     elapsedSeconds.value = 0
     elapsedTimer = window.setInterval(() => { elapsedSeconds.value = Math.floor((Date.now() - pollStartTime) / 1000) }, 1000)
     try {
-      await pollStatus()
-      timer = window.setInterval(async () => { try { await pollStatus() } catch {} }, 2000)
+      if (fileIds.value.length > 1) {
+        while (true) {
+          const { done, mergedResult, firstError } = await pollBatchOnce()
+          if (done) {
+            if (Object.keys(mergedResult).length) {
+              parseStatus.value = 'completed'
+              currentStage.value = 'completed'
+              if (batchStats.completedCount >= 2) await fetchTimeline()
+              await persistAggregatedRecord('retry_batch_completed')
+              break
+            }
+            throw new Error(firstError || '所有文件解析均失败')
+          }
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        }
+      } else {
+        await pollStatus()
+        timer = window.setInterval(async () => { try { await pollStatus() } catch {} }, 2000)
+      }
     } catch (err: any) {
       setUploadError(err)
     }
+    return
+  }
+  if (files.value.length > 1) {
+    await uploadAndParse()
     return
   }
   clearUploadError()
@@ -495,6 +661,7 @@ const pollStatus = async () => {
   if (status.status === 'completed') {
     stopPolling()
     parsedRecord.value = normalizeRecord(status.result || status.record || status)
+    await persistAggregatedRecord('single_poll_completed')
   } else if (status.status === 'error') {
     stopPolling()
     uploadError.kind = 'parse'
@@ -504,17 +671,88 @@ const pollStatus = async () => {
   }
 }
 
-const mergeRecords = (base: Record<string, unknown>, extra: Record<string, unknown>) => {
-  const merged = { ...base }
-  for (const key of ['diagnosis', 'stage', 'ecog', 'pdl1', 'treatmentLine']) {
-    if (!merged[key] && extra[key]) merged[key] = extra[key]
+const isEmptyMergeValue = (value: unknown): boolean => {
+  if (value === undefined || value === null || value === '') return true
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length === 0
+  return false
+}
+
+const mergeArrays = (base: unknown[], extra: unknown[]) => {
+  const seen = new Set<string>()
+  const merged: unknown[] = []
+  for (const item of [...base, ...extra]) {
+    const key = typeof item === 'object' && item !== null
+      ? JSON.stringify(item)
+      : String(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
   }
-  for (const key of ['geneMutation', 'treatment']) {
-    if (extra[key] && merged[key] && `${merged[key]}` !== `${extra[key]}`) {
-      merged[key] = `${merged[key]}；${extra[key]}`
-    } else if (extra[key] && !merged[key]) {
-      merged[key] = extra[key]
+  return merged
+}
+
+const buildPersistEntities = () => {
+  const entities = { ...parsedRecord.value }
+  delete entities.id
+  delete entities.recordId
+  delete entities.fileId
+  return entities
+}
+
+const persistAggregatedRecord = async (_reason: string) => {
+  if (!recordId.value || !Object.keys(parsedRecord.value).length) return
+  const entities = buildPersistEntities()
+  const signature = `${recordId.value}:${JSON.stringify(entities)}`
+  if (signature === lastPersistedRecordSignature) return
+  if (persistInFlight) {
+    await persistInFlight
+    if (signature === lastPersistedRecordSignature) return
+  }
+  persistInFlight = (async () => {
+    await api.enrichRecord(recordId.value, {
+      entities,
+      structured: { entities }
+    })
+    lastPersistedRecordSignature = signature
+    patientStore.setRecord(recordId.value, parsedRecord.value)
+  })()
+  try {
+    await persistInFlight
+  } catch (err) {
+    console.warn('结构化病历汇总保存失败', err)
+  } finally {
+    persistInFlight = null
+  }
+}
+
+const mergeDeepValue = (key: string, base: unknown, extra: unknown): unknown => {
+  if (isEmptyMergeValue(extra)) return base
+  if (isEmptyMergeValue(base)) return extra
+  if (Array.isArray(base) && Array.isArray(extra)) return mergeArrays(base, extra)
+  if (
+    typeof base === 'object' && base !== null && !Array.isArray(base) &&
+    typeof extra === 'object' && extra !== null && !Array.isArray(extra)
+  ) {
+    const merged: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+    for (const [childKey, childValue] of Object.entries(extra as Record<string, unknown>)) {
+      merged[childKey] = mergeDeepValue(childKey, merged[childKey], childValue)
     }
+    return merged
+  }
+  if (`${base}` === `${extra}`) return base
+  if (['geneMutation', 'treatment', 'diagnosis', 'stage', 'pdl1'].includes(key)) {
+    return `${base}；${extra}`
+  }
+  return base
+}
+
+const mergeRecords = (base: Record<string, unknown>, extra: Record<string, unknown>) => {
+  const merged: Record<string, unknown> = { ...base }
+  const normalizedExtra = normalizeRecord(extra)
+  for (const [key, value] of Object.entries(normalizedExtra)) {
+    if (key === 'entities') continue
+    merged[key] = mergeDeepValue(key, merged[key], value)
   }
   return merged
 }
@@ -561,31 +799,67 @@ const onConsentCancel = () => {
 // Phase E.2：批量上传 + 批量轮询。一次 HTTP 上传（multi-FormData）+ 周期性 batch poll，
 // 而不是 N 次 single upload + N 个 polling timer。
 const POLL_INTERVAL_MS = 2000
+const COMPLETED_STATUSES = new Set(['completed', 'parsed', 'success', 'done'])
+const ERROR_STATUSES = new Set(['error', 'failed', 'timeout', 'cancelled', 'not_found'])
+
+const isCompletedStatus = (status: unknown) => COMPLETED_STATUSES.has(String(status || '').toLowerCase())
+const isErrorStatus = (status: unknown) => ERROR_STATUSES.has(String(status || '').toLowerCase())
 
 const pollBatchOnce = async (): Promise<{ done: boolean; mergedResult: Record<string, unknown>; firstError?: string }> => {
-  const status = await api.getParseStatusBatch(fileIds.value)
-  batchStats.total = status.total
-  batchStats.completedCount = status.completedCount
-  batchStats.erroredCount = status.erroredCount
+  const status = await api.getParseStatusBatch(fileIds.value, batchId.value)
+  const entries = Array.isArray(status.entries) ? status.entries : []
+  batchStats.total = Number(status.total || entries.length || fileIds.value.length || 0)
+  batchStats.completedCount = Number(status.completedCount || entries.filter((entry: any) => isCompletedStatus(entry.status)).length || 0)
+  batchStats.erroredCount = Number(status.erroredCount || entries.filter((entry: any) => isErrorStatus(entry.status)).length || 0)
+  const completedEntries = entries.filter((entry: any) => isCompletedStatus(entry.status))
+  const firstCompletedRecordId = completedEntries
+    .map((entry: any) => entry.recordId || entry.fileId)
+    .find(Boolean)
+  const caseSourceRecordId = status.case && Array.isArray(status.case.sourceRecordIds)
+    ? status.case.sourceRecordIds.find((id: unknown) => completedEntries.some((entry: any) => (entry.recordId || entry.fileId) === id))
+    : ''
+  const resolvedRecordId = firstCompletedRecordId || caseSourceRecordId || ''
+  let merged: Record<string, unknown> = {}
+  if (status.case && status.case.entities) {
+    merged = mergeRecords(merged, {
+      ...status.case.entities,
+      caseId: status.case.caseId || status.case.id || '',
+      sourceRecordIds: status.case.sourceRecordIds || []
+    })
+  }
 
   // 整体进度：完成 + 失败 占总数的比例
-  const ratio = status.total > 0 ? (status.completedCount + status.erroredCount) / status.total : 0
+  const ratio = batchStats.total > 0 ? (batchStats.completedCount + batchStats.erroredCount) / batchStats.total : 0
   parseProgress.value = Math.floor(ratio * 100)
 
   // 合并所有 completed 条目的 result
-  let merged: Record<string, unknown> = {}
+  let entryMerged: Record<string, unknown> = {}
   let firstError: string | undefined
-  for (const entry of status.entries) {
-    if (entry.status === 'completed' && entry.result) {
-      merged = mergeRecords(merged, normalizeRecord(entry.result))
-      if (!recordId.value && entry.recordId) recordId.value = entry.recordId
+  for (const entry of entries) {
+    if (isCompletedStatus(entry.status) && entry.result) {
+      entryMerged = mergeRecords(entryMerged, normalizeRecord(entry.result))
+      if (entry.recordId && !recordId.value) recordId.value = entry.recordId
     } else if (entry.errorMsg && !firstError) {
       firstError = entry.errorMsg
     }
   }
+  if (Object.keys(entryMerged).length) {
+    merged = mergeRecords(merged, entryMerged)
+  }
 
   if (Object.keys(merged).length) {
-    parsedRecord.value = merged
+    const finalMerged = resolvedRecordId
+      ? { ...merged, id: resolvedRecordId, recordId: resolvedRecordId }
+      : merged
+    if (status.done) {
+      parsedRecord.value = normalizeRecord(finalMerged)
+    } else {
+      parsedRecord.value = mergeRecords(parsedRecord.value, finalMerged)
+    }
+  }
+
+  if (resolvedRecordId) {
+    recordId.value = resolvedRecordId
   }
 
   return { done: status.done, mergedResult: merged, firstError }
@@ -614,6 +888,8 @@ const uploadAndParse = async () => {
   clearUploadError()
   uploadIndex.value = 0
   fileIds.value = []
+  batchId.value = ''
+  lastSeqByRecordId = new Map<string, number>()
   isBatchParse.value = files.value.length > 1
   timelineSummary.value = null
   batchStats.total = files.value.length
@@ -639,6 +915,7 @@ const uploadAndParse = async () => {
       remark.value,
       (percent) => { uploadPercent.value = percent }
     )
+    batchId.value = uploadRes.batchId || ''
     fileIds.value = Array.isArray(uploadRes.fileIds) ? uploadRes.fileIds : []
     if (!fileIds.value.length) {
       throw new Error(`所有文件上传失败（共 ${uploadRes.total} 份）`)
@@ -697,13 +974,18 @@ const uploadAndParse = async () => {
       }
 
       // record 终态计数：所有 fileIds 都到 completed/error 时才算整体 done
-      const terminalRecordIds = new Set<string>()
+      const completedRecordIds = new Set<string>()
+      const erroredRecordIds = new Set<string>()
+      const terminalRecordCount = () => new Set([...completedRecordIds, ...erroredRecordIds]).size
       // 是否至少收到过一条 state 事件（用于 noredis 8s 哨兵判定）。
       // 不能用 `currentStage === 'received'` 判定，因为 received 既是初始值也是首个 state 的 stage。
       let sseReceivedAnyState = false
 
       const onState = (evt: StreamEvent) => {
         sseReceivedAnyState = true
+        if (evt.recordId && typeof evt.seq === 'number') {
+          lastSeqByRecordId.set(String(evt.recordId), evt.seq)
+        }
         currentStage.value = evt.stage as typeof currentStage.value
         if (typeof evt.progress === 'number' && evt.progress > parseProgress.value) {
           parseProgress.value = evt.progress
@@ -715,30 +997,18 @@ const uploadAndParse = async () => {
           // 增量 merge：保留已有"有意义"值（保护用户编辑过的字段不被回填覆盖），
           // 但**空数组 / 空对象**不算"已有值"——partial-json 早期可能把 treatmentHistory 之类
           // 先发成 []，后续完整数组要能把它替换掉，否则用户永远看不到治疗记录。
-          const isEmpty = (x: unknown): boolean => {
-            if (x === undefined || x === null || x === '') return true
-            if (Array.isArray(x) && x.length === 0) return true
-            if (typeof x === 'object' && x !== null && Object.keys(x as object).length === 0) return true
-            return false
-          }
-          const next = { ...parsedRecord.value }
-          for (const [k, v] of Object.entries(evt.fields)) {
-            if (isEmpty(next[k])) {
-              next[k] = v as unknown
-            }
-          }
-          parsedRecord.value = next
+          parsedRecord.value = mergeRecords(parsedRecord.value, evt.fields)
           if (!filledGroups.value.includes(evt.fieldGroup)) {
             filledGroups.value = [...filledGroups.value, evt.fieldGroup]
           }
         }
         if (evt.stage === 'completed' && evt.result) {
           // 把最终 entities merge（normalizeRecord 把别名映射到标准 key）
-          const merged = mergeRecords(parsedRecord.value, normalizeRecord(evt.result.entities))
+          const merged = mergeRecords(parsedRecord.value, evt.result.entities || evt.result)
           parsedRecord.value = merged
           if (!recordId.value && evt.recordId) recordId.value = evt.recordId
-          terminalRecordIds.add(String(evt.recordId))
-          batchStats.completedCount = terminalRecordIds.size  // 简化：忽略 partial 失败计数
+          completedRecordIds.add(String(evt.recordId))
+          batchStats.completedCount = completedRecordIds.size
           // 关键：completed 到来但 4 个 field_group 没全发（snapshot-at-open / 非流式 fallback /
           // streamChatJson 一次性出齐）时，filledGroups 不补会导致 4 块骨架卡死。
           // 此时数据已经在 parsedRecord 里完整可见，直接把 4 组都标 filled。
@@ -749,45 +1019,49 @@ const uploadAndParse = async () => {
           }
         }
         if (evt.stage === 'error' && evt.recordId) {
-          terminalRecordIds.add(String(evt.recordId))
-          batchStats.erroredCount += 1
+          erroredRecordIds.add(String(evt.recordId))
+          batchStats.erroredCount = erroredRecordIds.size
         }
-        if (terminalRecordIds.size >= fileIds.value.length) {
-          if (Object.keys(parsedRecord.value).length) {
-            parseStatus.value = 'completed'
-            currentStage.value = 'completed'
-            if (batchStats.completedCount >= 2) {
-              fetchTimeline().finally(() => { safeResolve() })
-            } else {
-              safeResolve()
-            }
-          } else {
-            safeReject(new Error(evt.errorMsg || '所有文件解析均失败'))
-          }
+        if (terminalRecordCount() >= fileIds.value.length) {
+          // SSE 只负责渐显。真正的完成卡片、recordId 选择和 case 合并必须回到
+          // parse-status-batch 的 DB 快照，避免把合并结果 PATCH 到失败的首个上传记录。
+          startPollingFallback('sse_terminal_confirm')
         }
       }
 
       streamCloser = openParseStream(fileIds.value, {
+        onBatchState: (info) => {
+          if (!info || typeof info !== 'object') return
+          const total = Number(info.total || info.totalCount || 0)
+          if (total > 0) batchStats.total = total
+          batchStats.completedCount = Number(info.successCount || info.completedCount || batchStats.completedCount || 0)
+          batchStats.erroredCount = Number(info.failedCount || info.erroredCount || batchStats.erroredCount || 0)
+          if (typeof info.elapsedSeconds === 'number' && info.elapsedSeconds > elapsedSeconds.value) {
+            elapsedSeconds.value = info.elapsedSeconds
+          }
+        },
+        onMergePreview: (info) => {
+          const draft = info && (info.caseDraft || info.entities || info.fields)
+          if (draft && typeof draft === 'object') {
+            parsedRecord.value = mergeRecords(parsedRecord.value, draft)
+          }
+        },
         onState,
         onDone: () => {
-          // 服务端通知"全部终态"——若我们这边 onState 还没走完，也用本回调收尾
-          if (!settled && terminalRecordIds.size === 0) {
-            // 没收到任何 state？不太可能，但安全起见走 fallback
-            startPollingFallback('done_without_state')
-          }
+          // 服务端通知"全部终态"时，无论本地是否已收到部分 state，都必须拉
+          // parse-status-batch 做终态确认；SSE 可能缺少 case/entries 的最终合并结果。
+          if (!settled) startPollingFallback('done_confirm')
         },
         onError: (e) => { startPollingFallback(e.message || 'sse_error') },
         onNoredis: () => {
-          // Redis 不可用：单进程下 localBus 仍能送事件，先不立即 fallback；
-          // 但起一个 8s 哨兵——如果 8s 内没收到任何 state，再切轮询。
-          window.setTimeout(() => {
-            if (!settled && !sseReceivedAnyState) {
-              startPollingFallback('noredis_timeout')
-            }
-          }, 8000)
+          // Redis 不可用时即使已经收到 snapshot/初始 state，也不能相信 SSE 会继续推进。
+          // 立即切到 batch polling，避免 UI 永久停在 pending/running。
+          startPollingFallback(sseReceivedAnyState ? 'noredis_after_state' : 'noredis')
         }
-      })
+      }, { batchId: batchId.value, afterSeq: lastSeqByRecordId })
     })
+
+    await persistAggregatedRecord('upload_completed')
 
     track('upload_success', {
       recordId: recordId.value,
@@ -814,8 +1088,15 @@ const toMatches = async () => {
   }
   parsedRecord.value = { ...parsedRecord.value, ...patchPayload }
   try {
-    if (recordId.value && Object.keys(patchPayload).length > 0) {
-      await api.enrichRecord(recordId.value, patchPayload).catch(() => null)
+    if (recordId.value) {
+      const entities = buildPersistEntities()
+      const payload = {
+        entities,
+        structured: { entities },
+        ...patchPayload
+      }
+      await api.enrichRecord(recordId.value, payload).catch(() => null)
+      lastPersistedRecordSignature = `${recordId.value}:${JSON.stringify(entities)}`
     }
     localStorage.setItem('structuredRecordDraft', JSON.stringify(parsedRecord.value))
     patientStore.setRecord(recordId.value, parsedRecord.value)

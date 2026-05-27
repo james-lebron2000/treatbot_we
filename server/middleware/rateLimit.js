@@ -128,10 +128,20 @@ const parseStatusLimiter = createRateLimiter({
   message: '解析状态查询过于频繁，请稍后再试'
 });
 
+// 解析状态流限流：认证后按用户计数。活跃连接上限在 controller 内另行控制；
+// 这里防止异常客户端不断重连打穿 Node/Caddy。
+const parseStreamLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.PARSE_STREAM_RATE_LIMIT_MAX || '300', 10),
+  keyPrefix: 'rl:parse-stream:',
+  message: '解析状态流连接过于频繁，请稍后再试'
+});
+
 module.exports = defaultLimiter;
 module.exports.strictLimiter = strictLimiter;
 module.exports.uploadLimiter = uploadLimiter;
 module.exports.parseStatusLimiter = parseStatusLimiter;
+module.exports.parseStreamLimiter = parseStreamLimiter;
 module.exports.redisClient = redisClient;
 module.exports.__testables = {
   createRateLimiter,

@@ -20,6 +20,9 @@ jest.mock('../models', () => ({
     create: jest.fn(),
     count: jest.fn()
   },
+  UploadBatch: {
+    findOne: jest.fn()
+  },
   Trial: { findAll: jest.fn().mockResolvedValue([]) }
 }));
 jest.mock('../services/oss', () => ({
@@ -35,11 +38,14 @@ jest.mock('../services/queue', () => ({ addOCRTask: jest.fn() }));
 jest.mock('../services/matchEngine', () => ({ scoreRecordAgainstTrial: () => ({ score: 0 }) }));
 jest.mock('../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-const { MedicalRecord } = require('../models');
+const { MedicalRecord, UploadBatch } = require('../models');
+const medicalCaseService = require('../services/medicalCaseService');
 const {
   getParseStatusBatch,
   __mapParseStatus: mapParseStatus,
-  __buildParseStatusEntry: buildParseStatusEntry
+  __buildParseStatusEntry: buildParseStatusEntry,
+  __resolveBatchIdForRecords: resolveBatchIdForRecords,
+  __buildBatchCaseDraft: buildBatchCaseDraft
 } = require('../controllers/medical');
 
 describe('Phase 1.3 mapParseStatus dispatch', () => {
@@ -256,5 +262,97 @@ describe('parse-status-batch result shape', () => {
     expect(result.molecular.drivers[0].gene).toBe('EGFR');
     expect(result.imaging[0].modality).toBe('CT');
     expect(result.confidence).toBe(0.91);
+  });
+
+  test('completed batch returns caseDraft and lets current upload fields override historical case fields', async () => {
+    const upsertSpy = jest.spyOn(medicalCaseService, 'safeUpsertCaseFromRecords').mockResolvedValue({
+      caseId: 'case-old',
+      id: 'case-old',
+      status: 'active',
+      entities: {
+        diagnosis: '旧诊断',
+        stage: '旧分期',
+        treatment: '旧治疗'
+      },
+      summary: {},
+      sourceRecordIds: ['rec-old'],
+      completeness: {}
+    });
+    MedicalRecord.findAll.mockResolvedValue([
+      {
+        id: 'rec-new',
+        status: 'completed',
+        status_phase: null,
+        diagnosis: '新诊断',
+        stage: 'IV期',
+        gene_mutation: null,
+        treatment: '新治疗',
+        structured: {
+          confidence: 0.9,
+          entities: {
+            diagnosis: '新诊断',
+            stage: 'IV期',
+            treatment: '新治疗'
+          }
+        },
+        created_at: new Date('2026-05-08T10:00:00Z'),
+        updated_at: new Date('2026-05-08T10:00:30Z')
+      }
+    ]);
+
+    const req = {
+      method: 'GET',
+      query: { fileIds: 'rec-new' },
+      userId: 'u1'
+    };
+    const res = { json: jest.fn() };
+    const next = jest.fn();
+
+    await getParseStatusBatch(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.data.caseDraft).toMatchObject({
+      diagnosis: '新诊断',
+      stage: 'IV期',
+      treatment: '新治疗'
+    });
+    expect(payload.data.case.entities).toMatchObject({
+      diagnosis: '新诊断',
+      stage: 'IV期',
+      treatment: '新治疗'
+    });
+    expect(payload.data.case.batchDraftApplied).toBe(true);
+    upsertSpy.mockRestore();
+  });
+
+  test('buildBatchCaseDraft ignores result metadata fields', () => {
+    expect(buildBatchCaseDraft([
+      {
+        status: 'completed',
+        result: {
+          id: 'rec-1',
+          recordId: 'rec-1',
+          diagnosis: '肺腺癌',
+          confidence: 0.88,
+          rawText: '原文'
+        }
+      }
+    ])).toEqual({ diagnosis: '肺腺癌' });
+  });
+
+  test('requested batchId must contain requested fileIds', async () => {
+    UploadBatch.findOne.mockResolvedValue({
+      id: 'batch-other',
+      user_id: 'u1',
+      record_ids: ['rec-other']
+    });
+
+    await expect(resolveBatchIdForRecords({
+      requestedBatchId: 'batch-other',
+      requestedRecordIds: ['rec-batch-1'],
+      records: [{ id: 'rec-batch-1', batch_id: 'batch-real' }],
+      userId: 'u1'
+    })).rejects.toMatchObject({ code: 400 });
   });
 });

@@ -3,6 +3,14 @@ const { DataTypes } = require('sequelize');
 const logger = require('../utils/logger');
 require('../models');
 
+const addIndexIfMissing = async (qi, table, fields, options) => {
+  try {
+    await qi.addIndex(table, fields, options);
+  } catch (_) {
+    // MySQL/MariaDB 没有通用 IF NOT EXISTS；重复索引直接忽略。
+  }
+};
+
 const ensureTrialMatchingColumns = async () => {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -45,6 +53,10 @@ const ensureTrialMatchingColumns = async () => {
   // 因此必须在这里保持与 SQL migration 文件同等的幂等补列能力。
   await ensureMrCol('status_phase', { type: DataTypes.STRING(24), allowNull: true, defaultValue: null });
   await ensureMrCol('cancelled_at', { type: DataTypes.DATE, allowNull: true, defaultValue: null });
+  await ensureMrCol('batch_id', { type: DataTypes.STRING(64), allowNull: true });
+  await ensureMrCol('case_id', { type: DataTypes.STRING(64), allowNull: true });
+  await addIndexIfMissing(queryInterface, 'medical_records', ['batch_id'], { name: 'idx_medical_records_batch_id' });
+  await addIndexIfMissing(queryInterface, 'medical_records', ['case_id'], { name: 'idx_medical_records_case_id' });
   // PRD-2026Q3 T1-3：多病历 active 切换 —— 列存在但可能未回填；回填由 SQL migration 完成。
   await ensureMrCol('is_active', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false });
 
@@ -83,6 +95,105 @@ const ensureTrialMatchingColumns = async () => {
   } catch (e) {
     // 回填失败不阻塞 migrate；用户首次切换 active 时由 activateRecord 兜底
     logger.warn('medical_records.is_active 回填跳过：' + (e && e.message ? e.message : e));
+  }
+};
+
+const ensureMedicalCaseTables = async () => {
+  const qi = sequelize.getQueryInterface();
+  const tables = await qi.showAllTables();
+
+  if (!tables.includes('upload_batches')) {
+    await qi.createTable('upload_batches', {
+      id: { type: DataTypes.STRING(64), primaryKey: true },
+      user_id: { type: DataTypes.STRING(64), allowNull: false },
+      record_ids: { type: DataTypes.JSON, allowNull: false },
+      total_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      processed_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      success_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      failed_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      status: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'pending' },
+      started_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+      completed_at: { type: DataTypes.DATE, allowNull: true },
+      metadata: { type: DataTypes.JSON, allowNull: true },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+    });
+    await addIndexIfMissing(qi, 'upload_batches', ['user_id', 'created_at'], { name: 'idx_upload_batch_user_created' });
+    await addIndexIfMissing(qi, 'upload_batches', ['status', 'created_at'], { name: 'idx_upload_batch_status' });
+    logger.info('创建表: upload_batches');
+  }
+
+  if (!tables.includes('medical_cases')) {
+    await qi.createTable('medical_cases', {
+      id: { type: DataTypes.STRING(64), primaryKey: true },
+      user_id: { type: DataTypes.STRING(64), allowNull: false },
+      active_version_id: { type: DataTypes.STRING(64), allowNull: true },
+      status: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'active' },
+      entities: { type: DataTypes.JSON, allowNull: true },
+      summary: { type: DataTypes.JSON, allowNull: true },
+      source_record_ids: { type: DataTypes.JSON, allowNull: false },
+      completeness: { type: DataTypes.JSON, allowNull: true },
+      validation_issues: { type: DataTypes.JSON, allowNull: true },
+      normalized_tags: { type: DataTypes.JSON, allowNull: true },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+    });
+    await addIndexIfMissing(qi, 'medical_cases', ['user_id', 'status'], { name: 'idx_medical_case_user_status' });
+    await addIndexIfMissing(qi, 'medical_cases', ['updated_at'], { name: 'idx_medical_case_updated' });
+    logger.info('创建表: medical_cases');
+  }
+
+  if (!tables.includes('medical_case_versions')) {
+    await qi.createTable('medical_case_versions', {
+      id: { type: DataTypes.STRING(64), primaryKey: true },
+      case_id: { type: DataTypes.STRING(64), allowNull: false },
+      user_id: { type: DataTypes.STRING(64), allowNull: false },
+      version_no: { type: DataTypes.INTEGER, allowNull: false },
+      entities: { type: DataTypes.JSON, allowNull: false },
+      summary: { type: DataTypes.JSON, allowNull: true },
+      source_record_ids: { type: DataTypes.JSON, allowNull: false },
+      completeness: { type: DataTypes.JSON, allowNull: true },
+      validation_issues: { type: DataTypes.JSON, allowNull: true },
+      normalized_tags: { type: DataTypes.JSON, allowNull: true },
+      metadata: { type: DataTypes.JSON, allowNull: true },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+    });
+    await addIndexIfMissing(qi, 'medical_case_versions', ['case_id', 'version_no'], { name: 'idx_case_version_case_no' });
+    await addIndexIfMissing(qi, 'medical_case_versions', ['user_id', 'created_at'], { name: 'idx_case_version_user_created' });
+    logger.info('创建表: medical_case_versions');
+  }
+
+  if (!tables.includes('medical_case_revisions')) {
+    await qi.createTable('medical_case_revisions', {
+      id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+      case_id: { type: DataTypes.STRING(64), allowNull: false },
+      user_id: { type: DataTypes.STRING(64), allowNull: false },
+      field_key: { type: DataTypes.STRING(96), allowNull: false },
+      old_value: { type: DataTypes.JSON, allowNull: true },
+      new_value: { type: DataTypes.JSON, allowNull: true },
+      reason: { type: DataTypes.STRING(255), allowNull: true },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+    });
+    await addIndexIfMissing(qi, 'medical_case_revisions', ['case_id', 'field_key'], { name: 'idx_case_revision_case_field' });
+    await addIndexIfMissing(qi, 'medical_case_revisions', ['user_id', 'created_at'], { name: 'idx_case_revision_user_created' });
+    logger.info('创建表: medical_case_revisions');
+  }
+
+  if (!tables.includes('medical_field_evidence')) {
+    await qi.createTable('medical_field_evidence', {
+      id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+      case_id: { type: DataTypes.STRING(64), allowNull: false },
+      user_id: { type: DataTypes.STRING(64), allowNull: false },
+      field_key: { type: DataTypes.STRING(96), allowNull: false },
+      value: { type: DataTypes.JSON, allowNull: true },
+      source_record_id: { type: DataTypes.STRING(64), allowNull: false },
+      confidence: { type: DataTypes.FLOAT, allowNull: true },
+      snippet: { type: DataTypes.TEXT, allowNull: true },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+    });
+    await addIndexIfMissing(qi, 'medical_field_evidence', ['case_id', 'field_key'], { name: 'idx_field_evidence_case_field' });
+    await addIndexIfMissing(qi, 'medical_field_evidence', ['source_record_id'], { name: 'idx_field_evidence_record' });
+    logger.info('创建表: medical_field_evidence');
   }
 };
 
@@ -227,6 +338,17 @@ const ensureIndexes = async () => {
 
   const safeAddIndex = async (table, fields, options = {}) => {
     try {
+      const existing = await qi.showIndex(table).catch(() => []);
+      const wanted = fields.join(',');
+      const hasEquivalent = Array.isArray(existing) && existing.some((idx) => {
+        if (options.name && idx.name === options.name) return true;
+        const actual = (idx.fields || [])
+          .map((f) => f.attribute || f.name)
+          .filter(Boolean)
+          .join(',');
+        return actual === wanted;
+      });
+      if (hasEquivalent) return;
       await qi.addIndex(table, fields, options);
       logger.info(`索引已创建: ${table}(${fields.join(',')})`);
     } catch (e) {
@@ -244,6 +366,8 @@ const ensureIndexes = async () => {
   await safeAddIndex('medical_records', ['user_id', 'is_active'], { name: 'idx_user_active' });
   // Admin Web 后台：按用户 / 状态 / 日期筛选上传数据的主路径索引
   await safeAddIndex('medical_records', ['user_id', 'deleted_at', 'created_at'], { name: 'idx_record_user_deleted_created' });
+  await safeAddIndex('medical_records', ['user_id', 'status', 'deleted_at', 'created_at'], { name: 'idx_record_user_status_deleted_created' });
+  await safeAddIndex('medical_records', ['user_id', 'file_hash', 'deleted_at'], { name: 'idx_record_user_hash_deleted' });
   await safeAddIndex('medical_records', ['status', 'deleted_at', 'created_at'], { name: 'idx_record_status_deleted_created' });
   await safeAddIndex('trial_applications', ['user_id']);
   await safeAddIndex('trial_applications', ['trial_id']);
@@ -508,6 +632,7 @@ const runMigrations = async () => {
     await ensureTrialApplicationColumns();
     await ensureUserComplianceColumns();
     await ensureFunnelEventTable();
+    await ensureMedicalCaseTables();
     await ensureIndexes();
     await ensureCroCompanyTable();
     // PRD-2026Q3 T0-1：CRO 导出审计日志

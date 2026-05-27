@@ -15,6 +15,11 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const {
+  getDoubaoApiKey,
+  getDoubaoBaseUrl,
+  getDoubaoVisionModel
+} = require('../utils/doubaoEnv');
 // Plan §Phase 1.1：进程内 LLM 并发闸（token bucket / semaphore）。每次 axios 调用前 acquire，
 // finally release，永远不会让同一 provider 在本进程内超出配额。
 const llmRateLimiter = require('./llmRateLimiter');
@@ -53,10 +58,10 @@ const PROVIDER_REGISTRY = {
   // Doubao / 火山方舟 Ark（OpenAI 兼容协议；生产 OCR 主路径）。
   // 视觉默认模型：doubao-seed-1-6-vision-250815；body shape 与 OpenAI 完全一致。
   doubao: () => ({
-    apiKey: process.env.ARK_API_KEY || '',
-    baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
+    apiKey: getDoubaoApiKey(),
+    baseUrl: getDoubaoBaseUrl(),
     // Ark 必须用带版本后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
-    model: process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+    model: getDoubaoVisionModel(),
     timeoutMs: parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10),
     chatCompletionPath: '/chat/completions'
   })

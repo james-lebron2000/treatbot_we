@@ -85,6 +85,23 @@ node scripts/migrate.js
 node scripts/seed.js
 ```
 
+迁移是发布门禁：生产发布中 `node scripts/migrate.js` 任何非零退出都必须让 GitHub Action 或 `scripts/deploy-production.sh` 失败退出，不能降级成 warning 继续提升前端或标记发布成功。失败后保留日志，先判断是 DB 连接/权限、DDL 锁、重复索引兼容性，还是 migration 代码问题；修复后重新发布。手动脚本和 workflow 会尝试回滚新后端容器，但数据库 DDL 可能已经部分执行，所以不要直接跳过 migration。
+
+手动直连部署不要把 API key 放在本机命令行或 SSH command 中。推荐从生产机当前容器 env 复用，或在生产机维护权限为 `600` 的安全文件：
+
+```bash
+ssh ubuntu@your-server-ip 'install -m 700 -d ~/treatbot-deploy-secrets && install -m 600 /dev/null ~/treatbot-deploy-secrets/ocr.env'
+ssh ubuntu@your-server-ip 'nano ~/treatbot-deploy-secrets/ocr.env'
+# KIMI_API_KEY=<redacted-rotated-key>
+# ARK_API_KEY=<redacted-rotated-key>
+# 或使用本地/火山命名：
+# DOUBAO_API_KEY=<redacted-rotated-key>
+# VOLCENGINE_AK=<redacted-ak>
+# VOLCENGINE_SK=<redacted-sk>
+
+./scripts/deploy-production.sh --prod ubuntu@your-server-ip
+```
+
 ### 4. 启动服务
 ```bash
 # Docker 方式（推荐）
@@ -143,6 +160,17 @@ mysql -h your-host -u treatbot -p -e "select 1"
 ```bash
 redis-cli -h your-host ping
 ```
+
+### 5. 生产 Smoke Checklist
+- [ ] `/health` 返回 `status=ok`，运行镜像 SHA 与本次发布一致。
+- [ ] 单图 OCR：上传一张 demo 图片，状态最终为 `completed`，关键结构化字段非空。
+- [ ] 多图 OCR：一次上传 2-3 张图片，`/api/medical/parse-status-batch` 返回每条 `recordId` 的状态，最终均进入 terminal state。
+- [ ] 长图 / PDF：长截图或 PDF 能进入队列并完成解析，或返回可解释失败；后续任务不被卡住。
+- [ ] Redis fallback：Redis 短暂不可用时只触发受限的进程内兜底（`OCR_INPROC_FALLBACK_MAX=1`），API 不整体 500。
+- [ ] `parse-status-batch`：未登录返回 `401`，登录后返回稳定 JSON shape，不是 `404/500`。
+- [ ] `parse-status-stream`：未登录返回 `401`，登录后 SSE 可连接并收到状态事件。
+
+测试产物注意：`server/tests/__output__/prompt-eval-report.json` 是 promptEval/nightly 留痕文件，普通单测不应因为时间戳无意义改动它。若本地测试改动了该文件，不要把仅 timestamp 变化作为业务改动提交。
 
 ---
 

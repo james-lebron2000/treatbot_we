@@ -17,10 +17,12 @@ jest.mock('../utils/logger', () => ({
 
 // 替换 bull —— 不用真的 Redis
 const mockGetJobCounts = jest.fn();
+const mockGetJobs = jest.fn();
 jest.mock('bull', () => {
   return jest.fn().mockImplementation(() => {
     const queue = {
       getJobCounts: (...args) => mockGetJobCounts(...args),
+      getJobs: (...args) => mockGetJobs(...args),
       add: jest.fn().mockResolvedValue({ id: 'job_x' }),
       getJob: jest.fn().mockResolvedValue(null),
       process: jest.fn(),
@@ -50,11 +52,13 @@ jest.mock('../services/recordEvents', () => ({
   publishRecordEvent: jest.fn().mockResolvedValue(true)
 }));
 
-const { getQueueDepth } = require('../services/queue');
+const queueService = require('../services/queue');
+const { getQueueDepth } = queueService;
 
 describe('getQueueDepth §Phase 3.4', () => {
   beforeEach(() => {
     mockGetJobCounts.mockReset();
+    mockGetJobs.mockReset();
   });
 
   test('1) 正常路径 → { waiting, active, total }', async () => {
@@ -86,5 +90,27 @@ describe('getQueueDepth §Phase 3.4', () => {
     mockGetJobCounts.mockResolvedValue({ waiting: '4', active: '1' });
     const depth = await getQueueDepth();
     expect(depth).toEqual({ waiting: 4, active: 1, total: 5 });
+  });
+
+  test('6) 用户已有 3 个等待/活跃 OCR → 仍允许入队，用户 active 不作为 admission 拒绝', async () => {
+    mockGetJobCounts.mockResolvedValue({ waiting: 3, active: 0 });
+    mockGetJobs.mockResolvedValue([
+      { data: { userId: 'u1' } },
+      { data: { userId: 'u1' } },
+      { data: { userId: 'u1' } },
+      { data: { userId: 'u2' } }
+    ]);
+
+    await expect(queueService.__testables.assertQueueAdmission('u1')).resolves.toBeUndefined();
+    expect(mockGetJobs).toHaveBeenCalledWith(['active'], 0, -1, false);
+  });
+
+  test('7) 全局 waiting+active 达到上限 → admission 拒绝', async () => {
+    mockGetJobCounts.mockResolvedValue({ waiting: 2000, active: 0 });
+    await expect(queueService.__testables.assertQueueAdmission('u1')).rejects.toMatchObject({
+      code: 'OCR_QUEUE_BUSY',
+      statusCode: 429
+    });
+    expect(mockGetJobs).not.toHaveBeenCalled();
   });
 });

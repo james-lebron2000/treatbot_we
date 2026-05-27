@@ -41,6 +41,27 @@
   color: var(--brand);
 }
 
+/* 2026-05 UX：信任三件套。横向 chip 列表，移动端 wrap 不挤。
+   chip 内用极轻量 1rpx 边 + 透明背景，不抢卡片视觉。 */
+.trust-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-bottom: 20rpx;
+  padding: 16rpx 18rpx;
+  background: var(--bg-soft);
+  border-radius: 20rpx;
+}
+
+.trust-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
 .match-stats {
   display: flex;
   gap: 14rpx;
@@ -147,25 +168,6 @@
   box-shadow: var(--shadow-1);
 }
 
-/* U4：人话理由 —— Lucide check icon + mint 文本，置顶给一行解释 */
-.human-reason {
-  display: flex;
-  align-items: flex-start;
-  gap: 10rpx;
-  margin: 0 0 16rpx;
-  padding: 14rpx 16rpx;
-  background: var(--mint-soft);
-  border-radius: 16rpx;
-}
-
-.human-reason-text {
-  flex: 1;
-  font-size: 28rpx;
-  line-height: var(--lh-normal);
-  color: var(--mint-text);
-  font-weight: 600;
-}
-
 .match-card-header {
   display: flex;
   align-items: flex-start;
@@ -243,67 +245,35 @@
   font-weight: 600;
 }
 
-.drug-subline {
-  display: block;
-  font-size: 26rpx;
-  color: var(--text-dim);
-  line-height: var(--lh-normal);
-}
-
-.drug-class,
-.drug-form,
-.drug-brand {
-  display: inline;
-  font-size: 26rpx;
-  color: var(--text-dim);
-}
-
-/* 标签系统：复用 app.wxss .pill 体系；这里只声明 .tag 别名容器样式 */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 6rpx 16rpx;
-  border-radius: var(--r-pill);
-  font-size: 24rpx;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.tag-free {
-  background: var(--mint);
-  color: #fff;
-}
-
-.tag-primary {
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.tag-level {
-  font-weight: 600;
-}
-
-.level-high {
-  background: var(--mint-soft);
-  color: var(--mint-text);
-}
-
-.level-mid {
-  background: var(--amber-soft);
-  color: var(--amber-text);
-}
-
-.level-low {
-  background: var(--bg-soft);
-  color: var(--text-dim);
-}
-
 .match-source {
   display: block;
   font-size: 26rpx;
   color: var(--text-dim);
   margin-top: 6rpx;
   line-height: var(--lh-normal);
+}
+
+/* 2026-05 UX：折叠态「我们的看法」一行。把 decisionHint 从展开态提升上来，
+   让家属盯着 87% 时同时看到 tone-colored 建议短语，决策一眼到位。
+   tone 配色直接复用 .tone-good/.tone-warn/.tone-risk/.tone-normal。 */
+.decision-glance {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 12rpx;
+  padding: 8rpx 16rpx;
+  border-radius: var(--r-pill);
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  max-width: 100%;
+}
+
+.decision-glance-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* PRD-2026Q2 §T2-1：「看详情/收起」从下方的文本按钮，改为右上角 chevron icon。
@@ -326,29 +296,12 @@
   background: var(--brand-soft);
 }
 
-.match-card-summary {
-  margin-bottom: 4rpx;
-}
-
-.match-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10rpx;
-  margin-bottom: 14rpx;
-}
-
-.match-indication,
-.match-institution,
-.match-meta,
-.match-summary {
+/* 展开区的 meta 行 —— 药企/医院/NCT/招募状态 各占一行 */
+.match-meta {
   display: block;
   font-size: 26rpx;
   line-height: var(--lh-relaxed);
   color: var(--text-dim);
-}
-
-.match-meta,
-.match-summary {
   margin-top: 8rpx;
 }
 
@@ -471,6 +424,51 @@
 
 .match-actions .btn {
   flex: 1;
+}
+
+/* 2026-05 UX：申请按钮下方的期望管理一行。家属对「按下去会怎样」黑箱焦虑最强，
+   这一行把「2-3 天回电 / 不收钱 / 不卖信息」摆出来，让她敢按。
+   字号刻意比 caption 还小一点（22rpx），不喧宾夺主，像合同小字但是温和的。 */
+.match-expectation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-top: 14rpx;
+  padding: 14rpx 16rpx;
+  background: var(--bg-soft);
+  border-radius: 16rpx;
+  font-size: 22rpx;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.match-expectation icon {
+  flex-shrink: 0;
+  margin-top: 4rpx;
+}
+
+/* 2026-05 UX：二级分享动作。文本按钮风格，不抢主 CTA 视觉。
+   「打印给医生」+「发给家人」是病友群口碑增长的物理载体 —— 医生背书是中国家庭
+   最强的决策催化剂，家人讨论是「不让一个人扛决策」的心理安全网。 */
+.match-share-row {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 14rpx;
+  padding: 0 4rpx;
+}
+
+.share-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx 0;
+  font-size: 24rpx;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.share-link:active {
+  color: var(--brand);
 }
 
 /* 申请按钮 —— icon + 文本居中 */

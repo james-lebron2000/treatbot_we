@@ -62,6 +62,43 @@ describe('normalizeStructuredRecord nested entities compatibility', () => {
     expect(out.geneMutation).toBe('ALK 阴性')
   })
 
+  test('reads structuredPayload.entities into card fields', () => {
+    const out = schema.normalizeStructuredRecord({
+      recordId: 'rec-004',
+      structuredPayload: {
+        entities: {
+          diagnosis: '胃腺癌',
+          pathologyType: '腺癌',
+          age: 58,
+          stage: 'III期',
+          targetLesion: '是'
+        }
+      }
+    })
+
+    expect(out.id).toBe('rec-004')
+    expect(out.diagnosis).toBe('胃腺癌')
+    expect(out.pathologyType).toBe('腺癌')
+    expect(out.age).toBe(58)
+    expect(out.stage).toBe('III期')
+    expect(out.targetLesion).toBe('是')
+  })
+
+  test('keeps every FIELD_SCHEMAS key present after normalize', () => {
+    const out = schema.normalizeStructuredRecord({
+      result: {
+        entities: {
+          diagnosis: '肺腺癌',
+          stage: 'IV期'
+        }
+      }
+    })
+
+    for (const field of schema.FIELD_SCHEMAS) {
+      expect(out).toHaveProperty(field.key)
+    }
+  })
+
   test('flat top-level fields override nested entities', () => {
     const out = schema.normalizeStructuredRecord({
       entities: {

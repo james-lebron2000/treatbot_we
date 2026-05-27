@@ -1,24 +1,21 @@
 /**
- * Plan §Phase 2.3：病历状态 Pub/Sub。
+ * OCR record events.
  *
- * 设计目标：
- *   - SSE handler 不轮询 DB；OCR worker 状态切换时立即推送给在线 SSE 客户端。
- *   - 单进程多 SSE 连接共享一条 Redis subscriber 连接（避免 100 个用户 = 100 条 sub conn）。
- *   - Redis 不可用时优雅降级：publish/subscribe 都返回 false / null，让上层走轮询兜底，
- *     不阻塞 OCR 主流程。
- *
- * 通道命名：`ocr:record:${recordId}`
- *   - 一条 record 一个 channel；订阅时只订自己关心的几个 recordId，避免广播放大。
- *
- * 引用计数：
- *   - 同一 recordId 有 N 个 SSE 连接 → 只订阅 1 次；最后一个连接关闭才 unsubscribe。
- *   - 这条很重要：避免 SSE 连接断开后 zombie 订阅占着 Redis 内存。
+ * Redis Stream is the durable source for reconnect/replay. Pub/Sub is still used
+ * for low-latency fanout to active SSE connections. Redis failures are advisory:
+ * callers must keep the DB write path as the source of truth.
  */
 const Redis = require('ioredis');
 const logger = require('../utils/logger');
 
 const CHANNEL_PREFIX = 'ocr:record:';
+const STREAM_PREFIX = 'ocr:record:';
+const STREAM_SUFFIX = ':events';
+const SEQ_SUFFIX = ':seq';
+const STREAM_MAXLEN = Math.max(100, parseInt(process.env.OCR_EVENT_STREAM_MAXLEN || '200', 10));
 const channelOf = (recordId) => `${CHANNEL_PREFIX}${recordId}`;
+const streamOf = (recordId) => `${STREAM_PREFIX}${recordId}${STREAM_SUFFIX}`;
+const seqKeyOf = (recordId) => `${STREAM_PREFIX}${recordId}${SEQ_SUFFIX}`;
 
 const buildRedisOptions = () => ({
   host: process.env.REDIS_HOST || 'localhost',
@@ -36,6 +33,7 @@ const buildRedisOptions = () => ({
 let publisher = null;
 let subscriber = null;
 let redisHealthy = true;
+const pendingConnects = new WeakMap();
 
 // recordId → Set<callback>
 const listeners = new Map();
@@ -49,10 +47,6 @@ const ensurePublisher = () => {
       logger.warn('recordEvents publisher Redis 错误', { error: err.message });
     });
     publisher.on('ready', () => { redisHealthy = true; });
-    publisher.connect().catch((err) => {
-      redisHealthy = false;
-      logger.warn('recordEvents publisher 连接失败', { error: err.message });
-    });
   } catch (e) {
     publisher = null;
     redisHealthy = false;
@@ -89,10 +83,6 @@ const ensureSubscriber = () => {
         }
       });
     });
-    subscriber.connect().catch((err) => {
-      redisHealthy = false;
-      logger.warn('recordEvents subscriber 连接失败', { error: err.message });
-    });
   } catch (e) {
     subscriber = null;
     redisHealthy = false;
@@ -101,23 +91,149 @@ const ensureSubscriber = () => {
   return subscriber;
 };
 
+const isRedisClientLike = (client) => (
+  client
+  && typeof client.connect === 'function'
+  && typeof client.once === 'function'
+  && typeof client.status === 'string'
+);
+
+const waitForReady = async (client, role) => {
+  if (!client) return false;
+  // Unit tests inject light stubs that intentionally do not look like ioredis.
+  if (!isRedisClientLike(client)) return true;
+  if (client.status === 'ready') return true;
+  if (pendingConnects.has(client)) return pendingConnects.get(client);
+
+  const promise = new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (typeof client.off === 'function') {
+        client.off('ready', onReady);
+        client.off('error', onError);
+        client.off('end', onEnd);
+      }
+    };
+    const finish = (ok, err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      redisHealthy = ok;
+      if (!ok && err) {
+        logger.warn(`recordEvents ${role} 连接失败`, { error: err.message || String(err) });
+      }
+      resolve(ok);
+    };
+    const onReady = () => finish(true);
+    const onEnd = () => finish(false, new Error('redis connection ended'));
+    const onError = (err) => finish(false, err);
+
+    client.once('ready', onReady);
+    client.once('error', onError);
+    client.once('end', onEnd);
+    timer = setTimeout(() => finish(false, new Error('redis connection timeout')), 3500);
+    if (typeof timer.unref === 'function') timer.unref();
+
+    if (client.status === 'wait' || client.status === 'close') {
+      client.connect().catch(onError);
+    }
+  }).finally(() => {
+    pendingConnects.delete(client);
+  });
+
+  pendingConnects.set(client, promise);
+  return promise;
+};
+
 /**
  * 发布一条状态事件。
- *   - 失败/Redis 不可用时返回 false，调用方应当继续走 DB 写入主路径，不要因此抛错。
- *   - payload 形如 { status: 'analyzing', progress: 65, partial?: {...}, errorMsg?: '...' }
+ *   - 先 INCR record-local seq，再 XADD 到 Redis Stream，最后 PUBLISH 给在线连接。
+ *   - Redis Stream ID 不暴露给客户端；客户端只看单调递增的 numeric seq。
+ *   - 中途失败返回 false，OCR 主流程不因此失败。
  */
 const publishRecordEvent = async (recordId, payload) => {
   if (!recordId) return false;
   const pub = ensurePublisher();
   if (!pub) return false;
   try {
-    const message = JSON.stringify({ ...payload, recordId, ts: Date.now() });
+    const ready = await waitForReady(pub, 'publisher');
+    if (!ready) return false;
+    const seq = await pub.incr(seqKeyOf(recordId));
+    const event = {
+      ...payload,
+      recordId,
+      seq,
+      ts: Date.now(),
+      createdAt: new Date().toISOString()
+    };
+    const message = JSON.stringify(event);
+    await pub.xadd(
+      streamOf(recordId),
+      'MAXLEN',
+      '~',
+      STREAM_MAXLEN,
+      '*',
+      'seq',
+      String(seq),
+      'event',
+      message
+    );
     await pub.publish(channelOf(recordId), message);
     return true;
   } catch (e) {
     redisHealthy = false;
     logger.warn('recordEvents.publish 失败（已忽略）', { recordId, error: e.message });
     return false;
+  }
+};
+
+const parseStreamRow = (row) => {
+  if (!Array.isArray(row) || row.length < 2) return null;
+  const [, fields] = row;
+  if (!Array.isArray(fields)) return null;
+  const map = {};
+  for (let i = 0; i < fields.length; i += 2) {
+    map[String(fields[i])] = fields[i + 1];
+  }
+  const raw = map.event;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const seq = Number(parsed.seq ?? map.seq);
+    if (Number.isFinite(seq)) parsed.seq = seq;
+    return parsed;
+  } catch (e) {
+    logger.warn('recordEvents.replay JSON 解析失败（忽略）', { error: e.message });
+    return null;
+  }
+};
+
+/**
+ * 读取一条 record 的历史事件。
+ *
+ * `afterSeq` 是业务 seq，不是 Redis Stream ID。为了保持接口简单，读取最近
+ * STREAM_MAXLEN 条后在应用层过滤；OCR 单任务事件量很小，这比维护 seq→streamId
+ * 映射更稳。
+ */
+const replayRecordEvents = async (recordId, afterSeq = 0, limit = STREAM_MAXLEN) => {
+  if (!recordId) return null;
+  const pub = ensurePublisher();
+  if (!pub) return null;
+  try {
+    const ready = await waitForReady(pub, 'publisher');
+    if (!ready) return null;
+    const rows = await pub.xrange(streamOf(recordId), '-', '+', 'COUNT', Math.max(1, limit));
+    const minSeq = Number(afterSeq) || 0;
+    return rows
+      .map(parseStreamRow)
+      .filter(Boolean)
+      .filter((evt) => Number(evt.seq || 0) > minSeq);
+  } catch (e) {
+    redisHealthy = false;
+    logger.warn('recordEvents.replay 失败', { recordId, error: e.message });
+    return null;
   }
 };
 
@@ -130,14 +246,18 @@ const subscribeRecordEvents = async (recordIds, onEvent) => {
   if (!Array.isArray(recordIds) || !recordIds.length) return null;
   const sub = ensureSubscriber();
   if (!sub) return null;
+  const ready = await waitForReady(sub, 'subscriber');
+  if (!ready) return null;
 
   const ownChannels = [];
+  const addedIds = [];
   for (const rid of recordIds) {
     const id = String(rid);
     if (!listeners.has(id)) listeners.set(id, new Set());
     const set = listeners.get(id);
     const wasEmpty = set.size === 0;
     set.add(onEvent);
+    addedIds.push(id);
     if (wasEmpty) ownChannels.push(id);
   }
 
@@ -147,11 +267,16 @@ const subscribeRecordEvents = async (recordIds, onEvent) => {
     } catch (e) {
       redisHealthy = false;
       // 订阅失败 → 回滚 listeners 注册，让上层 fallback。
-      for (const id of ownChannels) {
+      // 注意：本次 callback 也可能被加到了已经订阅过的 channel 上；
+      // 这些 channel 不在 ownChannels 里，也必须删除，否则后续消息会打到失败的 SSE。
+      for (const id of addedIds) {
         const set = listeners.get(id);
         if (set) set.delete(onEvent);
         if (set && !set.size) listeners.delete(id);
       }
+      try {
+        await sub.unsubscribe(...ownChannels.map(channelOf));
+      } catch (_unsubErr) { /* rollback best-effort */ }
       logger.warn('recordEvents.subscribe 失败', { recordIds: ownChannels, error: e.message });
       return null;
     }
@@ -198,9 +323,21 @@ const __reset = () => {
 
 module.exports = {
   publishRecordEvent,
+  replayRecordEvents,
   subscribeRecordEvents,
   isHealthy,
   __setTestables,
   __reset,
-  __testables: { CHANNEL_PREFIX, channelOf, listeners }
+  __testables: {
+    CHANNEL_PREFIX,
+    STREAM_PREFIX,
+    STREAM_SUFFIX,
+    SEQ_SUFFIX,
+    STREAM_MAXLEN,
+    channelOf,
+    streamOf,
+    seqKeyOf,
+    listeners,
+    parseStreamRow
+  }
 };

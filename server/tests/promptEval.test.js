@@ -1,7 +1,7 @@
 /**
  * Q3-红线 §B.1：Prompt Registry 三件套（ocr-pdf / ocr-text / ocr-image）契约测试 +
  * 「模拟 OCR extraction」轻量评测，把字段命中率/缺失率/风险词出现率落到
- *  server/tests/__output__/prompt-eval-report.json，供 nightly job 抓取留痕。
+ *  临时报告文件；nightly job 可用 PROMPT_EVAL_REPORT_PATH 指定固定留痕路径。
  *
  * 强约束：
  *  - 不依赖任何网络 / DB / Redis；llmClient.chatJson 全部 mock。
@@ -23,14 +23,16 @@ jest.mock('../services/llmClient', () => ({
 }));
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { getPrompt, __internals } = require('../services/promptRegistry');
 const { OcrExtractionSchema } = require('../services/llmSchemas');
 const { chatJson } = require('../services/llmClient');
 const golden = require('./fixtures/golden-matches.json');
 
-const OUTPUT_DIR = path.join(__dirname, '__output__');
-const REPORT_PATH = path.join(OUTPUT_DIR, 'prompt-eval-report.json');
+const REPORT_PATH = process.env.PROMPT_EVAL_REPORT_PATH ||
+  path.join(os.tmpdir(), 'treatbot-prompt-eval-report.json');
+const OUTPUT_DIR = path.dirname(REPORT_PATH);
 
 const RISK_WORDS = ['晚期', '转移', '末期', '不治', '绝症'];
 

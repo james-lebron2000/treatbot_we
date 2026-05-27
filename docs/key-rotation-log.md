@@ -19,7 +19,7 @@
 
 | provider | rotated_at | actor | new_fingerprint | old_revoked_at | reason |
 | --- | --- | --- | --- | --- | --- |
-| _示例_ Kimi | 2026-05-01 10:00 | 张三 | sk-abc…wxyz | 2026-05-01 10:05 | leaked |
+| _示例_ Kimi | 2026-05-01 10:00 | 张三 | <redacted-fingerprint> | 2026-05-01 10:05 | leaked |
 | Kimi | _待填_ | _待填_ | _待填_ | _待填_ | leaked |
 | ARK / 火山方舟 | _待填_ | _待填_ | _待填_ | _待填_ | leaked |
 | Tencent COS (SecretId/Key) | _待填_ | _待填_ | _待填_ | _待填_ | leaked |

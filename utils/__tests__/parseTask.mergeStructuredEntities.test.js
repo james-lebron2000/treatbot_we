@@ -260,9 +260,55 @@ describe('syncActiveParseBatch storage contract', () => {
       age: 66,
       ecog: '1',
       geneMutation: 'EGFR 19del',
-      recordId: 'r2'
+      recordId: 'r1'
     }))
     expect(draft.sourceRecordIds).toEqual(['r1', 'r2'])
-    expect(storage.get('currentRecordId')).toBe('r2')
+    expect(storage.get('currentRecordId')).toBe('r1')
+  })
+
+  test('批量部分失败后 currentRecordId 选第一份成功 completed，不落到失败的第一份 fileId', async () => {
+    setActiveParseBatch({
+      fileIds: ['f-failed', 'f-ok'],
+      startedAt: Date.now()
+    })
+    api.getParseStatusBatch.mockResolvedValueOnce({
+      data: {
+        total: 2,
+        completedCount: 1,
+        erroredCount: 1,
+        done: true,
+        entries: [
+          {
+            fileId: 'f-failed',
+            recordId: 'r-failed',
+            status: 'error',
+            errorMsg: 'OCR 抽空文本'
+          },
+          {
+            fileId: 'f-ok',
+            recordId: 'r-ok',
+            status: 'completed',
+            result: {
+              entities: {
+                diagnosis: '肺腺癌',
+                stage: 'IV期'
+              }
+            }
+          }
+        ]
+      }
+    })
+
+    const out = await syncActiveParseBatch()
+    const draft = storage.get('structuredRecordDraft')
+
+    expect(out.done).toBe(true)
+    expect(out.completedRecordIds).toEqual(['r-ok'])
+    expect(draft).toEqual(expect.objectContaining({
+      diagnosis: '肺腺癌',
+      stage: 'IV期',
+      recordId: 'r-ok'
+    }))
+    expect(storage.get('currentRecordId')).toBe('r-ok')
   })
 })

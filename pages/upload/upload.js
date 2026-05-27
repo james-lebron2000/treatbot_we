@@ -309,6 +309,7 @@ Page({
     etaText: '',
     fileId: '',
     recordId: '',
+    batchId: '',
     fileIds: [],
     isBatchParse: false,
     parsedData: {},
@@ -790,6 +791,7 @@ Page({
     this.setData({
       fileId: '',
       recordId: '',
+      batchId: '',
       fileIds: [],
       isBatchParse: false,
       parsedData: {},
@@ -831,6 +833,7 @@ Page({
     this._initialGapTotal = 0
     this.pendingCompletedResult = null
     this.completionHandled = false
+    this.lastSeqByRecordId = {}
     // 累积流式字段的 instance bucket 也清掉，配 streamingPartialGroups 双清
     this.streamingPartial = {}
   },
@@ -871,6 +874,7 @@ Page({
       // Phase E.2：批量上传 —— 为每个文件单独 wx.uploadFile（小程序限制），
       // 收齐 fileIds 后通过 /api/medical/parse-status-batch 一次性轮询全部状态。
       const fileIds = []
+      let batchId = ''
       const uploadErrors = []
 
       // Track C-1b（PRD-2026Q3）：除了 utils/api.js uploadFile 已经做的「一次 transient
@@ -911,6 +915,7 @@ Page({
         )
         if (Array.isArray(directRes.fileIds) && directRes.fileIds.length > 0) {
           fileIds.push(...directRes.fileIds)
+          batchId = directRes.batchId || batchId
           // 把 PUT 阶段的失败映射成 page-level uploadErrors，与 legacy 路径展示一致
           if (Array.isArray(directRes.putErrors) && directRes.putErrors.length) {
             directRes.putErrors.forEach((p) => {
@@ -970,6 +975,9 @@ Page({
             })
             const payload = pickPayload(res)
             const fid = payload.fileId || payload.recordId || payload.id || ''
+            if (!batchId && payload.batchId) {
+              batchId = payload.batchId
+            }
             // Plan §Phase 3.4：服务端可能返回 null（Redis 不通时）—— 任何非 object 都跳过，UI 默认不显示
             if (payload.queueDepth && typeof payload.queueDepth === 'object') {
               lastQueueDepth = payload.queueDepth
@@ -1048,6 +1056,7 @@ Page({
         uploading: false,
         fileId: primaryFileId,
         recordId: primaryFileId,
+        batchId,
         fileIds,
         isBatchParse: isBatch,
         parseStep: 0,
@@ -1068,6 +1077,7 @@ Page({
       if (isBatch) {
         parseTask.setActiveParseBatch({
           fileIds,
+          batchId,
           status: 'parsing',
           progress: Math.max(8, Number(this.data.parseProgress || 0)),
           ...taskMeta
@@ -1076,6 +1086,7 @@ Page({
         parseTask.setActiveParseTask({
           fileId: primaryFileId,
           recordId: primaryFileId,
+          batchId,
           status: 'parsing',
           progress: Math.max(8, Number(this.data.parseProgress || 0)),
           ...taskMeta
@@ -1084,6 +1095,7 @@ Page({
         parseTask.setActiveParseTask({
           fileId: primaryFileId,
           recordId: primaryFileId,
+          batchId,
           status: 'parsing',
           progress: Math.max(8, Number(this.data.parseProgress || 0)),
           ...taskMeta
@@ -1123,6 +1135,7 @@ Page({
   startStatusStream() {
     this.closeStatusStream()
     this.clearProgressTimer()
+    this.streamConnected = false
 
     // 出于稳健性，无论 SSE 是否成功开通，都开 startPolling() 作为安全网；
     // SSE 帧主要负责"前置文案/进度"快感反馈，轮询是真正的终态终止条件来源。
@@ -1135,6 +1148,7 @@ Page({
     const fileIds = (activeBatch && Array.isArray(activeBatch.fileIds) && activeBatch.fileIds.length)
       ? activeBatch.fileIds.slice()
       : (activeTask && activeTask.fileId ? [activeTask.fileId] : [])
+    const batchId = (activeBatch && activeBatch.batchId) || (activeTask && activeTask.batchId) || this.data.batchId || ''
 
     if (!fileIds.length) return
 
@@ -1149,13 +1163,19 @@ Page({
     try { token = wx.getStorageSync('token') || '' } catch (_e) { token = '' }
 
     // 路径与服务端 routes/medical.js 对齐：GET /api/medical/parse-status-stream?recordIds=...
-    const url = `${baseUrl}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(fileIds.join(','))}`
+    const afterSeq = Object.keys(this.lastSeqByRecordId || {})
+      .map((rid) => `${rid}:${Number(this.lastSeqByRecordId[rid] || 0)}`)
+      .filter((item) => !item.endsWith(':0'))
+      .join(',')
+    const url = `${baseUrl}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(fileIds.join(','))}${batchId ? `&batchId=${encodeURIComponent(batchId)}` : ''}${afterSeq ? `&afterSeq=${encodeURIComponent(afterSeq)}` : ''}`
 
     const handle = openParseStatusStream({
       fileIds,
       url,
       token,
       onState: (payload) => this.handleStreamState(payload),
+      onBatchState: (payload) => this.handleStreamBatchState(payload),
+      onMergePreview: (payload) => this.handleStreamMergePreview(payload),
       onDone: () => this.handleStreamDone(),
       onError: (reason) => this.handleStreamError(reason),
       openTimeoutMs: 10000
@@ -1182,6 +1202,20 @@ Page({
     const status = `${payload.status || ''}`.toLowerCase()
     const progress = Number(payload.progress)
     const isTerminal = status === 'completed' || status === 'error' || status === 'cancelled'
+    if (payload.recordId && typeof payload.seq === 'number') {
+      this.lastSeqByRecordId = {
+        ...(this.lastSeqByRecordId || {}),
+        [String(payload.recordId)]: payload.seq
+      }
+    }
+    if (!this.streamConnected) {
+      this.streamConnected = true
+      if (!isTerminal && this.pollingActive) {
+        // Streaming 已经开通后，轮询只作为兜底读最终 DB 快照，降低频率避免 10k DAU 下重复请求放大。
+        this.pollIntervalMs = Math.max(this.pollIntervalMs || 3000, 8000)
+        if (typeof this.scheduleNextPoll === 'function') this.scheduleNextPoll()
+      }
+    }
     // 进度只往上不往下（轮询 + SSE 双源时，SSE 早到的 progress 不能被轮询的旧值覆盖回去）
     if (Number.isFinite(progress) && progress > Number(this.data.parseProgress || 0)) {
       // 文案映射保持与 mapParseStatus 的客户端镜像一致：
@@ -1211,6 +1245,28 @@ Page({
         if (groups.length) this.setData({ streamingPartialGroups: groups })
       }
     }
+  },
+
+  handleStreamBatchState(payload) {
+    if (!payload || this.completionHandled) return
+    const total = Number(payload.total || payload.totalCount || this.data.fileIds.length || 0)
+    const successCount = Number(payload.successCount || payload.completedCount || 0)
+    const failedCount = Number(payload.failedCount || payload.erroredCount || 0)
+    const processedCount = Number(payload.processedCount || successCount + failedCount)
+    if (total > 1 && this.data.currentStep === 2) {
+      this.setData({
+        processingStatus: `已处理 ${processedCount} / ${total} 份（成功 ${successCount}）`
+      })
+    }
+  },
+
+  handleStreamMergePreview(payload) {
+    if (!payload || this.completionHandled || this.data.currentStep === 3) return
+    const draft = payload.caseDraft || payload.entities || payload.fields
+    if (!draft || typeof draft !== 'object') return
+    this.streamingPartial = Object.assign({}, this.streamingPartial || {}, draft)
+    const groups = this.buildStreamingPartialGroups(this.streamingPartial)
+    if (groups.length) this.setData({ streamingPartialGroups: groups })
   },
 
   // 把累积的 streamingPartial 对象按 schema.GROUP_META 重新整理成 wxml 友好的形状。
@@ -1262,6 +1318,11 @@ Page({
     try {
       console.warn('[upload] SSE 失败，fallback 到轮询：', reason && reason.code)
     } catch (_e) { /* noop */ }
+    this.streamConnected = false
+    if (this.pollingActive) {
+      this.pollIntervalMs = 3000
+      if (typeof this.scheduleNextPoll === 'function') this.scheduleNextPoll()
+    }
     this.closeStatusStream()
   },
 
@@ -1381,13 +1442,17 @@ Page({
         // 全部终态：如果至少一份完成 → 用合并结果走完成路径；否则走失败路径
         if (completedCount > 0 && batchResult.mergedEntities) {
           // 把合并字段塞回 result 形态（与单文件 path 兼容）
+          const resolvedRecordId = batchResult.completedRecordIds[0] || this.data.fileId
           const mergedResult = {
             ...(batchResult.mergedEntities || {}),
-            id: batchResult.completedRecordIds[0] || this.data.fileId,
-            recordId: batchResult.completedRecordIds[0] || this.data.fileId,
+            id: resolvedRecordId,
+            recordId: resolvedRecordId,
             sourceRecordIds: batchResult.mergedEntities?.sourceRecordIds || []
           }
           this.pendingCompletedResult = mergedResult
+          if (resolvedRecordId) {
+            this.setData({ recordId: resolvedRecordId, fileId: resolvedRecordId })
+          }
           if (!this.completionHandled) {
             this.handleCompletedResult(mergedResult)
           }
@@ -1634,7 +1699,7 @@ Page({
     }
     // 同时把当前 recordId 也落到 storage —— records/detail 页打开时优先读 storage
     // 里的结构化数据，避免后端写入有延迟时详情页空白。
-    const resolvedRecordId = this.data.recordId || this.data.fileId || normalized.id || ''
+    const resolvedRecordId = normalized.recordId || normalized.id || this.data.recordId || this.data.fileId || ''
     if (resolvedRecordId) {
       wx.setStorageSync('currentRecordId', resolvedRecordId)
     }
@@ -1841,6 +1906,7 @@ Page({
         fileIds: activeBatch.fileIds,
         fileId: activeBatch.fileIds[0],
         recordId: activeBatch.fileIds[0],
+        batchId: activeBatch.batchId || '',
         isBatchParse: activeBatch.fileIds.length > 1,
         hasPdfUpload: !!activeBatch.hasPdfUpload
       })
@@ -1858,6 +1924,7 @@ Page({
       currentStep: 2,
       fileId: activeTask.fileId,
       recordId: activeTask.recordId || '',
+      batchId: activeTask.batchId || '',
       isBatchParse: false,
       hasPdfUpload: !!activeTask.hasPdfUpload
     })

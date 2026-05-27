@@ -3,6 +3,7 @@ const User = require('./user');
 const Trial = require('./trial');
 // Q3-红线 §B.2：漏斗埋点事件模型
 const UserFunnelEvent = require('./userFunnelEvent');
+const FunnelEvent = require('./funnelEvent');
 
 // 病历模型
 const MedicalRecord = sequelize.define('MedicalRecord', {
@@ -29,6 +30,14 @@ const MedicalRecord = sequelize.define('MedicalRecord', {
   },
   file_size: {
     type: require('sequelize').DataTypes.INTEGER.UNSIGNED
+  },
+  batch_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
+  },
+  case_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
   },
   status: {
     type: require('sequelize').DataTypes.ENUM('pending', 'running', 'completed', 'error'),
@@ -86,6 +95,271 @@ const MedicalRecord = sequelize.define('MedicalRecord', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at'
+});
+
+// OCR 批次模型：一次用户上传对应一个 batch，可关联多份 medical_records。
+const UploadBatch = sequelize.define('UploadBatch', {
+  id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    primaryKey: true,
+    defaultValue: () => `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  record_ids: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false,
+    defaultValue: []
+  },
+  total_count: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  processed_count: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  success_count: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  failed_count: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  status: {
+    type: require('sequelize').DataTypes.STRING(24),
+    allowNull: false,
+    defaultValue: 'pending'
+  },
+  started_at: {
+    type: require('sequelize').DataTypes.DATE,
+    allowNull: false,
+    defaultValue: require('sequelize').DataTypes.NOW
+  },
+  completed_at: {
+    type: require('sequelize').DataTypes.DATE,
+    allowNull: true
+  },
+  metadata: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  }
+}, {
+  tableName: 'upload_batches',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  indexes: [
+    { name: 'idx_upload_batch_user_created', fields: ['user_id', 'created_at'] },
+    { name: 'idx_upload_batch_status', fields: ['status', 'created_at'] }
+  ]
+});
+
+const MedicalCase = sequelize.define('MedicalCase', {
+  id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    primaryKey: true,
+    defaultValue: () => `case_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  active_version_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true
+  },
+  status: {
+    type: require('sequelize').DataTypes.STRING(24),
+    allowNull: false,
+    defaultValue: 'active'
+  },
+  entities: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  summary: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  source_record_ids: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false,
+    defaultValue: []
+  },
+  completeness: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  validation_issues: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  normalized_tags: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  }
+}, {
+  tableName: 'medical_cases',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  indexes: [
+    { name: 'idx_medical_case_user_status', fields: ['user_id', 'status'] },
+    { name: 'idx_medical_case_updated', fields: ['updated_at'] }
+  ]
+});
+
+const MedicalCaseVersion = sequelize.define('MedicalCaseVersion', {
+  id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    primaryKey: true,
+    defaultValue: () => `casev_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  },
+  case_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  version_no: {
+    type: require('sequelize').DataTypes.INTEGER,
+    allowNull: false
+  },
+  entities: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false,
+    defaultValue: {}
+  },
+  summary: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  source_record_ids: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: false,
+    defaultValue: []
+  },
+  completeness: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  validation_issues: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  normalized_tags: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  metadata: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  }
+}, {
+  tableName: 'medical_case_versions',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'uniq_case_version_case_no', unique: true, fields: ['case_id', 'version_no'] },
+    { name: 'idx_case_version_user_created', fields: ['user_id', 'created_at'] }
+  ]
+});
+
+const MedicalCaseRevision = sequelize.define('MedicalCaseRevision', {
+  id: {
+    type: require('sequelize').DataTypes.BIGINT.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  case_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  field_key: {
+    type: require('sequelize').DataTypes.STRING(96),
+    allowNull: false
+  },
+  old_value: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  new_value: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  reason: {
+    type: require('sequelize').DataTypes.STRING(255),
+    allowNull: true
+  }
+}, {
+  tableName: 'medical_case_revisions',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_case_revision_case_field', fields: ['case_id', 'field_key'] },
+    { name: 'idx_case_revision_user_created', fields: ['user_id', 'created_at'] }
+  ]
+});
+
+const MedicalFieldEvidence = sequelize.define('MedicalFieldEvidence', {
+  id: {
+    type: require('sequelize').DataTypes.BIGINT.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  case_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  user_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  field_key: {
+    type: require('sequelize').DataTypes.STRING(96),
+    allowNull: false
+  },
+  value: {
+    type: require('sequelize').DataTypes.JSON,
+    allowNull: true
+  },
+  source_record_id: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: false
+  },
+  confidence: {
+    type: require('sequelize').DataTypes.FLOAT,
+    allowNull: true
+  },
+  snippet: {
+    type: require('sequelize').DataTypes.TEXT,
+    allowNull: true
+  }
+}, {
+  tableName: 'medical_field_evidence',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false,
+  indexes: [
+    { name: 'idx_field_evidence_case_field', fields: ['case_id', 'field_key'] },
+    { name: 'idx_field_evidence_record', fields: ['source_record_id'] }
+  ]
 });
 
 // 报名模型
@@ -422,6 +696,18 @@ const SubscribeIntent = sequelize.define('SubscribeIntent', {
 User.hasMany(MedicalRecord, { foreignKey: 'user_id' });
 MedicalRecord.belongsTo(User, { foreignKey: 'user_id' });
 
+User.hasMany(UploadBatch, { foreignKey: 'user_id' });
+UploadBatch.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(MedicalCase, { foreignKey: 'user_id' });
+MedicalCase.belongsTo(User, { foreignKey: 'user_id' });
+MedicalCase.hasMany(MedicalCaseVersion, { foreignKey: 'case_id' });
+MedicalCaseVersion.belongsTo(MedicalCase, { foreignKey: 'case_id' });
+MedicalCase.hasMany(MedicalCaseRevision, { foreignKey: 'case_id' });
+MedicalCaseRevision.belongsTo(MedicalCase, { foreignKey: 'case_id' });
+MedicalCase.hasMany(MedicalFieldEvidence, { foreignKey: 'case_id' });
+MedicalFieldEvidence.belongsTo(MedicalCase, { foreignKey: 'case_id' });
+
 User.hasMany(TrialApplication, { foreignKey: 'user_id' });
 TrialApplication.belongsTo(User, { foreignKey: 'user_id' });
 Trial.hasMany(TrialApplication, { foreignKey: 'trial_id' });
@@ -433,6 +719,11 @@ module.exports = {
   User,
   Trial,
   MedicalRecord,
+  UploadBatch,
+  MedicalCase,
+  MedicalCaseVersion,
+  MedicalCaseRevision,
+  MedicalFieldEvidence,
   TrialApplication,
   CroCompany,
   AdminAuditLog,
@@ -441,6 +732,7 @@ module.exports = {
   UserActionLog,
   // Q3-红线 §B.2：漏斗埋点事件
   UserFunnelEvent,
+  FunnelEvent,
   // Plan §Phase 3.5（deferred）：微信订阅消息预埋
   SubscribeIntent
 };

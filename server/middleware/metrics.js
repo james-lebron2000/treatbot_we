@@ -114,6 +114,48 @@ const ocrCacheTotal = new client.Counter({
   registers: [register]
 });
 
+const ocrStreamActiveGauge = new client.Gauge({
+  name: 'ocr_stream_active_connections',
+  help: '当前活跃 OCR 状态流连接数',
+  registers: [register]
+});
+
+const ocrStreamTotal = new client.Counter({
+  name: 'ocr_stream_total',
+  help: 'OCR 状态流事件计数',
+  labelNames: ['event'],
+  registers: [register]
+});
+
+const ocrQueueAdmissionRejectedTotal = new client.Counter({
+  name: 'ocr_queue_admission_rejected_total',
+  help: 'OCR 队列准入拒绝次数',
+  labelNames: ['reason'],
+  registers: [register]
+});
+
+const volcengineOcrCallDuration = new client.Histogram({
+  name: 'volcengine_ocr_call_duration_seconds',
+  help: '火山 OCRNormal 调用耗时（秒），按 operation/status 维度',
+  labelNames: ['operation', 'status'],
+  buckets: [0.3, 0.5, 1, 2, 5, 10, 20, 30],
+  registers: [register]
+});
+
+const volcengineOcrCallTotal = new client.Counter({
+  name: 'volcengine_ocr_calls_total',
+  help: '火山 OCRNormal 调用次数，按 operation/status 维度',
+  labelNames: ['operation', 'status'],
+  registers: [register]
+});
+
+const volcengineOcrLinesTotal = new client.Counter({
+  name: 'volcengine_ocr_lines_total',
+  help: '火山 OCRNormal 识别出的文本行数',
+  labelNames: ['operation'],
+  registers: [register]
+});
+
 // Q3-红线 §B.2：业务漏斗事件计数器（POST /api/track 落库时同步 inc）
 // 标签 event 取自白名单（landing_view / upload_start / upload_success /
 // match_view / trial_apply / application_submitted）；
@@ -122,6 +164,12 @@ const userFunnelEventTotal = new client.Counter({
   name: 'user_funnel_event_total',
   help: '业务漏斗事件累计计数，按 event 维度',
   labelNames: ['event'],
+  registers: [register]
+});
+
+const metricsHeartbeat = new client.Counter({
+  name: 'metrics_self_check_heartbeat_total',
+  help: 'Metrics pipeline self-check heartbeat counter',
   registers: [register]
 });
 
@@ -194,6 +242,13 @@ module.exports = {
   llmProviderInflightGauge,
   // Plan §Phase 1.2：OCR 结果缓存 hit/miss 计数器
   ocrCacheTotal,
+  ocrStreamActiveGauge,
+  ocrStreamTotal,
+  ocrQueueAdmissionRejectedTotal,
+  volcengineOcrCallDuration,
+  volcengineOcrCallTotal,
+  volcengineOcrLinesTotal,
   // Q3-红线 §B.2：漏斗事件计数器
-  userFunnelEventTotal
+  userFunnelEventTotal,
+  metricsHeartbeat
 };

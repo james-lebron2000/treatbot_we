@@ -17,6 +17,7 @@
 - **[production-plan.md](./production-plan.md)** - 生产级架构方案
 - **[performance-optimization.md](./performance-optimization.md)** - 性能优化指南
 - **[research-rollout-plan.md](./research-rollout-plan.md)** - 下一步研究落地方案
+- **[ocr-provider-strategy.md](./ocr-provider-strategy.md)** - OCR 供应商策略与项目记忆
 
 ### 🛠️ 部署运维
 - **[deployment-checklist.md](./deployment-checklist.md)** - 部署检查清单
@@ -67,6 +68,7 @@
 | production-plan.md | 架构 | 生产级方案 |
 | performance-optimization.md | 优化 | 性能优化指南 |
 | research-rollout-plan.md | 路线 | 研究落地与试点方案 |
+| ocr-provider-strategy.md | 决策 | OCR 供应商策略与项目记忆 |
 | deployment-checklist.md | 运维 | 部署检查清单 |
 | tencent-cloud-setup.md | 采购 | 云服务购买指南 |
 | security-checklist.md | 安全 | 安全加固清单 |

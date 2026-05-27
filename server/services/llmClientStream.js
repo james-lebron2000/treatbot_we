@@ -18,6 +18,11 @@ const logger = require('../utils/logger')
 const { chatJson } = require('./llmClient')
 const llmRateLimiter = require('./llmRateLimiter')
 const {
+  getDoubaoApiKey,
+  getDoubaoBaseUrl,
+  getDoubaoVisionModel
+} = require('../utils/doubaoEnv')
+const {
   GROUP_ORDER,
   GROUPS,
   findCompletedGroups,
@@ -38,9 +43,9 @@ const PROVIDER_REGISTRY = {
     timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS || '60000', 10)
   }),
   doubao: () => ({
-    apiKey: process.env.ARK_API_KEY || '',
-    baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
-    model: process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+    apiKey: getDoubaoApiKey(),
+    baseUrl: getDoubaoBaseUrl(),
+    model: getDoubaoVisionModel(),
     timeoutMs: parseInt(process.env.ARK_TIMEOUT_MS || '180000', 10)
   })
 }

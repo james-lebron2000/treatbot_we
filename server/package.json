@@ -34,6 +34,7 @@
   "dependencies": {
     "@sentry/node": "^7.120.4",
     "@sentry/profiling-node": "^7.120.4",
+    "@volcengine/openapi": "^1.36.2",
     "axios": "^1.14.0",
     "bcryptjs": "^2.4.3",
     "bull": "^4.12.0",

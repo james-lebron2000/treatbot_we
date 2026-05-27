@@ -1,13 +1,13 @@
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { MedicalRecord, Trial } = require('../models');
+const { MedicalRecord, UploadBatch } = require('../models');
 const { success } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const ossService = require('../services/oss');
 const queueService = require('../services/queue');
-const { scoreRecordAgainstTrial } = require('../services/matchEngine');
+const medicalCaseService = require('../services/medicalCaseService');
 // PRD-2026Q4 T0-10：转化漏斗埋点
 const funnelTracker = require('../services/funnelTracker');
 // PRD-2026Q4 followup：上传批次上限三端共享常量，避免历史的"server/WeApp/Treatbot Web 各自
@@ -86,6 +86,91 @@ const uploadMiddleware = upload.single('file');
 // 速率上限保护：用户 30/h × 9 = 270 份/小时，单份 OCR ~$0.05，~$13.5/h/user 上限可控。
 const uploadMiddlewareBatch = upload.array('files', parseInt(process.env.BATCH_UPLOAD_MAX || String(SHARED_BATCH_UPLOAD_MAX), 10));
 
+const PARSE_STREAM_MAX_ACTIVE_PER_USER = Math.max(
+  1,
+  parseInt(process.env.PARSE_STREAM_MAX_ACTIVE_PER_USER || '3', 10)
+);
+const parseStreamActiveByUser = new Map();
+
+const getParseStreamUserKey = (req = {}) => `${req.userId || req.ip || 'anonymous'}`;
+
+const acquireParseStreamSlot = (req) => {
+  const key = getParseStreamUserKey(req);
+  const current = parseStreamActiveByUser.get(key) || 0;
+  if (current >= PARSE_STREAM_MAX_ACTIVE_PER_USER) {
+    return null;
+  }
+  parseStreamActiveByUser.set(key, current + 1);
+  updateOcrStreamActiveGauge();
+  return () => {
+    const next = (parseStreamActiveByUser.get(key) || 1) - 1;
+    if (next <= 0) parseStreamActiveByUser.delete(key);
+    else parseStreamActiveByUser.set(key, next);
+    updateOcrStreamActiveGauge();
+  };
+};
+
+const parseAfterSeqMap = (req = {}, ids = []) => {
+  const byRecord = new Map(ids.map((id) => [String(id), 0]));
+  const rawAfter = req.query && req.query.afterSeq;
+  const lastEventId = (req.headers && (req.headers['last-event-id'] || req.headers['Last-Event-ID']))
+    || (typeof req.get === 'function' ? req.get('Last-Event-ID') : '');
+  const applyAll = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return;
+    for (const id of ids) byRecord.set(String(id), n);
+  };
+  const applyPerRecord = (value) => {
+    let applied = false;
+    `${value || ''}`
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => {
+        const match = part.match(/^([^:]+):(\d+)$/);
+        if (!match) return;
+        const recordId = match[1];
+        if (!byRecord.has(recordId)) return;
+        byRecord.set(recordId, Number(match[2]));
+        applied = true;
+      });
+    return applied;
+  };
+  if (rawAfter !== undefined && rawAfter !== null && `${rawAfter}`.trim() !== '') {
+    const raw = `${rawAfter}`.trim();
+    if (!applyPerRecord(raw)) applyAll(raw);
+  }
+  if (lastEventId) {
+    const raw = `${lastEventId}`.trim();
+    const match = raw.match(/^([^:]+):(\d+)$/);
+    if (match && byRecord.has(match[1])) {
+      byRecord.set(match[1], Number(match[2]));
+    } else {
+      applyAll(raw);
+    }
+  }
+  return byRecord;
+};
+
+const recordOcrStreamMetric = (event) => {
+  try {
+    const metrics = require('../middleware/metrics');
+    if (metrics && metrics.ocrStreamTotal && metrics.ocrStreamTotal.labels) {
+      metrics.ocrStreamTotal.labels(event).inc();
+    }
+  } catch (_e) { /* metrics 不影响业务 */ }
+};
+
+const updateOcrStreamActiveGauge = () => {
+  try {
+    const metrics = require('../middleware/metrics');
+    if (!metrics || !metrics.ocrStreamActiveGauge) return;
+    let total = 0;
+    for (const count of parseStreamActiveByUser.values()) total += count;
+    metrics.ocrStreamActiveGauge.set(total);
+  } catch (_e) { /* metrics 不影响业务 */ }
+};
+
 /**
  * Plan §Phase 1.3：把 (status, status_phase) 折成客户端能挑文案 + 渲染进度条的 (status, progress)。
  *
@@ -128,6 +213,43 @@ const mapParseStatus = (status, statusPhase) => {
 const truthyText = (value) => {
   const normalized = `${value || ''}`.trim().toLowerCase();
   return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const uniqueStrings = (items) => Array.from(new Set((items || []).map(String).filter(Boolean)));
+
+const batchRecordIdsOf = (batch) => (
+  Array.isArray(batch && batch.record_ids)
+    ? batch.record_ids.map(String).filter(Boolean)
+    : []
+);
+
+const resolveBatchIdForRecords = async ({ requestedBatchId = '', requestedRecordIds = [], records = [], userId }) => {
+  const cleanRequestedBatchId = `${requestedBatchId || ''}`.trim();
+  if (!cleanRequestedBatchId) {
+    return (records.find((r) => r && r.batch_id)?.batch_id || '');
+  }
+  if (!UploadBatch || typeof UploadBatch.findOne !== 'function') {
+    return '';
+  }
+  const batch = await UploadBatch.findOne({
+    where: { id: cleanRequestedBatchId, user_id: userId }
+  });
+  if (!batch) {
+    throw new BusinessError('batchId 不存在或不属于本人', 404);
+  }
+  const batchIds = batchRecordIdsOf(batch);
+  const batchSet = new Set(batchIds);
+  const requestedIds = uniqueStrings(requestedRecordIds);
+  const mismatched = requestedIds.filter((id) => !batchSet.has(id));
+  if (mismatched.length) {
+    throw new BusinessError('batchId 与 fileIds 不匹配', 400);
+  }
+  const recordIds = uniqueStrings(records.map((r) => r && r.id));
+  const recordMismatched = recordIds.filter((id) => !batchSet.has(id));
+  if (recordMismatched.length) {
+    throw new BusinessError('batchId 与记录不匹配', 400);
+  }
+  return cleanRequestedBatchId;
 };
 
 const hasMeaningfulExtraction = (record) => {
@@ -173,6 +295,81 @@ const firstNonEmpty = (...values) => {
     return value;
   }
   return null;
+};
+
+const isUniqueConstraintError = (err) => (
+  !!err && (
+    err.name === 'SequelizeUniqueConstraintError' ||
+    err.parent?.code === 'ER_DUP_ENTRY' ||
+    err.original?.code === 'ER_DUP_ENTRY'
+  )
+);
+
+const isEmptyResultValue = (value) => {
+  if (value === 0 || value === false) return false;
+  if (Array.isArray(value)) return value.length === 0;
+  if (value && typeof value === 'object') return Object.keys(value).length === 0;
+  return value === null || value === undefined || `${value}`.trim() === '';
+};
+
+const mergeDraftValue = (current, next) => {
+  if (isEmptyResultValue(next)) return current;
+  if (isEmptyResultValue(current)) return next;
+  if (Array.isArray(current) && Array.isArray(next)) {
+    const seen = new Set(current.map((item) => JSON.stringify(item)));
+    const merged = [...current];
+    next.forEach((item) => {
+      const sig = JSON.stringify(item);
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        merged.push(item);
+      }
+    });
+    return merged;
+  }
+  return current;
+};
+
+const buildBatchCaseDraft = (entries = []) => {
+  const draft = {};
+  const skip = new Set([
+    'id',
+    'fileId',
+    'recordId',
+    'confidence',
+    'rawText',
+    'errorMsg',
+    'status',
+    'progress',
+    'statusPhase'
+  ]);
+  entries
+    .filter((entry) => entry && entry.status === 'completed' && entry.result)
+    .forEach((entry) => {
+      const result = normalizeEntities(entry.result);
+      const entities = normalizeEntities(result.entities);
+      const source = Object.keys(entities).length ? { ...result, ...entities } : result;
+      Object.entries(source).forEach(([key, value]) => {
+        if (skip.has(key) || key === 'entities') return;
+        draft[key] = mergeDraftValue(draft[key], value);
+      });
+    });
+  return draft;
+};
+
+const applyBatchDraftToCase = (caseProfile, batchCaseDraft) => {
+  if (!caseProfile || !batchCaseDraft || !Object.keys(batchCaseDraft).length) return caseProfile;
+  const entities = {
+    ...(caseProfile.entities || {}),
+    ...batchCaseDraft
+  };
+  return {
+    ...caseProfile,
+    entities,
+    summary: medicalCaseService.buildSummary(entities),
+    completeness: medicalCaseService.buildCompleteness(entities),
+    batchDraftApplied: true
+  };
 };
 
 /**
@@ -369,7 +566,7 @@ const processSingleUpload = async ({ file, userId, type, remark, forceReparse })
     fileId: record.id,
     recordId: record.id,
     // Wave 3 §1：cache 命中时直接报 completed，让客户端轮询第一次拍到就拿结果。
-    status: cacheHit ? 'completed' : 'pending',
+    status: cacheHit ? 'completed' : (ocrQueued ? 'pending' : 'error'),
     ocrQueued,
     uploadedAt: record.created_at,
     isDuplicate: false,
@@ -394,9 +591,15 @@ const handleUpload = async (req, res, next) => {
     // Phase E.2：单文件路径委托到 processSingleUpload，与批量入口共享去重 / 入队 / 错误降级逻辑。
     const result = await processSingleUpload({ file, userId, type, remark, forceReparse });
     const { message, ...payload } = result;
+    const batchInfo = await medicalCaseService.createUploadBatch({
+      userId,
+      records: [payload],
+      totalCount: 1,
+      metadata: { entry: 'multipart-single' }
+    });
     // Plan §Phase 3.4：附带队列深度，客户端 step 2 显示"前面还有 N 份在处理"
     const queueDepth = await safeGetQueueDepth();
-    res.json(success({ ...payload, queueDepth }, message));
+    res.json(success({ ...payload, batchId: batchInfo.batchId, queueDepth }, message));
   } catch (err) {
     next(err);
   } finally {
@@ -544,18 +747,27 @@ const handleUploadBatch = async (req, res, next) => {
 
     const fileIds = records.map((r) => r.fileId).filter(Boolean);
     const successCount = records.filter((r) => r.fileId && r.status !== 'error').length;
+    const failedCount = records.filter((r) => r.status === 'error').length;
     const summary = `${successCount}/${records.length} 份文件已入队解析`;
 
     // Plan §Phase 3.4：批量响应里附带队列深度，让客户端 step 2 显示"前面还有 N 份"。
     // 这次入队的本批 N 份会算在 active/waiting 里，所以 total 表示「含本批，整队当前总长」；
     // 客户端展示时减掉 successCount 才是"我前面还有几份"。
     const queueDepth = await safeGetQueueDepth();
+    const batchInfo = await medicalCaseService.createUploadBatch({
+      userId,
+      records,
+      totalCount: records.length,
+      metadata: { entry: 'multipart-batch' }
+    });
 
     res.json(success({
+      batchId: batchInfo.batchId,
       fileIds,
       records,
       total: records.length,
       successCount,
+      failedCount,
       queueDepth
     }, summary));
   } catch (err) {
@@ -639,6 +851,18 @@ const handleFinalize = async (req, res, next) => {
     if (files.length > BATCH_UPLOAD_MAX) {
       throw new BusinessError(`一次最多 finalize ${BATCH_UPLOAD_MAX} 份文件`, 400);
     }
+    const uploadErrorLimit = Math.max(0, BATCH_UPLOAD_MAX - files.length);
+    const uploadErrors = Array.isArray(req.body && req.body.uploadErrors)
+      ? req.body.uploadErrors.slice(0, uploadErrorLimit).map((err, index) => ({
+        index: Number.isFinite(Number(err && err.index)) ? Number(err.index) : index,
+        originalName: `${(err && err.originalName) || `file_${index + 1}`}`.slice(0, 200),
+        message: `${(err && err.message) || '直传失败'}`.slice(0, 500)
+      }))
+      : [];
+    const requestedTotalCount = Math.max(
+      files.length + uploadErrors.length,
+      Math.min(BATCH_UPLOAD_MAX, parseInt(req.body && req.body.totalCount, 10) || 0)
+    );
 
     const prefix = FILE_KEY_PREFIX(userId);
     const records = [];
@@ -766,7 +990,7 @@ const handleFinalize = async (req, res, next) => {
           entry = {
             fileId: existing.id,
             recordId: existing.id,
-            status: 'pending',
+            status: reparseQueued ? 'pending' : 'error',
             ocrQueued: reparseQueued,
             isDuplicate: true,
             reparseTriggered: true,
@@ -776,15 +1000,46 @@ const handleFinalize = async (req, res, next) => {
           };
         } else {
           // 全新：建 record + 入队
-          const record = await MedicalRecord.create({
-            user_id: userId,
-            type,
-            file_key: fileKey,
-            file_hash: fileHash,
-            file_size: declaredSize,
-            status: 'pending',
-            remark
-          });
+          let record;
+          try {
+            record = await MedicalRecord.create({
+              user_id: userId,
+              type,
+              file_key: fileKey,
+              file_hash: fileHash,
+              file_size: declaredSize,
+              status: 'pending',
+              remark
+            });
+          } catch (createErr) {
+            if (!isUniqueConstraintError(createErr)) {
+              throw createErr;
+            }
+            const winner = await MedicalRecord.findOne({
+              where: { user_id: userId, file_hash: fileHash, deleted_at: null }
+            });
+            if (!winner) {
+              throw createErr;
+            }
+            logger.info('[finalize] create race detected, joined winner', {
+              userId,
+              fileHash,
+              winnerId: winner.id
+            });
+            entry = {
+              fileId: winner.id,
+              recordId: winner.id,
+              status: winner.status === 'error' ? 'pending' : (winner.status || 'pending'),
+              ocrQueued: false,
+              isDuplicate: true,
+              uploadedAt: winner.created_at,
+              message: '检测到您正在同时上传相同文件，已合并到既有记录',
+              originalName
+            };
+            batchHashCache.set(fileHash, entry);
+            records.push(entry);
+            continue;
+          }
           const imageUrl = await ossService.getInternalUrl(fileKey);
           // Wave 3 §1：批量新 record 入队前也先试 cache。
           const newCacheHit = await safeTryHydrateOcrFromCache(record.id, fileHash, userId);
@@ -826,7 +1081,7 @@ const handleFinalize = async (req, res, next) => {
           entry = {
             fileId: record.id,
             recordId: record.id,
-            status: 'pending',
+            status: ocrQueued ? 'pending' : 'error',
             ocrQueued,
             isDuplicate: false,
             uploadedAt: record.created_at,
@@ -846,16 +1101,31 @@ const handleFinalize = async (req, res, next) => {
 
     const fileIds = records.map((r) => r.fileId).filter(Boolean);
     const successCount = records.filter((r) => r.fileId && r.status !== 'error').length;
+    const failedCount = records.filter((r) => r.status === 'error').length + uploadErrors.length;
+    const total = Math.max(requestedTotalCount || 0, records.length + uploadErrors.length);
     // 与 handleUploadBatch 保持一致：附带队列深度，客户端展示"前面还有 N 份"
     // 队列深度获取是 best-effort 装饰 —— Bull 不可用 / mock 缺失都不能拖死 finalize。
     const queueDepth = await safeGetQueueDepth();
+    const batchInfo = await medicalCaseService.createUploadBatch({
+      userId,
+      records,
+      totalCount: total,
+      metadata: {
+        entry: 'direct-finalize',
+        uploadErrors,
+        uploadFailedCount: uploadErrors.length
+      }
+    });
     res.json(success({
+      batchId: batchInfo.batchId,
       fileIds,
       records,
-      total: records.length,
+      uploadErrors,
+      total,
       successCount,
+      failedCount,
       queueDepth
-    }, `${successCount}/${records.length} 份文件已 finalize`));
+    }, `${successCount}/${total} 份文件已 finalize`));
   } catch (err) {
     next(err);
   }
@@ -894,7 +1164,9 @@ const safeTryHydrateOcrFromCache = async (recordId, fileHash, userId) => {
  * 给 getParseStatus（单）和 getParseStatusBatch（批）共享。
  */
 const buildParseStatusEntry = (record) => {
-  const mappedStatus = mapParseStatus(record.status, record.status_phase);
+  const isCancelled = Boolean(record && record.cancelled_at);
+  const effectiveStatus = isCancelled ? 'cancelled' : record.status;
+  const mappedStatus = mapParseStatus(effectiveStatus, record.status_phase);
   const entry = {
     fileId: record.id,
     recordId: record.id,
@@ -905,9 +1177,10 @@ const buildParseStatusEntry = (record) => {
     statusPhase: record.status_phase || null,
     result: null,
     createdAt: record.created_at,
-    updatedAt: record.updated_at
+    updatedAt: record.updated_at,
+    cancelledAt: record.cancelled_at ? new Date(record.cancelled_at).toISOString() : null
   };
-  if (record.status === 'completed' && record.structured) {
+  if (effectiveStatus === 'completed' && record.structured) {
     const structured = normalizeStructured(record.structured);
     const entities = normalizeEntities(structured.entities);
     const rawText = firstNonEmpty(structured.text, entities.rawText);
@@ -926,7 +1199,7 @@ const buildParseStatusEntry = (record) => {
       rawText: typeof rawText === 'string' ? rawText.substring(0, 500) : rawText
     };
   }
-  if (record.status === 'error' && record.structured?.error) {
+  if (effectiveStatus === 'error' && record.structured?.error) {
     entry.errorMsg = record.structured.error;
   }
   return entry;
@@ -952,7 +1225,17 @@ const getParseStatus = async (req, res, next) => {
       return res.status(404).json({ code: 404, message: '记录不存在', data: null });
     }
 
-    res.json(success(buildParseStatusEntry(record)));
+    const entry = buildParseStatusEntry(record);
+    let caseProfile = null;
+    if (entry.status === 'completed') {
+      caseProfile = await medicalCaseService.safeUpsertCaseFromRecords({
+        userId: req.userId,
+        recordIds: [record.id],
+        batchId: record.batch_id || null,
+        metadata: { source: 'parse-status' }
+      });
+    }
+    res.json(success(caseProfile ? { ...entry, case: caseProfile } : entry));
   } catch (err) {
     next(err);
   }
@@ -969,6 +1252,7 @@ const getParseStatus = async (req, res, next) => {
 const getParseStatusBatch = async (req, res, next) => {
   try {
     const raw = (req.method === 'POST' ? req.body && req.body.fileIds : req.query && req.query.fileIds) || [];
+    const requestedBatchId = `${(req.method === 'POST' ? req.body && req.body.batchId : req.query && req.query.batchId) || ''}`.trim();
     let fileIds = [];
     if (Array.isArray(raw)) {
       fileIds = raw.map((x) => `${x || ''}`.trim()).filter(Boolean);
@@ -1006,19 +1290,122 @@ const getParseStatusBatch = async (req, res, next) => {
       return buildParseStatusEntry(r);
     });
 
-    const TERMINAL = new Set(['completed', 'error', 'not_found']);
+    const TERMINAL = new Set(['completed', 'error', 'cancelled', 'not_found']);
     const done = entries.every((e) => TERMINAL.has(e.status));
     const completed = entries.filter((e) => e.status === 'completed').length;
     const errored = entries.filter((e) => e.status === 'error' || e.status === 'not_found').length;
+    let batch = null;
+    let caseProfile = null;
+    const inferredBatchId = await resolveBatchIdForRecords({
+      requestedBatchId,
+      requestedRecordIds: fileIds,
+      records,
+      userId: req.userId
+    });
+    if (inferredBatchId) {
+      batch = await medicalCaseService.updateBatchFromRecords(inferredBatchId, req.userId);
+    }
+    if (done && completed > 0) {
+      const completedIds = entries
+        .filter((e) => e.status === 'completed')
+        .map((e) => e.recordId || e.fileId)
+        .filter(Boolean);
+      caseProfile = await medicalCaseService.safeUpsertCaseFromRecords({
+        userId: req.userId,
+        recordIds: completedIds,
+        batchId: inferredBatchId || null,
+        metadata: { source: 'parse-status-batch' }
+      });
+    }
+    const caseDraft = buildBatchCaseDraft(entries);
+    const responseCase = applyBatchDraftToCase(caseProfile, caseDraft);
 
     res.json(success({
       entries,
       total: entries.length,
       completedCount: completed,
       erroredCount: errored,
-      done
+      done,
+      batch,
+      case: responseCase,
+      caseDraft
     }));
 
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getCurrentCase = async (req, res, next) => {
+  try {
+    let caseProfile = await medicalCaseService.getCurrentCase(req.userId);
+    if (!caseProfile) {
+      const completedRecords = await MedicalRecord.findAll({
+        where: { user_id: req.userId, deleted_at: null, status: 'completed' },
+        order: [['updated_at', 'DESC']],
+        limit: 50
+      });
+      if (completedRecords.length) {
+        caseProfile = await medicalCaseService.safeUpsertCaseFromRecords({
+          userId: req.userId,
+          recordIds: completedRecords.map((record) => record.id),
+          metadata: { source: 'cases-current-lazy' }
+        });
+      }
+    }
+    res.json(success({ case: caseProfile || null }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getCase = async (req, res, next) => {
+  try {
+    const caseProfile = await medicalCaseService.getCaseById(req.userId, req.params.caseId);
+    if (!caseProfile) {
+      return res.status(404).json({ code: 404, message: '病例档案不存在', data: null });
+    }
+    res.json(success({ case: caseProfile }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getCaseEvidence = async (req, res, next) => {
+  try {
+    const evidence = await medicalCaseService.getCaseEvidence(req.userId, req.params.caseId);
+    if (!evidence) {
+      return res.status(404).json({ code: 404, message: '病例档案不存在', data: null });
+    }
+    res.json(success({ caseId: req.params.caseId, evidence }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const applyCaseRevisions = async (req, res, next) => {
+  try {
+    const patches = Array.isArray(req.body && req.body.patches) ? req.body.patches : [];
+    if (!patches.length) {
+      throw new BusinessError('patches 不能为空', 400);
+    }
+    if (patches.length > 50) {
+      throw new BusinessError('一次最多修订 50 个字段', 400);
+    }
+    const validation = medicalCaseService.validateCaseRevisionPatches(patches);
+    if (!validation.ok || !validation.patches.length) {
+      throw new BusinessError(validation.message || 'patches 不能为空', 400);
+    }
+    const caseProfile = await medicalCaseService.applyCaseRevisions({
+      userId: req.userId,
+      caseId: req.params.caseId,
+      patches: validation.patches,
+      reason: (req.body && req.body.reason) || ''
+    });
+    if (!caseProfile) {
+      return res.status(404).json({ code: 404, message: '病例档案不存在', data: null });
+    }
+    res.json(success({ case: caseProfile }));
   } catch (err) {
     next(err);
   }
@@ -1033,20 +1420,13 @@ const getRecords = async (req, res, next) => {
     const pageSize = Math.min(parseInt(req.query.pageSize) || 20, 100);  // 最大100
     const offset = (page - 1) * pageSize;
 
-    const [recordResult, recruitingTrials] = await Promise.all([
-      MedicalRecord.findAndCountAll({
-        // PRD-2026Q2 §3.5：列表只返回未软删除的记录
-        where: { user_id: req.userId, deleted_at: null },
-        order: [['created_at', 'DESC']],
-        limit: pageSize,
-        offset
-      }),
-      Trial.findAll({
-        where: { status: 'recruiting' },
-        attributes: ['id', 'name', 'phase', 'type', 'indication', 'institution', 'location', 'description', 'inclusion_criteria', 'exclusion_criteria', 'status'],
-        limit: 200
-      })
-    ]);
+    const recordResult = await MedicalRecord.findAndCountAll({
+      // PRD-2026Q2 §3.5：列表只返回未软删除的记录
+      where: { user_id: req.userId, deleted_at: null },
+      order: [['created_at', 'DESC']],
+      limit: pageSize,
+      offset
+    });
     const { count, rows } = recordResult;
 
     // 获取预签名URL
@@ -1057,17 +1437,26 @@ const getRecords = async (req, res, next) => {
       } catch (e) {
         logger.warn('获取图片URL失败:', { recordId: r.id, error: e.message });
       }
+      const result = r.status === 'completed' && r.structured
+        ? buildParseStatusEntry(r).result
+        : null;
 
       return {
+        ...(result || {}),
         id: r.id,
+        recordId: r.id,
         type: r.type,
-        diagnosis: r.diagnosis || '未识别',
+        diagnosis: firstNonEmpty(result?.diagnosis, r.diagnosis, '未识别'),
+        stage: firstNonEmpty(result?.stage, r.stage, '待补'),
+        geneMutation: firstNonEmpty(result?.geneMutation, result?.gene_mutation, r.gene_mutation, '待补'),
         status: r.status,
         statusText: r.status === 'completed' ? '已解析' : r.status === 'error' ? '解析失败' : '处理中',
         uploadTime: r.created_at,
-        matchCount: r.status === 'completed'
-          ? recruitingTrials.filter((trial) => scoreRecordAgainstTrial(r, trial).score >= 60).length
-          : 0,
+        // 10k DAU 读档路径不能在列表页同步扫 200 条 trial 做打分。
+        // 详情/匹配页仍按需计算；列表只返回缓存字段或 0，后续可接异步 materialized count。
+        matchCount: Number(r.match_count || r.matchCount || 0),
+        updatedAt: r.updated_at,
+        result,
         imageUrl
       };
     }));
@@ -1114,17 +1503,35 @@ const getRecordDetail = async (req, res, next) => {
       logger.warn('获取图片URL失败:', { recordId: id, error: e.message });
     }
 
+    const structured = normalizeStructured(record.structured);
+    const entities = normalizeEntities(structured.entities);
+    const result = record.status === 'completed'
+      ? (buildParseStatusEntry(record).result || {
+        ...entities,
+        id: record.id,
+        recordId: record.id
+      })
+      : null;
+
     res.json(success({
       id: record.id,
       type: record.type,
-      diagnosis: record.diagnosis || '未识别',
-      stage: record.stage || '未识别',
-      geneMutation: record.gene_mutation || '未识别',
-      treatment: record.treatment || '未识别',
+      diagnosis: firstNonEmpty(entities.diagnosis, record.diagnosis, '未识别'),
+      stage: firstNonEmpty(entities.stage, record.stage, '未识别'),
+      geneMutation: firstNonEmpty(entities.geneMutation, entities.gene_mutation, record.gene_mutation, '未识别'),
+      treatment: firstNonEmpty(entities.treatment, record.treatment, '未识别'),
+      treatmentLine: firstNonEmpty(entities.treatmentLine, record.treatment_line),
+      pdl1: firstNonEmpty(entities.pdl1, record.pdl1),
       status: record.status,
+      statusPhase: record.status_phase || null,
       uploadTime: record.created_at,
+      updatedAt: record.updated_at,
       images,
-      structured: record.structured?.entities || {}
+      // 兼容旧客户端：structured 仍是扁平 entities。
+      structured: entities,
+      // 新客户端/读档页使用完整 payload，包含 schemaVersion/promptVersion/providerMeta。
+      structuredPayload: structured,
+      result
     }));
 
   } catch (err) {
@@ -1491,13 +1898,23 @@ const activateRecord = async (req, res, next) => {
  *   - 老客户端只读 status/progress 字段时不会被破坏（额外字段直接忽略）。
  */
 const handleParseStatusStream = async (req, res, next) => {
+  let releaseSlot = null;
   try {
     const raw = (req.query && req.query.recordIds) || '';
+    const requestedBatchId = `${(req.query && req.query.batchId) || ''}`.trim();
     let ids = [];
     if (Array.isArray(raw)) {
       ids = raw.map((x) => `${x || ''}`.trim()).filter(Boolean);
     } else if (typeof raw === 'string') {
       ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (!ids.length && requestedBatchId && UploadBatch && typeof UploadBatch.findOne === 'function') {
+      const batch = await UploadBatch.findOne({
+        where: { id: requestedBatchId, user_id: req.userId }
+      });
+      if (batch && Array.isArray(batch.record_ids)) {
+        ids = batch.record_ids.map((x) => `${x || ''}`.trim()).filter(Boolean);
+      }
     }
     if (!ids.length) {
       throw new BusinessError('缺少 recordIds 参数', 400);
@@ -1508,6 +1925,15 @@ const handleParseStatusStream = async (req, res, next) => {
     if (ids.some((id) => id.length > 64)) {
       throw new BusinessError('recordId 过长（单个 ≤ 64 字符）', 400);
     }
+
+    releaseSlot = acquireParseStreamSlot(req);
+    if (!releaseSlot) {
+      recordOcrStreamMetric('rejected_active_limit');
+      throw new BusinessError('解析状态流连接过多，请稍后重试', 429, {
+        maxActive: PARSE_STREAM_MAX_ACTIVE_PER_USER
+      });
+    }
+    recordOcrStreamMetric('opened');
 
     const { Op } = require('sequelize');
     const records = await MedicalRecord.findAll({
@@ -1529,20 +1955,16 @@ const handleParseStatusStream = async (req, res, next) => {
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    const writeFrame = (event, data) => {
+    const writeFrame = (event, data, id = null) => {
       if (res.writableEnded) return;
       try {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        const idLine = id ? `id: ${id}\n` : '';
+        res.write(`${idLine}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       } catch (e) {
         // socket 已断 / pipe 已关：忽略，下一次 close 事件会清理
       }
     };
 
-    // PRD-2026Q4 followup（B4）：SSE 心跳兜底。
-    // 背景：OCR 长任务 90-180s 内可能没有 stage 事件（视觉调用本身是单次 HTTP），
-    // nginx 默认 `proxy_read_timeout 60s` 会把空闲 SSE 连接砍掉 → 客户端永远收不到 done。
-    // 用 SSE 注释帧 `:keepalive\n\n` 每 20s 戳一下：浏览器/小程序自动丢弃注释行，不污染 onmessage；
-    // 但 TCP 层会被识别为活跃，nginx/中间代理就不会断开。
     const HEARTBEAT_INTERVAL_MS = Math.max(
       5000,
       parseInt(process.env.SSE_HEARTBEAT_INTERVAL_MS || '20000', 10)
@@ -1551,54 +1973,74 @@ const handleParseStatusStream = async (req, res, next) => {
       if (res.writableEnded) return;
       try { res.write(':keepalive\n\n'); } catch (_e) { /* socket 已断，下一次 close 兜底 */ }
     }, HEARTBEAT_INTERVAL_MS);
-    // setInterval 单独不会阻塞 process exit（res.end 触发 close 后我们会 clearInterval），
-    // 但保险起见 unref 一下 —— SSE handler 是 per-request 生命周期，进程退出时它不该撑住事件循环。
     if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
 
-    const TERMINAL = new Set(['completed', 'error', 'cancelled']);
-
+    const TERMINAL = new Set(['completed', 'error', 'cancelled', 'not_found']);
     const ownedIds = records.map((r) => String(r.id));
-    let allTerminal = true;
+    const ownedSet = new Set(ownedIds);
+    const streamBatchId = await resolveBatchIdForRecords({
+      requestedBatchId,
+      requestedRecordIds: ids,
+      records,
+      userId: req.userId
+    });
+    const terminalIds = new Set();
+    const afterSeqByRecord = parseAfterSeqMap(req, ownedIds);
+    const recordEvents = require('../services/recordEvents');
+    const mergePreviewEntities = {};
+
+    writeFrame('hello', {
+      batchId: streamBatchId || null,
+      recordIds: ownedIds,
+      heartbeatMs: HEARTBEAT_INTERVAL_MS,
+      maxActivePerUser: PARSE_STREAM_MAX_ACTIVE_PER_USER
+    });
+
+    const emitBatchState = async () => {
+      if (!streamBatchId || res.writableEnded) return null;
+      const batchState = await medicalCaseService.updateBatchFromRecords(streamBatchId, req.userId);
+      if (batchState) writeFrame('batch_state', batchState);
+      return batchState;
+    };
+
+    const emitMergePreview = (fields) => {
+      if (!fields || typeof fields !== 'object') return;
+      Object.assign(mergePreviewEntities, fields);
+      writeFrame('merge_preview', {
+        batchId: streamBatchId || null,
+        summaryCompleteness: medicalCaseService.buildCompleteness(mergePreviewEntities),
+        caseDraft: mergePreviewEntities
+      });
+    };
+
+    await emitBatchState();
+
+    const seenSeqByRecord = new Map(ownedIds.map((id) => [id, new Set()]));
+    const shouldEmitSeq = (rid, seq) => {
+      if (typeof seq !== 'number' || !Number.isFinite(seq)) return true;
+      const minSeq = afterSeqByRecord.get(rid) || 0;
+      if (seq <= minSeq) return false;
+      const seen = seenSeqByRecord.get(rid) || new Set();
+      if (seen.has(seq)) return false;
+      seen.add(seq);
+      seenSeqByRecord.set(rid, seen);
+      return true;
+    };
+
     for (const r of records) {
       const entry = buildParseStatusEntry(r);
       writeFrame('state', entry);
-      if (!TERMINAL.has(entry.status)) allTerminal = false;
-    }
-
-    if (allTerminal) {
-      writeFrame('done', { reason: 'all_terminal' });
-      clearInterval(heartbeatTimer);
-      try { res.end(); } catch (e) { /* noop */ }
-      return;
-    }
-
-    let unsubscribe = null;
-    let ended = false;
-
-    const finishStream = (reason) => {
-      if (ended) return;
-      ended = true;
-      clearInterval(heartbeatTimer);
-      writeFrame('done', { reason });
-      try { res.end(); } catch (e) { /* noop */ }
-      // 异步触发 unsubscribe；mock 与真实实现都返回 Promise，
-      // 这里用 Promise.resolve 兼容 sync/async 两种返回类型，错误吞掉。
-      if (typeof unsubscribe === 'function') {
-        try { Promise.resolve(unsubscribe()).catch(() => {}); }
-        catch (e) { /* noop */ }
+      if (entry.result) {
+        const resultEntities = entry.result.entities && typeof entry.result.entities === 'object'
+          ? entry.result.entities
+          : entry.result;
+        emitMergePreview(resultEntities);
       }
-    };
+      if (TERMINAL.has(entry.status)) terminalIds.add(String(r.id));
+    }
 
-    const ownedSet = new Set(ownedIds);
-    const onEvent = (payload) => {
-      if (ended || !payload || !payload.recordId) return;
-      const rid = String(payload.recordId);
-      if (!ownedSet.has(rid)) return;
+    const eventToFrame = (rid, payload) => {
       const status = payload.status || 'unknown';
-      // PRD-2026Q4 流式 OCR：额外透传 statusPhase / fieldGroup / fields / rawText 给前端。
-      // 这些字段仅在 worker 进入 streaming 阶段时被 publishRecordEventSafe 注入；
-      // 老 worker 只发 status/progress/result —— 这里全部用 `?? null` 与"only if defined"
-      // 防御性策略，避免历史数据被 undefined 污染。
       const frame = {
         fileId: rid,
         recordId: rid,
@@ -1607,34 +2049,151 @@ const handleParseStatusStream = async (req, res, next) => {
         result: payload.result || null,
         partial: payload.partial || null,
         errorMsg: payload.errorMsg || null,
+        errorCode: payload.errorCode || null,
         cancelledAt: payload.cancelledAt || null,
-        ts: payload.ts || Date.now()
+        seq: typeof payload.seq === 'number' ? payload.seq : null,
+        ts: payload.ts || Date.now(),
+        createdAt: payload.createdAt || null
       };
       if (payload.statusPhase) frame.statusPhase = payload.statusPhase;
+      if (payload.stage) frame.stage = payload.stage;
       if (payload.fieldGroup) frame.fieldGroup = payload.fieldGroup;
       if (payload.fields && typeof payload.fields === 'object') frame.fields = payload.fields;
-      if (typeof payload.rawText === 'string' && payload.rawText.length) frame.rawText = payload.rawText;
+      if (
+        process.env.OCR_STREAM_RAW_TEXT_ENABLED === 'true' &&
+        typeof payload.rawText === 'string' &&
+        payload.rawText.length
+      ) {
+        frame.rawText = payload.rawText;
+      }
       if (payload.message) frame.message = payload.message;
       if (payload.providerWait) frame.providerWait = payload.providerWait;
-      writeFrame('state', frame);
-      if (TERMINAL.has(status)) finishStream('terminal');
+      return frame;
     };
 
-    const recordEvents = require('../services/recordEvents');
-    unsubscribe = await recordEvents.subscribeRecordEvents(ownedIds, onEvent);
-
-    if (!unsubscribe) {
-      writeFrame('noredis', { reason: 'redis_unavailable' });
+    if (terminalIds.size >= ownedIds.length) {
+      writeFrame('done', { reason: 'all_terminal' });
+      recordOcrStreamMetric('done_all_terminal');
       clearInterval(heartbeatTimer);
+      if (releaseSlot) {
+        releaseSlot();
+        releaseSlot = null;
+      }
       try { res.end(); } catch (e) { /* noop */ }
       return;
     }
 
-    // 客户端断开 → 立即清理（防 zombie 订阅 + 防心跳 timer 泄漏）
+    let unsubscribe = null;
+    let ended = false;
+    let replayComplete = false;
+    const liveBuffer = [];
+
+    const finishStream = (reason) => {
+      if (ended) return;
+      ended = true;
+      clearInterval(heartbeatTimer);
+      writeFrame('done', { reason });
+      recordOcrStreamMetric(`done_${reason}`);
+      if (releaseSlot) {
+        releaseSlot();
+        releaseSlot = null;
+      }
+      try { res.end(); } catch (e) { /* noop */ }
+      if (typeof unsubscribe === 'function') {
+        try { Promise.resolve(unsubscribe()).catch(() => {}); }
+        catch (e) { /* noop */ }
+      }
+    };
+
+    const closeWithNoRedis = () => {
+      ended = true;
+      writeFrame('noredis', { reason: 'redis_unavailable' });
+      recordOcrStreamMetric('noredis');
+      clearInterval(heartbeatTimer);
+      if (releaseSlot) {
+        releaseSlot();
+        releaseSlot = null;
+      }
+      try { res.end(); } catch (e) { /* noop */ }
+      if (typeof unsubscribe === 'function') {
+        try { Promise.resolve(unsubscribe()).catch(() => {}); }
+        catch (e) { /* noop */ }
+      }
+    };
+
+    const emitPayloadFrame = (payload, { allowFinish = true } = {}) => {
+      if (ended || !payload || !payload.recordId) return;
+      const rid = String(payload.recordId);
+      if (!ownedSet.has(rid)) return;
+      const frame = eventToFrame(rid, payload);
+      if (!shouldEmitSeq(rid, frame.seq)) return;
+      writeFrame('state', frame, frame.seq ? `${rid}:${frame.seq}` : null);
+      if (frame.fields) emitMergePreview(frame.fields);
+      if (frame.result) {
+        const resultEntities = frame.result.entities && typeof frame.result.entities === 'object'
+          ? frame.result.entities
+          : frame.result;
+        emitMergePreview(resultEntities);
+      }
+      if (TERMINAL.has(frame.status)) {
+        terminalIds.add(rid);
+        emitBatchState().catch(() => {});
+        if (allowFinish && terminalIds.size >= ownedIds.length) finishStream('terminal');
+      }
+    };
+
+    const onEvent = (payload) => {
+      if (ended || !payload || !payload.recordId) return;
+      if (!replayComplete) {
+        liveBuffer.push(payload);
+        return;
+      }
+      emitPayloadFrame(payload);
+    };
+
+    unsubscribe = await recordEvents.subscribeRecordEvents(ownedIds, onEvent);
+
+    if (!unsubscribe) {
+      closeWithNoRedis();
+      return;
+    }
+
+    if (recordEvents && typeof recordEvents.replayRecordEvents === 'function') {
+      let replayUnavailable = false;
+      for (const rid of ownedIds) {
+        const replayed = await recordEvents.replayRecordEvents(rid, afterSeqByRecord.get(rid) || 0);
+        if (replayed === null) {
+          replayUnavailable = true;
+          break;
+        }
+        for (const payload of replayed) {
+          emitPayloadFrame({ ...payload, recordId: payload.recordId || rid }, { allowFinish: false });
+        }
+      }
+      if (replayUnavailable) {
+        closeWithNoRedis();
+        return;
+      }
+    }
+
+    replayComplete = true;
+    while (!ended && liveBuffer.length) {
+      emitPayloadFrame(liveBuffer.shift());
+    }
+    if (!ended && terminalIds.size >= ownedIds.length) {
+      finishStream('terminal');
+      return;
+    }
+
     req.on('close', () => {
       if (ended) return;
       ended = true;
       clearInterval(heartbeatTimer);
+      recordOcrStreamMetric('closed');
+      if (releaseSlot) {
+        releaseSlot();
+        releaseSlot = null;
+      }
       if (typeof unsubscribe === 'function') {
         try { Promise.resolve(unsubscribe()).catch(() => {}); }
         catch (e) { /* noop */ }
@@ -1642,6 +2201,10 @@ const handleParseStatusStream = async (req, res, next) => {
       try { res.end(); } catch (e) { /* noop */ }
     });
   } catch (err) {
+    if (releaseSlot) {
+      releaseSlot();
+      releaseSlot = null;
+    }
     next(err);
   }
 };
@@ -1658,6 +2221,10 @@ module.exports = {
   getParseStatusBatch,
   // Plan §Phase 2.3：SSE 解析状态推送（PRD-2026Q4 流式 OCR 复用这条 pipe）
   handleParseStatusStream,
+  getCurrentCase,
+  getCase,
+  getCaseEvidence,
+  applyCaseRevisions,
   getTimeline,
   getRecords,
   getRecordDetail,
@@ -1672,5 +2239,10 @@ module.exports = {
   // PRD-2026Q4 followup（B5）：暴露给 streamingResilienceContract.test.js 锁住并发池行为，
   // 不让未来重构悄悄退化回 `Promise.allSettled(files.map(...))`。
   __runWithConcurrency: runWithConcurrency,
-  __BATCH_UPLOAD_CONCURRENCY: BATCH_UPLOAD_CONCURRENCY
+  __BATCH_UPLOAD_CONCURRENCY: BATCH_UPLOAD_CONCURRENCY,
+  __parseAfterSeqMap: parseAfterSeqMap,
+  __resolveBatchIdForRecords: resolveBatchIdForRecords,
+  __buildBatchCaseDraft: buildBatchCaseDraft,
+  __parseStreamActiveByUser: parseStreamActiveByUser,
+  __resetParseStreamLimits: () => parseStreamActiveByUser.clear()
 };

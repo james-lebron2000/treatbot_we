@@ -164,6 +164,7 @@ describe('streamChatJson 集成（mock stream）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockRateLimiter.acquire.mockResolvedValue()
+    delete process.env.DOUBAO_API_KEY
     // 默认让 fallback 抛出，避免任何意外触发
     mockChatJson.mockRejectedValue(new Error('fallback should not be called'))
   })

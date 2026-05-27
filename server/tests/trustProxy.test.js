@@ -46,9 +46,11 @@ describe('app.js — trust proxy is enabled in production', () => {
 
     expect(rateLimitSrc).toMatch(/const defaultLimiter = createRateLimiter\(\{ skip: isParseStatusPath \}\)/);
     expect(rateLimitSrc).toMatch(/const parseStatusLimiter = createRateLimiter/);
+    expect(rateLimitSrc).toMatch(/const parseStreamLimiter = createRateLimiter/);
     expect(rateLimitSrc).toMatch(/PARSE_STATUS_RATE_LIMIT_MAX/);
     expect(routesSrc).toMatch(/'\/medical\/parse-status'\s*,\s*authMiddleware,\s*parseStatusLimiter/);
     expect(routesSrc).toMatch(/'\/medical\/parse-status-batch'\s*,\s*authMiddleware,\s*parseStatusLimiter/);
+    expect(routesSrc).toMatch(/'\/medical\/parse-status-stream'\s*,\s*authMiddleware,\s*parseStreamLimiter/);
   });
 });
 

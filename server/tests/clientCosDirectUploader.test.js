@@ -109,7 +109,7 @@ describe('utils/cosDirectUploader.directUploadFiles', () => {
         new Uint8Array(ab).set(buf);
         return ab;
       },
-      requestImpl: ({ url, method }) => {
+      requestImpl: ({ method }) => {
         if (method === 'PUT') return { statusCode: 200, header: { etag: 'mock' } };
         throw new Error('unexpected non-PUT call');
       }
@@ -156,6 +156,8 @@ describe('utils/cosDirectUploader.directUploadFiles', () => {
     expect(finalize).toHaveBeenCalledTimes(1);
     const finArg = finalize.mock.calls[0][0];
     expect(finArg.files).toHaveLength(2);
+    expect(finArg.totalCount).toBe(2);
+    expect(finArg.uploadErrors).toEqual([]);
     expect(finArg.files[0].fileKey).toBe('uploads/1/a.jpg');
     expect(finArg.files[0].fileHash).toMatch(/^[0-9a-f]{32}$/);
     expect(finArg.files[1].fileKey).toBe('uploads/1/b.jpg');
@@ -234,6 +236,8 @@ describe('utils/cosDirectUploader.directUploadFiles', () => {
     expect(result.putErrors[0].originalName).toBe('x.jpg');
     expect(finalize).toHaveBeenCalledTimes(1);
     expect(finalize.mock.calls[0][0].files).toHaveLength(1);
+    expect(finalize.mock.calls[0][0].totalCount).toBe(2);
+    expect(finalize.mock.calls[0][0].uploadErrors).toHaveLength(1);
     expect(finalize.mock.calls[0][0].files[0].fileKey).toBe('uploads/1/y.jpg');
   });
 

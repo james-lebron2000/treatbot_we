@@ -397,6 +397,9 @@ jobs:
         # ↓ 敏感（API key）：必须从 Secrets
         KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
+        DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
+        VOLCENGINE_AK: ${{ secrets.VOLCENGINE_AK }}
+        VOLCENGINE_SK: ${{ secrets.VOLCENGINE_SK }}
         OCR_PROVIDER: 'auto'
         OCR_QUEUE_CONCURRENCY: '3'
         OCR_PDF_VISION_MAX_PAGES: '3'
@@ -411,6 +414,12 @@ jobs:
         OCR_JOB_TIMEOUT_MS: '900000'
         OCR_STRUCTURED_STREAM_TIMEOUT_MS: '45000'
         PARSE_STATUS_RATE_LIMIT_MAX: '3600'
+        PARSE_STREAM_RATE_LIMIT_MAX: '300'
+        PARSE_STREAM_MAX_ACTIVE_PER_USER: '3'
+        OCR_MAX_ACTIVE_PER_USER: '3'
+        OCR_MAX_WAITING_JOBS: '2000'
+        OCR_INPROC_FALLBACK_MAX: '1'
+        OCR_EVENT_STREAM_MAXLEN: '200'
         # 管理后台独立登录。这里只注入 key 的 SHA-256 verifier，不注入明文 key。
         ADMIN_LOGIN_USERNAME: 'treatbot_admin'
         ADMIN_LOGIN_KEY_HASH: 'sha256:0740e0062f9186d15688ae5fbdbcc35c7a576ac3acd9403ad1576e41a675d60e'
@@ -420,7 +429,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_JOB_TIMEOUT_MS,OCR_STRUCTURED_STREAM_TIMEOUT_MS,PARSE_STATUS_RATE_LIMIT_MAX,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
+        envs: SHA,GHCR_IMAGE,GHCR_USER,GHCR_TOKEN,KIMI_API_KEY,KIMI_VISION_MODEL,ARK_API_KEY,DOUBAO_API_KEY,VOLCENGINE_AK,VOLCENGINE_SK,ARK_VISION_MODEL,ARK_BASE_URL,ARK_TIMEOUT_MS,OCR_JOB_TIMEOUT_MS,OCR_STRUCTURED_STREAM_TIMEOUT_MS,PARSE_STATUS_RATE_LIMIT_MAX,PARSE_STREAM_RATE_LIMIT_MAX,PARSE_STREAM_MAX_ACTIVE_PER_USER,OCR_MAX_ACTIVE_PER_USER,OCR_MAX_WAITING_JOBS,OCR_INPROC_FALLBACK_MAX,OCR_EVENT_STREAM_MAXLEN,OCR_PROVIDER,OCR_QUEUE_CONCURRENCY,OCR_PDF_VISION_MAX_PAGES,OCR_PDF_VISION_DPI,ADMIN_LOGIN_USERNAME,ADMIN_LOGIN_KEY_HASH,ADMIN_LOGIN_TOKEN_TTL,ADMIN_LOGIN_CAN_REVEAL
         command_timeout: 65m  # opportunistic GHCR pull (≤8m) + local build fallback (≤45m) + restart cushion
         script: |
           set -e
@@ -651,6 +660,9 @@ jobs:
           [ -n "$KIMI_API_KEY" ]         && OCR_ENV_FLAGS+=(-e "KIMI_API_KEY=$KIMI_API_KEY")
           OCR_ENV_FLAGS+=(-e "KIMI_VISION_MODEL=$KIMI_VISION_MODEL")
           [ -n "$ARK_API_KEY" ]          && OCR_ENV_FLAGS+=(-e "ARK_API_KEY=$ARK_API_KEY")
+          [ -n "$DOUBAO_API_KEY" ]       && OCR_ENV_FLAGS+=(-e "DOUBAO_API_KEY=$DOUBAO_API_KEY")
+          [ -n "$VOLCENGINE_AK" ]        && OCR_ENV_FLAGS+=(-e "VOLCENGINE_AK=$VOLCENGINE_AK")
+          [ -n "$VOLCENGINE_SK" ]        && OCR_ENV_FLAGS+=(-e "VOLCENGINE_SK=$VOLCENGINE_SK")
           # 以下三项是 workflow 里写死的字面量（非 secret），所以这里一定有值
           OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=$ARK_VISION_MODEL")
           OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=$ARK_BASE_URL")
@@ -658,6 +670,12 @@ jobs:
           OCR_ENV_FLAGS+=(-e "OCR_JOB_TIMEOUT_MS=$OCR_JOB_TIMEOUT_MS")
           OCR_ENV_FLAGS+=(-e "OCR_STRUCTURED_STREAM_TIMEOUT_MS=$OCR_STRUCTURED_STREAM_TIMEOUT_MS")
           OCR_ENV_FLAGS+=(-e "PARSE_STATUS_RATE_LIMIT_MAX=$PARSE_STATUS_RATE_LIMIT_MAX")
+          OCR_ENV_FLAGS+=(-e "PARSE_STREAM_RATE_LIMIT_MAX=$PARSE_STREAM_RATE_LIMIT_MAX")
+          OCR_ENV_FLAGS+=(-e "PARSE_STREAM_MAX_ACTIVE_PER_USER=$PARSE_STREAM_MAX_ACTIVE_PER_USER")
+          OCR_ENV_FLAGS+=(-e "OCR_MAX_ACTIVE_PER_USER=$OCR_MAX_ACTIVE_PER_USER")
+          OCR_ENV_FLAGS+=(-e "OCR_MAX_WAITING_JOBS=$OCR_MAX_WAITING_JOBS")
+          OCR_ENV_FLAGS+=(-e "OCR_INPROC_FALLBACK_MAX=$OCR_INPROC_FALLBACK_MAX")
+          OCR_ENV_FLAGS+=(-e "OCR_EVENT_STREAM_MAXLEN=$OCR_EVENT_STREAM_MAXLEN")
           OCR_ENV_FLAGS+=(-e "OCR_PROVIDER=$OCR_PROVIDER")
           OCR_ENV_FLAGS+=(-e "OCR_QUEUE_CONCURRENCY=$OCR_QUEUE_CONCURRENCY")
           OCR_ENV_FLAGS+=(-e "OCR_PDF_VISION_MAX_PAGES=$OCR_PDF_VISION_MAX_PAGES")
@@ -672,12 +690,21 @@ jobs:
           [ -n "$KIMI_API_KEY" ]         && echo "    ✓ KIMI_API_KEY (len=${#KIMI_API_KEY})"            || echo "    ⚠ KIMI_API_KEY: 未设置 → 沿用旧 env"
           echo "    ✓ KIMI_VISION_MODEL=$KIMI_VISION_MODEL"
           [ -n "$ARK_API_KEY" ]          && echo "    ✓ ARK_API_KEY (len=${#ARK_API_KEY})"              || echo "    ⚠ ARK_API_KEY: 未设置（Doubao 路径不可用）"
+          [ -n "$DOUBAO_API_KEY" ]       && echo "    ✓ DOUBAO_API_KEY (len=${#DOUBAO_API_KEY})"        || echo "    ⚠ DOUBAO_API_KEY: 未设置（可用 ARK_API_KEY 替代）"
+          [ -n "$VOLCENGINE_AK" ]        && echo "    ✓ VOLCENGINE_AK (len=${#VOLCENGINE_AK})"          || echo "    ⚠ VOLCENGINE_AK: 未设置"
+          [ -n "$VOLCENGINE_SK" ]        && echo "    ✓ VOLCENGINE_SK (len=${#VOLCENGINE_SK})"          || echo "    ⚠ VOLCENGINE_SK: 未设置"
           echo "    ✓ ARK_VISION_MODEL=$ARK_VISION_MODEL"
           echo "    ✓ ARK_BASE_URL=$ARK_BASE_URL"
           echo "    ✓ ARK_TIMEOUT_MS=$ARK_TIMEOUT_MS"
           echo "    ✓ OCR_JOB_TIMEOUT_MS=$OCR_JOB_TIMEOUT_MS"
           echo "    ✓ OCR_STRUCTURED_STREAM_TIMEOUT_MS=$OCR_STRUCTURED_STREAM_TIMEOUT_MS"
           echo "    ✓ PARSE_STATUS_RATE_LIMIT_MAX=$PARSE_STATUS_RATE_LIMIT_MAX"
+          echo "    ✓ PARSE_STREAM_RATE_LIMIT_MAX=$PARSE_STREAM_RATE_LIMIT_MAX"
+          echo "    ✓ PARSE_STREAM_MAX_ACTIVE_PER_USER=$PARSE_STREAM_MAX_ACTIVE_PER_USER"
+          echo "    ✓ OCR_MAX_ACTIVE_PER_USER=$OCR_MAX_ACTIVE_PER_USER"
+          echo "    ✓ OCR_MAX_WAITING_JOBS=$OCR_MAX_WAITING_JOBS"
+          echo "    ✓ OCR_INPROC_FALLBACK_MAX=$OCR_INPROC_FALLBACK_MAX"
+          echo "    ✓ OCR_EVENT_STREAM_MAXLEN=$OCR_EVENT_STREAM_MAXLEN"
           echo "    ✓ OCR_PROVIDER=$OCR_PROVIDER"
           echo "    ✓ OCR_QUEUE_CONCURRENCY=$OCR_QUEUE_CONCURRENCY"
           echo "    ✓ OCR_PDF_VISION_MAX_PAGES=$OCR_PDF_VISION_MAX_PAGES"
@@ -738,19 +765,24 @@ jobs:
           echo "::endgroup::"
 
           ###############################################
-          # PART A.6 — DB 幂等迁移（addColumn / createTable 都是 if-not-exists）
-          # 之所以放在 health check 之后：
-          #   - 容器已经能起，说明现网 schema 至少能跑老路由；migrate 失败不至于把
-          #     生产打挂（DB 仍是上一版兼容 schema），下面 || true 把失败降为警告。
-          #   - 之前 user_funnel_event / me/consent 相关表是手工 ssh 上去补的；
-          #     这次让 deploy 顺手做掉，避免 §B.2 漏斗写入 500（"table doesn't exist"）。
+          # PART A.6 — DB 幂等迁移（发布门禁）
+          # migrate 失败代表新镜像需要的 schema 没有对齐；必须回滚新容器并让
+          # GitHub Action 失败，避免后续 web promote / smoke 把不完整发布标绿。
           ###############################################
-          echo "::group::A.6) DB migrations (idempotent)"
-          if docker exec treatbot-api node scripts/migrate.js; then
-            echo "  ✅ Migrations done"
-          else
-            echo "  ⚠ Migrate exit non-zero — 旧表结构兼容，业务不阻塞，但请人工排查"
+          echo "::group::A.6) DB migrations (release gate)"
+          if ! docker exec treatbot-api node scripts/migrate.js; then
+            echo "  ❌ Migrations failed — rolling back to treatbot-api-prev-${TS} and failing deploy"
+            echo "  --- new container logs (tail 80) ---"
+            docker logs treatbot-api --tail 80 || true
+            echo "  -------------------------------------"
+            docker rm -f treatbot-api || true
+            if docker inspect "treatbot-api-prev-${TS}" >/dev/null 2>&1; then
+              docker rename "treatbot-api-prev-${TS}" treatbot-api
+              docker start treatbot-api
+            fi
+            exit 1
           fi
+          echo "  ✅ Migrations done"
           echo "::endgroup::"
 
           ###############################################

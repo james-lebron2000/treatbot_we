@@ -4,7 +4,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const { requireAdminToken, requireRole } = require('../middleware/adminAuth');
 const { idempotencyMiddleware } = require('../middleware/idempotency');
-const { strictLimiter, uploadLimiter, parseStatusLimiter } = require('../middleware/rateLimit');
+const { strictLimiter, uploadLimiter, parseStatusLimiter, parseStreamLimiter } = require('../middleware/rateLimit');
 // PRD-2026Q2 §2.3：Admin 操作审计日志中间件
 const { logAdmin } = require('../middleware/auditLog');
 
@@ -84,13 +84,17 @@ router.get('/medical/parse-status', authMiddleware, parseStatusLimiter, medicalC
 router.get('/medical/parse-status-batch', authMiddleware, parseStatusLimiter, medicalController.getParseStatusBatch);
 router.post('/medical/parse-status-batch', authMiddleware, parseStatusLimiter, medicalController.getParseStatusBatch);
 // Plan §Phase 2.3 + PRD-2026Q4 流式 OCR：SSE 解析状态推送（主路径）+ 客户端 10s 内 fallback 轮询。
-//   - text/event-stream long poll；无 rate limit（同一用户最多 20 个 record）
+//   - text/event-stream long poll；专用重连限流 + controller 内活跃连接上限
 //   - 终态自动 end；Redis 不可用立即吐 noredis 让客户端切回轮询
 //   - PRD-2026Q4 流式 OCR 复用同一 pipe：每帧附带 statusPhase + fieldGroup + fields/rawText
-router.get('/medical/parse-status-stream', authMiddleware, medicalController.handleParseStatusStream);
+router.get('/medical/parse-status-stream', authMiddleware, parseStreamLimiter, medicalController.handleParseStatusStream);
 // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（Doubao 优先，规则兜底）。
 // Phase E.6 / Review #3：每次调用都跑 LLM（~$0.05/call），强制走 uploadLimiter (30/h) 防被滥用。
 router.get('/medical/timeline', authMiddleware, uploadLimiter, medicalController.getTimeline);
+router.get('/medical/cases/current', authMiddleware, medicalController.getCurrentCase);
+router.get('/medical/cases/:caseId', authMiddleware, medicalController.getCase);
+router.post('/medical/cases/:caseId/revisions', authMiddleware, medicalController.applyCaseRevisions);
+router.get('/medical/cases/:caseId/evidence', authMiddleware, medicalController.getCaseEvidence);
 router.get('/medical/records', authMiddleware, medicalController.getRecords);
 router.get('/medical/records/:id', authMiddleware, medicalController.getRecordDetail);
 router.get('/medical/records/:id/file', authMiddleware, medicalController.downloadRecordFile);

@@ -151,17 +151,19 @@ const splitFrames = (raw) => {
  */
 const parseFrame = (frame) => {
   let event = 'message'
+  let id = ''
   const dataLines = []
   for (const line of frame.split(/\r?\n/)) {
     if (!line) continue
     if (line.startsWith(':')) continue // SSE 注释 / 心跳
     if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('id:')) id = line.slice(3).trim()
     else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
   }
   if (!dataLines.length) return null
   let data
   try { data = JSON.parse(dataLines.join('\n')) } catch (e) { return null }
-  return { event, data }
+  return id ? { event, data, id } : { event, data }
 }
 
 /**
@@ -183,6 +185,8 @@ const openParseStatusStream = (opts) => {
     url,
     token,
     onState,
+    onBatchState,
+    onMergePreview,
     onDone,
     onError,
     openTimeoutMs = 10000,
@@ -277,6 +281,10 @@ const openParseStatusStream = (opts) => {
       }
       if (event === 'state') {
         if (typeof onState === 'function') onState(data)
+      } else if (event === 'batch_state') {
+        if (typeof onBatchState === 'function') onBatchState(data)
+      } else if (event === 'merge_preview') {
+        if (typeof onMergePreview === 'function') onMergePreview(data)
       } else if (event === 'done') {
         callDone(data)
         try { requestTask.abort && requestTask.abort() } catch (e) { /* noop */ }

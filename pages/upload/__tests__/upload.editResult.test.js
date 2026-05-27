@@ -186,4 +186,24 @@ describe('handleCompletedResult contract', () => {
       expect.objectContaining({ diagnosis: '肺腺癌', stage: 'IV期' })
     )
   })
+
+  test('完成态 result.recordId 优先于页面旧 recordId，避免部分失败批次写回失败首图', () => {
+    const ctx = buildCompletedCtx({
+      recordId: 'r-failed-first',
+      fileId: 'r-failed-first'
+    })
+
+    pageOptions.handleCompletedResult.call(ctx, {
+      recordId: 'r-ok',
+      id: 'r-ok',
+      entities: {
+        diagnosis: '肺腺癌',
+        stage: 'IV期',
+        age: 65,
+        ecog: '1'
+      }
+    })
+
+    expect(wxMock.setStorageSync).toHaveBeenCalledWith('currentRecordId', 'r-ok')
+  })
 })

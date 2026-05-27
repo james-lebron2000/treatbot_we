@@ -340,7 +340,7 @@ const syncActiveParseBatch = async () => {
     return null
   }
 
-  const res = await api.getParseStatusBatch(batch.fileIds)
+  const res = await api.getParseStatusBatch(batch.fileIds, batch.batchId || '')
   const payload = pickPayload(res)
   const entries = Array.isArray(payload.entries) ? payload.entries : []
   const completedCount = Number(payload.completedCount || 0)
@@ -352,8 +352,21 @@ const syncActiveParseBatch = async () => {
   const progress = total > 0 ? Math.floor(((completedCount + erroredCount) / total) * 100) : 0
 
   const completedEntries = entries.filter((e) => COMPLETED_STATUSES.includes(e.status))
-  const completedRecordIds = completedEntries.map((e) => e.recordId).filter(Boolean)
-  const mergedEntities = mergeStructuredEntities(entries)
+  const completedRecordIds = completedEntries.map((e) => e.recordId || e.fileId).filter(Boolean)
+  const caseEntities = payload.case && payload.case.entities && typeof payload.case.entities === 'object'
+    ? payload.case.entities
+    : null
+  const mergeEntries = caseEntities
+    ? [
+        {
+          status: 'completed',
+          result: { entities: caseEntities },
+          recordId: completedRecordIds[0] || batch.fileIds[0]
+        },
+        ...entries
+      ]
+    : entries
+  const mergedEntities = mergeStructuredEntities(mergeEntries)
 
   const nextBatch = setActiveParseBatch({
     ...batch,
@@ -370,15 +383,18 @@ const syncActiveParseBatch = async () => {
     // 所有终态 → 把合并后的结果写到与单文件 path 共享的 storage key，
     // 让 records/detail、matches 等不感知批量也能读到完整病历卡片。
     if (completedEntries.length) {
-      const last = completedEntries[completedEntries.length - 1]
-      const resolvedRecordId = last.recordId || last.fileId
+      const firstCompleted = completedEntries[0]
+      const caseSourceRecordId = payload.case && Array.isArray(payload.case.sourceRecordIds)
+        ? payload.case.sourceRecordIds.find((id) => completedEntries.some((entry) => (entry.recordId || entry.fileId) === id))
+        : ''
+      const resolvedRecordId = caseSourceRecordId || firstCompleted.recordId || firstCompleted.fileId
       const result = mergedEntities
         ? {
             ...mergedEntities,
             id: resolvedRecordId || mergedEntities.id || '',
             recordId: resolvedRecordId || mergedEntities.recordId || ''
           }
-        : schema.normalizeStructuredRecord(last.result || {})
+        : schema.normalizeStructuredRecord(firstCompleted.result || {})
       if (resolvedRecordId) {
         setCachedParseResult(resolvedRecordId, result)
         wx.setStorageSync('currentRecordId', resolvedRecordId)

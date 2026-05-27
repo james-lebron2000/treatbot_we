@@ -2,10 +2,27 @@
   <view class="page-header">
     <view class="page-title-group">
       <text class="page-title">为家人找到的新药</text>
-      <text class="page-subtitle">围绕您上传的病历，为家人找出可能能免费用上的新药 —— 每一种都说清楚为什么适合。</text>
+      <text class="page-subtitle">围绕您上传的病历，为家人找出可能能免费用上的新药。</text>
     </view>
     <view class="filter-btn" bindtap="loadMatches">
       <text>刷新</text>
+    </view>
+  </view>
+
+  <!-- 2026-05 UX：信任三件套。家属对「免费」二字本能怀疑，必须在折叠态就把
+       「谁审核 / 数据从哪来 / 收不收钱」摆在眼前。三个 chip 各一句，不超 14 字。 -->
+  <view class="trust-strip">
+    <view class="trust-chip">
+      <icon name="shield-check" color="mint" size="24" />
+      <text>肿瘤科医师人工复核</text>
+    </view>
+    <view class="trust-chip">
+      <icon name="clipboard-list" color="brand" size="24" />
+      <text>药监局 + 临床试验官方库</text>
+    </view>
+    <view class="trust-chip">
+      <icon name="lock" color="lilac" size="24" />
+      <text>全程免费 · 不卖信息</text>
     </view>
   </view>
 
@@ -67,15 +84,11 @@
 
   <view class="matches-list" wx:if="{{!loading && !errorMessage && matches.length > 0}}">
     <view class="match-card" wx:for="{{matches}}" wx:key="id">
-      <!-- U4：人话理由 —— 置顶一行解释「为什么这种新药适合」，不取代下面的 score / decisionHint。 -->
-      <view class="human-reason">
-        <icon name="check" color="mint" size="28" strokeWidth="2.5" />
-        <text class="human-reason-text">为什么适合：{{item.humanReason}}</text>
-      </view>
-
-      <!-- 货架卡片 header：药品名 = 主标题；类别/剂型 = 副标题；评分 = 右侧大徽章
-           PRD-2026Q2 §T2-1：「看详情/收起」从 score-badge 下方移到右上角 chevron。
-           score-badge 是核心信息，不该被「看详情」文字打断。 -->
+      <!-- 2026-05 重设计：卡片折叠态只保留患者/家属真正需要的三件事 —— 是什么药、有多匹配、谁来提供。
+           原来的「为什么适合」(humanReason)、药物分类/剂型副标题、三色标签 (免费/高度匹配/I期)、
+           主治线均移除：要么重复（page-title 已说明免费用药范围、score badge 已表达匹配度），
+           要么对家属决策没增量信息（drugClass/drugForm/phase 都属于专业元信息）。
+           需要更详细信息的家属点 chevron 展开 → decisionHint + 医院 + 入组/排除标准。 -->
       <view class="match-card-header" bindtap="toggleMatchExpand" data-id="{{item.id}}">
         <view class="match-content">
           <view class="drug-headline">
@@ -83,10 +96,13 @@
             <text class="drug-name">{{item.drugName}}</text>
             <text class="drug-code" wx:if="{{item.drugCode}}">/ {{item.drugCode}}</text>
           </view>
-          <view class="drug-subline">
-            <text class="drug-class">{{item.drugClass}}</text>
-            <text class="drug-form" wx:if="{{item.drugForm}}"> · {{item.drugForm}}</text>
-            <text class="drug-brand" wx:if="{{item.drugBrand}}"> · {{item.drugBrand}}</text>
+          <text class="match-source" wx:if="{{item.manufacturer}}">{{item.manufacturer}}<text wx:if="{{item.institution && item.institution !== '待补'}}"> ｜ {{item.institution}}</text></text>
+          <!-- 2026-05 UX：把「我们的看法」从展开态提到折叠态。家属盯着 87% 不知道
+               87 算好算坏，但一眼看到「建议优先了解」就能立刻判断要不要点开。
+               展开态里这条会消失（避免重复）。 -->
+          <view class="decision-glance tone-{{item.decisionTone}}" wx:if="{{item.decisionHint && !item.expanded}}">
+            <icon name="lightbulb" color="{{item.decisionTone === 'good' ? 'mint' : item.decisionTone === 'warn' ? 'amber' : item.decisionTone === 'risk' ? 'red' : 'brand'}}" size="24" />
+            <text class="decision-glance-text">{{item.decisionHint}}</text>
           </view>
         </view>
         <view class="match-header-right">
@@ -98,16 +114,6 @@
             <text class="label">匹配度</text>
           </view>
         </view>
-      </view>
-
-      <view class="match-card-summary">
-        <view class="match-tags">
-          <text class="tag tag-free" wx:if="{{item.freeAccess}}">免费用药</text>
-          <text class="tag tag-level level-{{item.score >= 80 ? 'high' : (item.score >= 60 ? 'mid' : 'low')}}">{{item.matchLevel}}</text>
-          <text class="tag tag-primary">{{item.phase}}</text>
-        </view>
-        <text class="match-indication">主治：{{item.indication}}</text>
-        <text class="match-source" wx:if="{{item.manufacturer}}">提供：{{item.manufacturer}}<text wx:if="{{item.institution && item.institution !== '待补'}}"> ｜ {{item.institution}}</text></text>
       </view>
 
       <view wx:if="{{item.expanded}}" class="match-card-expanded">
@@ -154,8 +160,30 @@
           <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看用药详情</button>
           <button class="btn btn-primary apply-btn" catchtap="applyTrial" data-id="{{item.id}}">
             <icon name="phone-call" color="white" size="32" />
-            <text class="apply-btn-text">申请免费用药</text>
+            <!-- 2026-05 UX：「申请免费用药」对焦虑家属来说承诺感太重，「免费」二字
+                 又像广告 —— 改成「我想申请这个」语气轻，决策门槛低。「免费」信息
+                 由 page-title 和 trust-strip 承担。 -->
+            <text class="apply-btn-text">我想申请这个</text>
           </button>
+        </view>
+        <!-- 2026-05 UX：期望管理 + 信任补强。「申请按下去会怎样」是家属最大的黑箱
+             焦虑；把「2-3 天回电 / 全程免费 / 不卖信息」摆出来，让她敢按下去。 -->
+        <view class="match-expectation">
+          <icon name="alert-circle" color="text-dim" size="22" />
+          <text>申请后通常 2-3 天医院主动联系您 · 全程不收家属一分钱 · 不会把您的信息卖给任何人</text>
+        </view>
+        <!-- 2026-05 UX：「发给医生看看」是最强的口碑发动机。主治医生背书是中国家庭
+             决策催化剂；同时家属在病友群转发这个「医生版方案」的概率远高于转发
+             小程序链接。catchtap 防止冒泡触发卡片收起。 -->
+        <view class="match-share-row">
+          <view class="share-link" catchtap="shareToDoctor" data-id="{{item.id}}">
+            <icon name="file-text" color="text-dim" size="26" />
+            <text>打印给医生看看</text>
+          </view>
+          <view class="share-link" catchtap="shareToFamily" data-id="{{item.id}}">
+            <icon name="arrow-right" color="text-dim" size="26" />
+            <text>发给家人讨论</text>
+          </view>
         </view>
       </view>
     </view>

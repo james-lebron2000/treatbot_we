@@ -17,6 +17,7 @@ GHCR_IMAGE_ARG="${GHCR_IMAGE:-}"
 GHCR_IMAGE=""
 GHCR_USER="${GHCR_USER:-}"
 GHCR_TOKEN="${GHCR_TOKEN:-}"
+REMOTE_OCR_SECRET_FILE="${REMOTE_OCR_SECRET_FILE:-~/treatbot-deploy-secrets/ocr.env}"
 
 usage() {
   cat <<'USAGE'
@@ -38,17 +39,22 @@ Options:
   --ghcr-image IMAGE      Optional GHCR image to pull before local build fallback
   --ghcr-user USER        GHCR username. Default: $GHCR_USER
   --ghcr-token TOKEN      GHCR token. Default: $GHCR_TOKEN
+  --remote-ocr-secret-file FILE
+                          Remote env file for OCR provider credential overrides.
+                          Default: $HOME/treatbot-deploy-secrets/ocr.env
   -h, --help              Show this help
 
 Sensitive OCR credentials are not required locally. The script backs up the
-existing treatbot-api container env on the server and reuses it. If KIMI_API_KEY
-or ARK_API_KEY is set in the local environment, that value overrides the
-server-side backup for this deploy.
+existing treatbot-api container env on the server and reuses it. To rotate
+KIMI_API_KEY, ARK_API_KEY/DOUBAO_API_KEY, or VOLCENGINE_AK/SK for a manual deploy,
+write them to the remote secret file on the production host; do not pass API keys
+via local environment variables or SSH command arguments.
 
 Examples:
   scripts/deploy-production.sh
   scripts/deploy-production.sh --relay root@45.32.219.241
   scripts/deploy-production.sh --prod ubuntu@49.235.162.129 --backend-only
+  ssh ubuntu@49.235.162.129 'install -m 700 -d ~/treatbot-deploy-secrets && install -m 600 /dev/null ~/treatbot-deploy-secrets/ocr.env'
 USAGE
 }
 
@@ -102,6 +108,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --ghcr-token)
       GHCR_TOKEN="${2:?missing --ghcr-token value}"
+      shift 2
+      ;;
+    --remote-ocr-secret-file)
+      REMOTE_OCR_SECRET_FILE="${2:?missing --remote-ocr-secret-file value}"
       shift 2
       ;;
     -h|--help)
@@ -166,8 +176,7 @@ remote_env() {
   printf 'APPLY_CADDY=%s ' "$(q "$APPLY_CADDY")"
   printf 'RUN_SMOKE=%s ' "$(q "$RUN_SMOKE")"
   printf 'PUBLIC_URL=%s ' "$(q "$PUBLIC_URL")"
-  printf 'KIMI_API_KEY=%s ' "$(q "${KIMI_API_KEY:-}")"
-  printf 'ARK_API_KEY=%s ' "$(q "${ARK_API_KEY:-}")"
+  printf 'REMOTE_OCR_SECRET_FILE=%s ' "$(q "$REMOTE_OCR_SECRET_FILE")"
 }
 
 remote() {
@@ -409,6 +418,34 @@ fi
 chmod 600 "$BACKUP_ENV"
 echo "  ok env file prepared at $BACKUP_ENV ($(wc -l < "$BACKUP_ENV") vars)"
 
+case "${REMOTE_OCR_SECRET_FILE:-}" in
+  "~/"*) REMOTE_OCR_SECRET_FILE="$HOME/${REMOTE_OCR_SECRET_FILE#~/}" ;;
+esac
+if [ -f "${REMOTE_OCR_SECRET_FILE:-}" ]; then
+  SECRET_MODE=$(stat -c '%a' "$REMOTE_OCR_SECRET_FILE" 2>/dev/null || stat -f '%Lp' "$REMOTE_OCR_SECRET_FILE")
+  case "$SECRET_MODE" in
+    600|400) ;;
+    *)
+      echo "  error remote OCR secret file must be mode 600 or 400: $REMOTE_OCR_SECRET_FILE (mode $SECRET_MODE)"
+      exit 1
+      ;;
+  esac
+  cp "$BACKUP_ENV" "${BACKUP_ENV}.next"
+  for SECRET_KEY_NAME in KIMI_API_KEY ARK_API_KEY DOUBAO_API_KEY DOUBAO_BASE_URL DOUBAO_MODEL VOLCENGINE_AK VOLCENGINE_SK; do
+    SECRET_LINE=$(grep -E "^${SECRET_KEY_NAME}=" "$REMOTE_OCR_SECRET_FILE" | tail -1 || true)
+    if [ -n "$SECRET_LINE" ]; then
+      awk -F= -v k="$SECRET_KEY_NAME" '$1 != k { print }' "${BACKUP_ENV}.next" > "${BACKUP_ENV}.merge"
+      printf '%s\n' "$SECRET_LINE" >> "${BACKUP_ENV}.merge"
+      mv "${BACKUP_ENV}.merge" "${BACKUP_ENV}.next"
+    fi
+  done
+  mv "${BACKUP_ENV}.next" "$BACKUP_ENV"
+  chmod 600 "$BACKUP_ENV"
+  echo "  ok OCR API key overrides loaded from remote secret file"
+else
+  echo "  no remote OCR secret file; preserving API keys from previous container env"
+fi
+
 if docker inspect treatbot-api >/dev/null 2>&1; then
   docker stop treatbot-api
   EXISTING_PREV=$(docker ps -a --format '{{.Names}}' | grep -E '^treatbot-api-prev-' | sort | head -n -4 || true)
@@ -429,17 +466,21 @@ for d in /opt/treatbot/server/data /opt/treatbot/server/logs /opt/treatbot/serve
 done
 
 OCR_ENV_FLAGS=()
-[ -n "${KIMI_API_KEY:-}" ] && OCR_ENV_FLAGS+=(-e "KIMI_API_KEY=$KIMI_API_KEY")
 OCR_ENV_FLAGS+=(-e "KIMI_VISION_MODEL=moonshot-v1-128k-vision-preview")
-[ -n "${ARK_API_KEY:-}" ] && OCR_ENV_FLAGS+=(-e "ARK_API_KEY=$ARK_API_KEY")
 OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=doubao-seed-1-6-vision-250815")
 OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3")
 OCR_ENV_FLAGS+=(-e "ARK_TIMEOUT_MS=180000")
 OCR_ENV_FLAGS+=(-e "OCR_JOB_TIMEOUT_MS=900000")
 OCR_ENV_FLAGS+=(-e "OCR_STRUCTURED_STREAM_TIMEOUT_MS=45000")
 OCR_ENV_FLAGS+=(-e "PARSE_STATUS_RATE_LIMIT_MAX=3600")
+OCR_ENV_FLAGS+=(-e "PARSE_STREAM_RATE_LIMIT_MAX=300")
+OCR_ENV_FLAGS+=(-e "PARSE_STREAM_MAX_ACTIVE_PER_USER=3")
 OCR_ENV_FLAGS+=(-e "OCR_PROVIDER=auto")
 OCR_ENV_FLAGS+=(-e "OCR_QUEUE_CONCURRENCY=3")
+OCR_ENV_FLAGS+=(-e "OCR_MAX_ACTIVE_PER_USER=3")
+OCR_ENV_FLAGS+=(-e "OCR_MAX_WAITING_JOBS=2000")
+OCR_ENV_FLAGS+=(-e "OCR_INPROC_FALLBACK_MAX=1")
+OCR_ENV_FLAGS+=(-e "OCR_EVENT_STREAM_MAXLEN=200")
 OCR_ENV_FLAGS+=(-e "OCR_PDF_VISION_MAX_PAGES=3")
 OCR_ENV_FLAGS+=(-e "OCR_PDF_VISION_DPI=150")
 OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_USERNAME=treatbot_admin")
@@ -448,10 +489,12 @@ OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_TOKEN_TTL=3600")
 OCR_ENV_FLAGS+=(-e "ADMIN_LOGIN_CAN_REVEAL=true")
 
 echo "  OCR env override:"
-[ -n "${KIMI_API_KEY:-}" ] && echo "    KIMI_API_KEY override supplied" || echo "    KIMI_API_KEY preserved from previous container"
-[ -n "${ARK_API_KEY:-}" ] && echo "    ARK_API_KEY override supplied" || echo "    ARK_API_KEY preserved from previous container"
+echo "    KIMI_API_KEY/ARK_API_KEY/DOUBAO_API_KEY/VOLCENGINE_AK/VOLCENGINE_SK preserved from previous container or remote secret file"
 echo "    OCR_QUEUE_CONCURRENCY=3"
 echo "    PARSE_STATUS_RATE_LIMIT_MAX=3600"
+echo "    PARSE_STREAM_MAX_ACTIVE_PER_USER=3"
+echo "    OCR_MAX_ACTIVE_PER_USER=3"
+echo "    OCR_MAX_WAITING_JOBS=2000"
 
 docker run -d --name treatbot-api \
   --network server_treatbot-network \
@@ -497,11 +540,17 @@ echo "    docker stop treatbot-api && docker rm treatbot-api && docker rename tr
 echo "::endgroup::"
 
 echo "::group::C) DB migrations"
-if docker exec treatbot-api node scripts/migrate.js; then
-  echo "  ok migrations done"
-else
-  echo "  warn migrate failed; deploy continues because old schema may still be compatible"
+if ! docker exec treatbot-api node scripts/migrate.js; then
+  echo "  error migrations failed; rolling back backend container and failing deploy"
+  docker logs treatbot-api --tail 80 || true
+  docker rm -f treatbot-api || true
+  if docker inspect "treatbot-api-prev-${TS}" >/dev/null 2>&1; then
+    docker rename "treatbot-api-prev-${TS}" treatbot-api
+    docker start treatbot-api
+  fi
+  exit 1
 fi
+echo "  ok migrations done"
 echo "::endgroup::"
 
 if [ "${PROMOTE_WEB:-1}" = "1" ]; then

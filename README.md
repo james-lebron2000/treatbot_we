@@ -33,12 +33,32 @@
 支持图片（JPG/PNG/WEBP）和 PDF（包括扫描件）：
 
 ```
-PDF 扫描件  →  Kimi File API（上传 → 视觉识别 → 结构化）
-PDF 文本层  →  pdf-parse 提取文本  →  Kimi 文本模式结构化
-图片        →  Kimi Vision / 腾讯云 OCR → 规则兜底
+图片 / 扫描件  →  Volcengine OCRNormal 抽取 line_texts  →  Doubao/Kimi 文本结构化
+PDF 文本层     →  pdf-parse / markitdown 提取文本       →  Doubao/Kimi 文本结构化
+复杂版式兜底   →  Doubao Vision / Kimi Vision             →  结构化
+最终兜底       →  规则抽取
 ```
 
+当前架构决策：优先用 `VOLCENGINE_AK` / `VOLCENGINE_SK` 调火山通用文字识别 `OCRNormal` 做低成本文字抽取，再把 `line_texts` 交给现有 LLM 结构化层生成病历字段。`ARK_API_KEY` / `DOUBAO_API_KEY` 仍用于 Doubao 文本结构化和复杂图片的 vision fallback，不把火山 AK/SK 当作 Ark API Key 使用。详见 [OCR Provider Strategy](docs/ocr-provider-strategy.md)。
+
+生产观测指标：`volcengine_ocr_calls_total`、`volcengine_ocr_call_duration_seconds`、`volcengine_ocr_lines_total` 记录 OCRNormal 调用量、耗时和识别行数；LLM 结构化仍使用 `llm_call_total`、`llm_tokens_total` 和 fallback 指标。
+
 提取字段：`diagnosis` / `stage` / `geneMutation` / `pdl1` / `treatment` / `treatmentLine` / `ecog`
+
+### OCR 成本口径
+
+Volcengine OCRNormal 按图片调用次数计费，适合作为第一跳 OCR。当前公开价：
+
+| 月调用量 | 单价 |
+|---|---:|
+| 免费额度 | 5000 次，免费 QPS 1 |
+| 0-5 万次/月 | ¥0.005 / 次 |
+| 5-10 万次/月 | ¥0.0045 / 次 |
+| 10-50 万次/月 | ¥0.0035 / 次 |
+| 50-100 万次/月 | ¥0.003 / 次 |
+| >100 万次/月 | ¥0.002 / 次 |
+
+资源包可进一步压低到约 ¥0.001-0.001875 / 次。Treatbot 成本估算按“每张图片 1 次 OCRNormal + 一次文本结构化 LLM”计算；复杂版式 fallback 到 Doubao/Kimi Vision 时另按视觉 LLM token 计费。
 
 ### 两阶段匹配引擎
 
@@ -90,7 +110,7 @@ treatbot_we/
 │   │   ├── medical.js         # 病历上传、解析状态
 │   │   └── match.js           # 匹配查询、试验详情
 │   ├── services/
-│   │   ├── ocr.js             # OCR 核心（Kimi / 腾讯云 / 规则）
+│   │   ├── ocr.js             # OCR 核心（Volcengine OCR / Doubao / Kimi / 规则）
 │   │   ├── matchEngine.js     # 两阶段匹配引擎
 │   │   └── queue.js           # Bull 队列处理器
 │   ├── models/
@@ -140,7 +160,7 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 
 生产发布有两条入口：
 - 自动链路：**GitHub Actions Secrets** 是配置来源，由 `.github/workflows/deploy.yml` 在 `docker run -e` 时注入容器。
-- 手动链路：`scripts/deploy-production.sh` 不依赖 GitHub Actions。它从生产机当前 `treatbot-api` 容器导出 env 作为备份文件，再用同一套非敏感 OCR/限流参数覆盖；如果本机环境显式设置了 `KIMI_API_KEY` 或 `ARK_API_KEY`，脚本才会用本机值覆盖服务器旧值。
+- 手动链路：`scripts/deploy-production.sh` 不依赖 GitHub Actions。它从生产机当前 `treatbot-api` 容器导出 env 作为备份文件，再用同一套非敏感 OCR/限流参数覆盖；OCR API key 只复用当前容器 env，或从生产机上的安全文件读取。
 
 这样可以避免 `.env` 与 CI 互相漂移，同时保留 GitHub Actions 不可用时的发布通道。`.env.example` 仅作为本地开发模板，生产不读取该文件。
 
@@ -161,7 +181,7 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 3. `build-api`：在 GitHub runner 构建 API 镜像并推送 GHCR，作为生产服务器拉取的标准镜像来源。
 4. `build-web`：构建 Treatbot Web `web/dist`，作为 `web-dist` artifact。
 5. `deploy`：通过 tar-over-ssh 上传 `web-dist.tar.gz`、`server-src.tar.gz` 和反代配置到服务器；不再用 `scp` 传这些控制文件，避免 GitHub runner 到服务器的 SFTP/SCP 传输偶发挂住。服务器会先尝试 `docker pull` GHCR 镜像，但只作为机会性快路径，8 分钟无结果就改用 `server-src.tar.gz` 本地 `docker build`。本地 build 会给 Dockerfile 传腾讯云 apt/pip 镜像源，避免生产服务器出境访问 PyPI 下载 `markitdown[pdf]` 依赖时超时。不要把 API 镜像 tarball 作为默认上传路径，2026-05-15 实测 230-262MB 跨境 SCP 会超过 75 分钟。
-6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 Treatbot Web、执行 smoke。
+6. `deploy` 一进入 SSH 脚本会先做 preflight schema repair，幂等补齐 `medical_records` 运行期依赖列（如 `status_phase`、`cancelled_at`、`is_active`），再替换容器、执行 `node scripts/migrate.js`、提升 Treatbot Web、执行 smoke。`node scripts/migrate.js` 是发布门禁：任何非零退出都会回滚新后端容器、终止 workflow，不会继续提升 web 或把部署标绿。
 7. 后端发布成功标准不是 `/health` 返回 200，而是新容器实际运行 `treatbot-api:${GITHUB_SHA}`。部署脚本会在容器启动后校验 `docker inspect treatbot-api -f '{{.Config.Image}}'`，如果 GHCR pull、本地 build 和 tarball 都不可用，会直接失败，不再保留旧容器后把 workflow 标成成功。
 8. 发布后 workflow 会把服务器发现信息回写到 `docs/deploy-state-server-dump.md`；这是自动生成文件，正常不要手改。
 
@@ -182,7 +202,23 @@ npm run dev   # 默认读取 .env（仅本地用，下面有详细说明）
 ./scripts/deploy-production.sh --backend-only --relay root@45.32.219.241
 ```
 
-手动脚本的行为与 workflow 保持一致：构建或复用 `web/dist`，用 `git archive` 打包 `server-src.tar.gz`，通过 tar-over-ssh 上传控制文件，服务器端优先复用/拉取镜像，失败则从源码本地 `docker build`，随后替换 `treatbot-api`、运行迁移、提升 Treatbot Web、校验 Caddy、执行 smoke。中转模式使用 `ssh -J`，文件不会落到中转机磁盘。
+手动脚本的行为与 workflow 保持一致：构建或复用 `web/dist`，用 `git archive` 打包 `server-src.tar.gz`，通过 tar-over-ssh 上传控制文件，服务器端优先复用/拉取镜像，失败则从源码本地 `docker build`，随后替换 `treatbot-api`、运行迁移、提升 Treatbot Web、校验 Caddy、执行 smoke。`node scripts/migrate.js` 是硬门禁；失败时脚本会回滚新后端容器并以非零状态退出。中转模式使用 `ssh -J`，文件不会落到中转机磁盘。
+
+手动链路不要用 `KIMI_API_KEY=... ./scripts/deploy-production.sh` 这类本机环境变量方式传 key；这些值容易进入 shell history、进程列表或 SSH command。需要轮换 OCR key 时，先在生产机创建远端安全文件，再执行脚本：
+
+```bash
+ssh ubuntu@49.235.162.129 'install -m 700 -d ~/treatbot-deploy-secrets && install -m 600 /dev/null ~/treatbot-deploy-secrets/ocr.env'
+ssh ubuntu@49.235.162.129 'nano ~/treatbot-deploy-secrets/ocr.env'
+# 文件内容仅允许需要覆盖的键：
+# KIMI_API_KEY=<redacted-rotated-key>
+# ARK_API_KEY=<redacted-rotated-key>
+# 或使用本地/火山命名：
+# DOUBAO_API_KEY=<redacted-rotated-key>
+# VOLCENGINE_AK=<redacted-ak>
+# VOLCENGINE_SK=<redacted-sk>
+
+./scripts/deploy-production.sh --prod ubuntu@49.235.162.129
+```
 
 手动脚本不会自动提交 `docs/deploy-state-server-dump.md`，需要排查时直接读取服务器状态：
 
@@ -197,11 +233,19 @@ ssh ubuntu@49.235.162.129 "docker inspect treatbot-api -f '{{.Config.Image}}'"
 curl -fsS https://inseq.top/health
 ssh ubuntu@49.235.162.129 "docker inspect treatbot-api -f '{{.Config.Image}}'"
 curl -i -sS 'https://inseq.top/api/medical/parse-status-stream?recordIds=rec_smoke'
+curl -i -sS 'https://inseq.top/api/medical/parse-status-batch?recordIds=rec_smoke'
 TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
   BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 ```
 
-期望：`/health` 返回 `status=ok`；未登录 SSE 返回 `401` 而不是 `404`；带 Treatbot Web 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
+期望：`/health` 返回 `status=ok`；未登录 SSE 和 `parse-status-batch` 返回 `401` 而不是 `404/500`；带 Treatbot Web 测试账号的 smoke 能完成登录、上传、解析轮询。OCR streaming 的实时事件使用 `/api/medical/parse-status-stream?recordIds=...`。
+
+生产 OCR smoke checklist：
+- 单图上传：`server/public/demo/sample-2-nsclc.jpg` 能完成 `completed`，结构化字段非空。
+- 多图上传：同一用户一次上传 2-3 张图片，`parse-status-batch` 能返回每条 `recordId` 的状态，最终均进入 terminal state。
+- 长图 / PDF：长截图或 PDF 能排队、解析或给出可解释失败；队列不应卡住后续任务。
+- Redis fallback：临时不可用或队列降级时，`OCR_INPROC_FALLBACK_MAX=1` 只允许有限进程内兜底，日志应出现 fallback 但 API 不应整体 500。
+- `parse-status-batch`：认证后批量查询返回稳定 shape；未认证返回 `401`。
 
 **自动部署所需 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
 
@@ -210,7 +254,8 @@ TREATBOT_PHONE=13800138000 FILE_PATH=server/public/demo/sample-2-nsclc.jpg \
 | `SERVER_HOST` | 生产 SSH 主机（IP 或域名） |
 | `SERVER_USER` | 生产 SSH 用户（`ubuntu`） |
 | `SERVER_SSH_KEY` | 部署私钥 |
-| `ARK_API_KEY` | 火山方舟（Doubao）密钥 — **OCR 主路径** |
+| `VOLCENGINE_AK` / `VOLCENGINE_SK` | 火山引擎 AK/SK — **OCRNormal 文字识别第一跳** |
+| `ARK_API_KEY` / `DOUBAO_API_KEY` | 火山方舟（Doubao）密钥 — 文本结构化与复杂图片 vision fallback |
 | `KIMI_API_KEY` | Moonshot Kimi 密钥 — OCR fallback |
 | `COS_SECRET_ID` / `COS_SECRET_KEY` | 腾讯云 COS（病历存储） |
 | `WEAPP_APPID` / `WEAPP_SECRET` | 微信小程序登录凭证 |
@@ -229,19 +274,25 @@ env:
   OCR_JOB_TIMEOUT_MS: '900000'                 # Bull worker 防僵尸兜底，不是客户端等待上限
   OCR_STRUCTURED_STREAM_TIMEOUT_MS: '45000'    # 二次流式结构化超时，失败用主 OCR 结果兜底
   PARSE_STATUS_RATE_LIMIT_MAX: '3600'          # 解析状态轮询单独按用户限流
+  PARSE_STREAM_RATE_LIMIT_MAX: '300'           # OCR 状态流重连限流，认证后按用户计数
+  PARSE_STREAM_MAX_ACTIVE_PER_USER: '3'        # 单用户最多同时打开的 OCR 状态流连接数
   KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
   OCR_QUEUE_CONCURRENCY: '3'
+  OCR_MAX_ACTIVE_PER_USER: '3'                 # 单用户等待/运行中的 OCR 任务上限
+  OCR_MAX_WAITING_JOBS: '2000'                 # 全局 OCR 队列准入上限
+  OCR_INPROC_FALLBACK_MAX: '1'                 # Redis 故障时 API 进程内 OCR 兜底并发上限
+  OCR_EVENT_STREAM_MAXLEN: '200'               # 每条 record 保留的 Redis Stream 事件数
 ```
 
 **常见误区**：
 - ❌ 直接 SSH 改 `/opt/treatbot/server/.env` 来切换 provider 或滚动密钥 —— 发布脚本不读取这个文件，容器使用的是上一容器 env dump + `docker run -e` 覆盖。
-- ✅ 自动链路改 GitHub Secret 后 re-run workflow；手动链路需要先更新当前容器 env 或在执行脚本时显式传入 `KIMI_API_KEY=... ARK_API_KEY=... ./scripts/deploy-production.sh`。
+- ✅ 自动链路改 GitHub Secret 后 re-run workflow；手动链路需要先更新当前容器 env，或写入生产机 `~/treatbot-deploy-secrets/ocr.env` 后再运行 `scripts/deploy-production.sh`。
 - 紧急 hotfix 想跳过 CI，可由维护者临时 SSH 上去 `docker run -e VAR=newvalue ...` 重启容器；但下次正常 deploy 会按发布入口的配置来源还原 —— 真正的 fix 必须落到 GitHub Secret 或手动发布流程。
 
 ### 数据库迁移 + 试验导入
 
 ```bash
-node scripts/migrate.js        # 建表 / 补列（幂等）
+node scripts/migrate.js        # 建表 / 补列（幂等）；生产发布门禁，失败必须阻断发布
 node scripts/importTrials.js   # 导入 496 条试验
 ```
 
@@ -344,7 +395,7 @@ ADMIN_TOKEN=xxx ./scripts/export-admin-data.sh users all csv
 | 后端框架 | Node.js 18 + Express 4 |
 | ORM | Sequelize 6 + MySQL 8 |
 | 队列 | Bull 4 + Redis 7 |
-| AI / OCR | Kimi (Moonshot) Vision + File API |
+| AI / OCR | Volcengine OCRNormal + Doubao/Kimi 文本结构化；Doubao/Kimi Vision fallback |
 | 文件存储 | 腾讯云 COS（可降级为本地 uploads/）|
 | 容器化 | Docker + alpine 镜像（多阶段构建）|
 | Treatbot Web | Vue 3 + Vite + TypeScript |
@@ -581,6 +632,8 @@ gh run list --branch main --limit 5
 BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 ```
 
+迁移失败处理：不要手工跳过 `node scripts/migrate.js`。先保留失败日志，确认是连接配置、权限、重复索引、DDL 锁还是新增 migration 本身的问题；修复后重新发布同一 SHA 或新 SHA。workflow / 手动脚本会在 migration 失败时回滚新后端容器并失败退出。
+
 关键环境变量清单：
 
 | 变量 | 必须 | 备注 |
@@ -589,6 +642,8 @@ BASE_URL=https://inseq.top ./server/scripts/smoke.sh
 | `JWT_SECRET` | ✅ | ≥32 字符强随机值；命中弱值黑名单会直接拒启 |
 | `DB_HOST / DB_USER / DB_PASSWORD / DB_NAME` | ✅ | MySQL |
 | `REDIS_HOST / REDIS_PORT` | ✅ | Bull 队列 |
-| `KIMI_API_KEY` | ✅ | OCR 核心 |
+| `VOLCENGINE_AK / VOLCENGINE_SK` | ✅ | 火山 OCRNormal 第一跳；不要配置到腾讯云 OCR 变量 |
+| `ARK_API_KEY / DOUBAO_API_KEY` | ✅ | Doubao 文本结构化与 vision fallback |
+| `KIMI_API_KEY` | 否 | OCR/结构化 fallback |
 | `PUBLIC_BASE_URL` | ✅ | 非 development 必须 HTTPS |
 | `ALLOWED_ORIGINS` | ✅ | 生产至少包含 `https://inseq.top` |

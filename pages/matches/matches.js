@@ -308,6 +308,49 @@ Page({
     })
   },
 
+  // 2026-05 UX：「打印给医生看看」—— 病友群口碑增长的物理载体之一。
+  // 主治医生背书是中国家庭决策催化剂，把这张「方案」做成医生能扫一眼就懂的
+  // 单页摘要（PDF / 长图），点开后可保存到相册或发到打印小程序。
+  // 现阶段后端单页摘要 endpoint 还没就绪，先 navigateTo 详情页 + 提示，
+  // 上线后改成 wx.canvasToTempFilePath 或调一个 share-card 渲染页即可。
+  shareToDoctor(e) {
+    const { id } = e.currentTarget.dataset
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (!trial) return
+    try { track('share_to_doctor', { trialId: trial.id }) } catch (e2) { /* ignore */ }
+    wx.showToast({ title: '正在生成医生版方案…', icon: 'loading', duration: 1200 })
+    setTimeout(() => {
+      wx.setStorageSync('selectedMatchDetail', trial)
+      wx.navigateTo({ url: `/pages/matches/detail/detail?id=${id}&mode=doctor` })
+    }, 600)
+  },
+
+  // 2026-05 UX：「发给家人讨论」—— 让家属不用一个人扛决策的心理安全网，
+  // 同时通过家庭群转发产生口碑外溢。走小程序原生分享卡片，跳到详情页带
+  // ?share=family 让对方进来直接看这一种药。
+  shareToFamily(e) {
+    const { id } = e.currentTarget.dataset
+    const trial = this.data.matches.find((item) => `${item.id}` === `${id}`)
+    if (!trial) return
+    try { track('share_to_family', { trialId: trial.id }) } catch (e2) { /* ignore */ }
+    // 小程序里点击 share-link 不能直接拉起分享面板（必须是 button open-type="share"），
+    // 这里先用 showActionSheet 给一个引导，告诉用户右上角分享按钮的位置 + 复制摘要兜底。
+    const summary = `${trial.drugName}${trial.drugCode ? ' / ' + trial.drugCode : ''}\n` +
+      `匹配度 ${trial.score}% · ${trial.decisionHint || ''}\n` +
+      `${trial.manufacturer || ''}${trial.institution && trial.institution !== '待补' ? ' ｜ ' + trial.institution : ''}`
+    wx.setClipboardData({
+      data: summary,
+      success: () => {
+        wx.showModal({
+          title: '已复制摘要',
+          content: '可以粘到家庭群里 · 也可以点右上角「···」分享小程序卡片',
+          showCancel: false,
+          confirmText: '知道了'
+        })
+      }
+    })
+  },
+
   // PRD-2026Q2 §P0-4：0 结果三步兜底之一 —— 订阅通知
   // 现阶段后端 /api/medical/notify-subscribe 还没就绪，先存本地 + 给 toast。
   // 上线后改 await api.subscribeNotify({ recordId, phone }) 即可。

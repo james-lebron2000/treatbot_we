@@ -40,6 +40,7 @@ export interface StreamEvent {
   stage: StreamStage
   progress: number | null
   ts: number
+  seq?: number
   // stage='ocr_text'
   rawText?: string
   // stage='field_group'
@@ -57,12 +58,19 @@ export interface StreamEvent {
 }
 
 export interface ParseStreamHandlers {
-  onHello?: (info: { hasRedis: boolean; recordIds: string[] }) => void
+  onHello?: (info: { hasRedis?: boolean; recordIds: string[]; batchId?: string | null }) => void
   onState: (evt: StreamEvent) => void
-  onDone?: (info: { reason: string }) => void
+  onDone?: (info: { reason: string; batchId?: string | null }) => void
+  onBatchState?: (info: any) => void
+  onMergePreview?: (info: any) => void
   onError?: (err: Error) => void
   /** Redis 不可用 / 浏览器不支持 fetch streaming → 上游切到轮询 */
   onNoredis?: (info: { reason: string }) => void
+}
+
+export type ParseStreamOptions = {
+  batchId?: string | null
+  afterSeq?: Record<string, number> | Map<string, number> | string | null
 }
 
 const SSE_DELIMITER = '\n\n'
@@ -91,6 +99,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       stage: 'field_group',
       progress,
       ts,
+      seq: typeof payload.seq === 'number' ? payload.seq : undefined,
       fieldGroup: payload.fieldGroup,
       fields: payload.fields
     }
@@ -102,24 +111,31 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       stage: 'ocr_text',
       progress,
       ts,
+      seq: typeof payload.seq === 'number' ? payload.seq : undefined,
       rawText: payload.rawText
     }
   }
 
   if (status === 'completed') {
     const r = payload.result || {}
+    const sourceEntities = r && typeof r.entities === 'object' && !Array.isArray(r.entities)
+      ? r.entities
+      : r
     // 把 main 的扁平字段重新包成 UploadView 期望的 { entities, text, provider, confidence }。
     // 注意：main 的 result.rawText 是截断到 500 字的 preview，不能当全量 text 用；
     // 但 UploadView 的 normalizeRecord 仅用 entities 的字段，text 仅做兜底显示，所以这里截断版本就够了。
-    const entities: Record<string, unknown> = {}
-    for (const k of ['diagnosis', 'stage', 'geneMutation', 'treatment', 'treatmentLine', 'pdl1', 'ecog']) {
-      if (r[k] !== undefined && r[k] !== null) entities[k] = r[k]
-    }
+    const entities: Record<string, unknown> = { ...sourceEntities }
+    delete entities.id
+    delete entities.recordId
+    delete entities.rawText
+    delete entities.confidence
+    delete entities.provider
     return {
       recordId,
       stage: 'completed',
       progress,
       ts,
+      seq: typeof payload.seq === 'number' ? payload.seq : undefined,
       result: {
         entities,
         text: typeof r.rawText === 'string' ? r.rawText : '',
@@ -134,6 +150,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       stage: 'error',
       progress,
       ts,
+      seq: typeof payload.seq === 'number' ? payload.seq : undefined,
       errorMsg: typeof payload.errorMsg === 'string' ? payload.errorMsg : '解析失败'
     }
   }
@@ -143,6 +160,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       stage: 'error',
       progress,
       ts,
+      seq: typeof payload.seq === 'number' ? payload.seq : undefined,
       errorMsg: '已取消'
     }
   }
@@ -153,8 +171,22 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
     recordId,
     stage: 'preprocess',
     progress,
-    ts
+    ts,
+    seq: typeof payload.seq === 'number' ? payload.seq : undefined
   }
+}
+
+const serializeAfterSeq = (afterSeq: ParseStreamOptions['afterSeq']): string => {
+  if (!afterSeq) return ''
+  if (typeof afterSeq === 'string') return afterSeq.trim()
+  const entries = afterSeq instanceof Map
+    ? Array.from(afterSeq.entries())
+    : Object.entries(afterSeq)
+  return entries
+    .map(([recordId, seq]) => [String(recordId).trim(), Number(seq)] as const)
+    .filter(([recordId, seq]) => recordId && Number.isFinite(seq) && seq >= 0)
+    .map(([recordId, seq]) => `${recordId}:${Math.floor(seq)}`)
+    .join(',')
 }
 
 const parseSseBlock = (block: string): { event: string; data: string } | null => {
@@ -184,6 +216,9 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
   }
   switch (parsed.event) {
     case 'noredis': handlers.onNoredis?.(payload); break
+    case 'hello':   handlers.onHello?.(payload); break
+    case 'batch_state': handlers.onBatchState?.(payload); break
+    case 'merge_preview': handlers.onMergePreview?.(payload); break
     case 'state': {
       const evt = folMainFrameToStage(payload)
       if (evt) handlers.onState(evt)
@@ -201,7 +236,8 @@ const dispatchBlock = (block: string, handlers: ParseStreamHandlers) => {
  */
 export const openParseStream = (
   recordIds: string[],
-  handlers: ParseStreamHandlers
+  handlers: ParseStreamHandlers,
+  options: ParseStreamOptions = {}
 ): (() => void) => {
   const ids = recordIds.map((s) => `${s ?? ''}`.trim()).filter(Boolean)
   if (!ids.length) {
@@ -211,7 +247,12 @@ export const openParseStream = (
 
   const baseURL = http.defaults.baseURL || ''
   const token = localStorage.getItem('token') || ''
-  const url = `${baseURL}/api/medical/parse-status-stream?recordIds=${encodeURIComponent(ids.join(','))}`
+  const qs = new URLSearchParams()
+  qs.set('recordIds', ids.join(','))
+  if (options.batchId) qs.set('batchId', options.batchId)
+  const afterSeq = serializeAfterSeq(options.afterSeq)
+  if (afterSeq) qs.set('afterSeq', afterSeq)
+  const url = `${baseURL}/api/medical/parse-status-stream?${qs.toString()}`
 
   const ctrl = new AbortController()
   let closed = false
