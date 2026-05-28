@@ -468,6 +468,8 @@ done
 OCR_ENV_FLAGS=()
 OCR_ENV_FLAGS+=(-e "KIMI_VISION_MODEL=moonshot-v1-128k-vision-preview")
 OCR_ENV_FLAGS+=(-e "ARK_VISION_MODEL=doubao-seed-1-6-vision-250815")
+OCR_ENV_FLAGS+=(-e "ARK_TEXT_MODEL=doubao-seed-2-0-lite-260215")
+OCR_ENV_FLAGS+=(-e "OCR_STRUCTURED_MODEL=doubao-seed-2-0-lite-260215")
 OCR_ENV_FLAGS+=(-e "ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3")
 OCR_ENV_FLAGS+=(-e "ARK_TIMEOUT_MS=180000")
 OCR_ENV_FLAGS+=(-e "OCR_JOB_TIMEOUT_MS=900000")

@@ -43,6 +43,7 @@ try {
 
 const { computeCost, estimateUpperBound } = require('../utils/llmPricing');
 const markitdown = require('../services/markitdown');
+const { getDoubaoBaseUrl, getDoubaoTextModel, getDoubaoVisionModel } = require('../utils/doubaoEnv');
 
 // ============================================================================
 // 配置
@@ -75,11 +76,10 @@ const PROVIDER_CFG = {
   }),
   doubao: () => ({
     apiKey: process.env.ARK_API_KEY || '',
-    baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
+    baseUrl: getDoubaoBaseUrl(),
     chatPath: '/chat/completions',
-    // Ark 必须用带版本后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）。
-    visionModel: process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
-    textModel: process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+    visionModel: getDoubaoVisionModel(),
+    textModel: getDoubaoTextModel(),
     timeoutMs: parseInt(process.env.ARK_TIMEOUT_MS || '60000', 10)
   })
 };

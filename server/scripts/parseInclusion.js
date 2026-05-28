@@ -19,14 +19,15 @@ const axios = require('axios');
 const dotenvPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
 
+const { getDoubaoBaseUrl, getDoubaoTextModel } = require('../utils/doubaoEnv');
+
 // 全部 provider 都走 OpenAI 兼容 /chat/completions。
 const PROVIDER_PRIORITY = (() => {
   if (process.env.ARK_API_KEY) {
     return {
       apiKey: process.env.ARK_API_KEY,
-      baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/+$/, ''),
-      // Doubao 视觉模型也接受纯文本输入；如有 ARK_TEXT_MODEL 则优先用它
-      model: process.env.ARK_TEXT_MODEL || process.env.ARK_VISION_MODEL || 'doubao-seed-1-6-vision-250815',
+      baseUrl: getDoubaoBaseUrl(),
+      model: getDoubaoTextModel(),
       chatPath: '/chat/completions',
       label: 'doubao'
     };

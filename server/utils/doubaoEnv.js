@@ -14,12 +14,17 @@ const getDoubaoBaseUrl = () => {
     .replace(/\/+$/, '');
 };
 
+const DEFAULT_DOUBAO_VISION_MODEL = 'doubao-seed-1-6-vision-250815';
+const DEFAULT_DOUBAO_TEXT_MODEL = 'doubao-seed-2-0-lite-260215';
+
 const getDoubaoVisionModel = () => {
-  return `${process.env.ARK_VISION_MODEL || process.env.DOUBAO_MODEL || 'doubao-seed-1-6-vision-250815'}`.trim();
+  return `${process.env.ARK_VISION_MODEL || process.env.DOUBAO_MODEL || DEFAULT_DOUBAO_VISION_MODEL}`.trim();
 };
 
 const getDoubaoTextModel = () => {
-  return `${process.env.ARK_TEXT_MODEL || process.env.DOUBAO_TEXT_MODEL || process.env.DOUBAO_MODEL || getDoubaoVisionModel()}`.trim();
+  // DOUBAO_MODEL is kept as a legacy vision alias; text structuring must not
+  // silently inherit a slower vision/pro model.
+  return `${process.env.ARK_TEXT_MODEL || process.env.DOUBAO_TEXT_MODEL || DEFAULT_DOUBAO_TEXT_MODEL}`.trim();
 };
 
 const hasDoubaoCredential = () => {
@@ -31,5 +36,7 @@ module.exports = {
   getDoubaoBaseUrl,
   getDoubaoVisionModel,
   getDoubaoTextModel,
+  DEFAULT_DOUBAO_VISION_MODEL,
+  DEFAULT_DOUBAO_TEXT_MODEL,
   hasDoubaoCredential
 };

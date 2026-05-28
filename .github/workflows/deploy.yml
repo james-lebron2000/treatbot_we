@@ -408,9 +408,10 @@ jobs:
         KIMI_VISION_MODEL: 'moonshot-v1-128k-vision-preview'
         # Doubao Ark：Ark 控制台必须用带版本日期后缀的具体模型 ID（短名 doubao-seed-1.6-vision 会 404）
         ARK_VISION_MODEL: 'doubao-seed-1-6-vision-250815'
-        # 文本结构化单独模型。空 fast model + 0 ratio 表示灰度默认关闭，可在 workflow/env 中显式打开。
-        ARK_TEXT_MODEL: ''
-        OCR_STRUCTURED_MODEL: ''
+        # 文本结构化/信息整合单独使用 Doubao-Seed-2.0-lite；视觉 OCR 仍使用 ARK_VISION_MODEL。
+        # 空 fast model + 0 ratio 表示灰度默认关闭，可在 workflow/env 中显式打开。
+        ARK_TEXT_MODEL: 'doubao-seed-2-0-lite-260215'
+        OCR_STRUCTURED_MODEL: 'doubao-seed-2-0-lite-260215'
         OCR_STRUCTURED_FAST_MODEL: ''
         OCR_STRUCTURED_FAST_MODEL_RATIO: '0'
         ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3'
