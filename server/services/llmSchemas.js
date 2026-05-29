@@ -12,8 +12,17 @@
 
 const { z } = require('zod');
 
-// 通用 helper：把 ""/0 视作合法 0；null / undefined 都允许；非数字字符串拒绝。
-const optionalNumber = z.union([z.number(), z.null()]).optional();
+// 通用 helper：LLM 偶尔输出 "第2线" / "ECOG 1" 这类带单位字符串。
+// 提取其中的首个数字；完全无数字的字符串仍拒绝，避免把任意文本吞成 0。
+const optionalNumber = z.preprocess((value) => {
+  if (value === null || value === undefined || value === '') return value;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const match = value.match(/-?\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : value;
+  }
+  return value;
+}, z.union([z.number(), z.null()]).optional());
 const optionalString = z.union([z.string(), z.null()]).optional();
 const optionalStringArray = z.array(z.string()).optional().default([]);
 const optionalCoercedNumber = z.preprocess((value) => {
@@ -23,6 +32,9 @@ const optionalCoercedNumber = z.preprocess((value) => {
 }, z.number().optional());
 
 const normalizeLabValueInput = (value) => {
+  if (typeof value === 'number') {
+    return { value };
+  }
   if (Array.isArray(value)) {
     const objectValue = value.find((item) => item && typeof item === 'object' && !Array.isArray(item));
     if (objectValue) return objectValue;

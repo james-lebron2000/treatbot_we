@@ -456,9 +456,10 @@ const findMatches = async (req, res, next) => {
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
+        if (scored.excluded) return null;
         return buildDetailedMatchItem(trial, scored);
       })
-      .filter((item) => trialMatchesFilters(item, filters))
+      .filter((item) => item && trialMatchesFilters(item, filters))
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;

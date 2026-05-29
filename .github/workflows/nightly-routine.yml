@@ -80,6 +80,10 @@ jobs:
           JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
         run: npm test -- --runInBand --forceExit
 
+      - name: Criterion matcher evaluation gate
+        working-directory: ./server
+        run: node scripts/evalCriterionMatcher.js --ci
+
       # PRD-2026Q4 T0-11：nightly 跑全套 e2e 集成测试。
       # 与 deploy.yml 的 slow lane 不同：这里跑在专门的 e2e job 里（下方），不会阻塞
       # routine 的 commit/PR 链路；当前 step 仅作为 routine 自身门槛，跳过集成 suite。

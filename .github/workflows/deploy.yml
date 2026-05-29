@@ -56,6 +56,10 @@ jobs:
         NODE_ENV: test
         JWT_SECRET: ci-test-only-jwt-secret-not-used-in-production-0123456789
 
+    - name: Criterion matcher evaluation gate
+      working-directory: ./server
+      run: node scripts/evalCriterionMatcher.js --ci
+
     - name: Security smoke — JWT_SECRET guard
       working-directory: ./server
       run: |

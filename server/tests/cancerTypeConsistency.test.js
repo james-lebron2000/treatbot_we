@@ -129,4 +129,110 @@ describe('cancer-type consistency', () => {
     expect(r.excluded).toBeFalsy();
     expect(r.score).toBeGreaterThan(0);
   });
+
+  test('NSCLC vs SCLC must not cross-match through substring aliases', () => {
+    const r = scoreRecordAgainstTrial(
+      { diagnosis: '非小细胞肺癌（肺腺癌）', stage: 'IV期', age: 55, structured: { entities: { ecog: 1, age: 55 } } },
+      {
+        id: 'sclc-only',
+        name: '小细胞肺癌二线研究',
+        indication: '小细胞肺癌',
+        disease_tags: ['小细胞肺癌'],
+        inclusion_criteria: ['小细胞肺癌患者', 'ECOG 0-1']
+      }
+    );
+    expect(r.excluded).toBe(true);
+    expect(r.reasons.join(' ')).toMatch(/小细胞肺癌|非小细胞肺癌/);
+  });
+
+  test('structured prior_lines_max excludes patients beyond allowed treatment line', () => {
+    const r = scoreRecordAgainstTrial(
+      { diagnosis: '结直肠癌', treatment_line: 3, structured: { entities: { treatmentLine: 3, age: 60, ecog: 1 } } },
+      {
+        id: 'first-line-crc',
+        name: '结直肠癌一线研究',
+        indication: '结直肠癌',
+        disease_tags: ['结直肠癌'],
+        structured_inclusion: {
+          allowed_cancer_types: ['结直肠癌'],
+          prior_lines_max: 0,
+          age_min: 18,
+          ecog_max: 1
+        }
+      }
+    );
+    expect(r.excluded).toBe(true);
+    expect(r.reasons.join(' ')).toMatch(/治疗线数/);
+  });
+
+  test('TNBC patient vs HER2-positive structured trial → excluded', () => {
+    const r = scoreRecordAgainstTrial(
+      {
+        diagnosis: '三阴性乳腺癌',
+        gene_mutation: 'BRCA1突变',
+        structured: { entities: { pathologyType: '三阴性乳腺癌', age: 45, ecog: 0 } }
+      },
+      {
+        id: 'her2-breast',
+        name: 'HER2阳性乳腺癌研究',
+        indication: '乳腺癌',
+        disease_tags: ['乳腺癌'],
+        structured_inclusion: {
+          allowed_cancer_types: ['HER2阳性乳腺癌'],
+          required_genes: ['HER2阳性（IHC3+或FISH+）'],
+          age_min: 18,
+          ecog_max: 1
+        }
+      }
+    );
+    expect(r.excluded).toBe(true);
+    expect(r.reasons.join(' ')).toMatch(/HER2/);
+  });
+
+  test('other actionable driver exclusion blocks off-target mutant-driver patients', () => {
+    const r = scoreRecordAgainstTrial(
+      {
+        diagnosis: '非小细胞肺癌',
+        gene_mutation: 'ALK融合阳性',
+        structured: { entities: { geneMutation: 'ALK融合阳性', age: 60, ecog: 0, treatmentLine: 1 } }
+      },
+      {
+        id: 'her2-nsclc',
+        name: 'HER2突变NSCLC研究',
+        indication: '非小细胞肺癌',
+        disease_tags: ['非小细胞肺癌'],
+        structured_inclusion: {
+          allowed_cancer_types: ['非小细胞肺癌'],
+          required_genes: ['HER2 TKD激活突变'],
+          other_key_criteria: ['排除存在其他可靶向改变且已获批治疗的肿瘤'],
+          age_min: 18
+        }
+      }
+    );
+    expect(r.excluded).toBe(true);
+    expect(r.reasons.join(' ')).toMatch(/ALK|可靶向/);
+  });
+
+  test('HER2 basket trial without actionable-driver exclusion keeps missing HER2 as non-hard decision', () => {
+    const r = scoreRecordAgainstTrial(
+      {
+        diagnosis: '结直肠癌',
+        gene_mutation: 'BRAF V600E突变',
+        structured: { entities: { geneMutation: 'BRAF V600E突变', age: 58, ecog: 0, treatmentLine: 2 } }
+      },
+      {
+        id: 'her2-basket',
+        name: 'HER2突变实体瘤研究',
+        indication: '实体瘤',
+        disease_tags: ['全部实体瘤'],
+        structured_inclusion: {
+          allowed_cancer_types: ['结直肠癌', '其他实体瘤'],
+          required_genes: ['HER2激活突变'],
+          age_min: 18
+        }
+      }
+    );
+    expect(r.excluded).toBeFalsy();
+    expect(r.score).toBeGreaterThanOrEqual(0);
+  });
 });

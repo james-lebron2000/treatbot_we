@@ -151,6 +151,21 @@ const containsAlias = (text, aliases = []) => {
   }
   return aliases.some((alias) => {
     const normalizedAlias = normalizeText(alias);
+    const textIsNsclc = normalizedText.includes('非小细胞肺癌') || normalizedText.includes('nsclc');
+    const aliasIsNsclc = normalizedAlias.includes('非小细胞肺癌') || normalizedAlias.includes('nsclc');
+    const textIsSclc = !textIsNsclc && (
+      normalizedText.includes('小细胞肺癌') ||
+      normalizedText.includes('小细胞癌') ||
+      normalizedText.includes('sclc')
+    );
+    const aliasIsSclc = !aliasIsNsclc && (
+      normalizedAlias.includes('小细胞肺癌') ||
+      normalizedAlias.includes('小细胞癌') ||
+      normalizedAlias.includes('sclc')
+    );
+    if ((textIsNsclc && aliasIsSclc) || (textIsSclc && aliasIsNsclc)) {
+      return false;
+    }
     // 双向匹配：text 包含 alias，或 alias 包含 text（如 "胰腺癌" ⊂ "胰腺导管腺癌"）
     return normalizedText.includes(normalizedAlias) || normalizedAlias.includes(normalizedText);
   });
@@ -183,11 +198,14 @@ const getDiseaseProfile = (text) => {
  *    任一命中即判 true。大小写不敏感（containsAlias 已 normalize）。
  */
 const hasGenericCancerSignal = (input) => {
+  const stripNegatedGenericBiomarkers = (text) => safeText(text)
+    .replace(/(?:非|不属于|不是|排除|除外)\s*(?:msi[-\s]?h|dmmr|tmb[-\s]?h|pd[-\s]?l1\s*高表达)(?:\s*\/\s*(?:msi[-\s]?h|dmmr|tmb[-\s]?h))?/ig, ' ')
+    .replace(/(?:non[-\s]?|not\s+)(?:msi[-\s]?h|dmmr|tmb[-\s]?h|pd[-\s]?l1\s*positive)/ig, ' ');
   if (input == null) return false;
   // 字符串 / 数字：原路径
   if (typeof input !== 'object' || Array.isArray(input)) {
     const text = Array.isArray(input) ? input.join(' ') : input;
-    return containsAlias(text, GENERIC_CANCER_ALIASES);
+    return containsAlias(stripNegatedGenericBiomarkers(text), GENERIC_CANCER_ALIASES);
   }
   // Trial 对象：三路聚合
   const parts = [];
@@ -196,8 +214,23 @@ const hasGenericCancerSignal = (input) => {
   if (inclusion.length) parts.push(inclusion.join(' '));
   // 2) structured_inclusion（对象 → JSON 字符串，便于一次性扫描字段值）
   if (input.structured_inclusion && typeof input.structured_inclusion === 'object') {
+    const si = input.structured_inclusion;
+    // 泛瘤种只看癌种口径，避免把 "非MSI-H/dMMR"、"PD-L1阴性" 等
+    // 分子/排除条件误判为不限癌种。
+    if (Array.isArray(si.allowed_cancer_types)) {
+      parts.push(si.allowed_cancer_types.join(' '));
+    }
+    if (Array.isArray(si.required_genes)) {
+      parts.push(si.required_genes.join(' '));
+    }
+    if (si.required_pdl1) {
+      parts.push(safeText(si.required_pdl1));
+    }
+    if (Array.isArray(si.other_key_criteria)) {
+      parts.push(si.other_key_criteria.join(' '));
+    }
     try {
-      parts.push(JSON.stringify(input.structured_inclusion));
+      parts.push(JSON.stringify(si));
     } catch (e) {
       // 循环引用等极端情况，忽略
     }
@@ -212,9 +245,9 @@ const hasGenericCancerSignal = (input) => {
   }
   // 兜底：如果三路都空，退回到 getTrialInclusionText 的传统全文
   if (parts.length === 0) {
-    return containsAlias(getTrialInclusionText(input), GENERIC_CANCER_ALIASES);
+    return containsAlias(stripNegatedGenericBiomarkers(getTrialInclusionText(input)), GENERIC_CANCER_ALIASES);
   }
-  return containsAlias(parts.join(' '), GENERIC_CANCER_ALIASES);
+  return containsAlias(stripNegatedGenericBiomarkers(parts.join(' ')), GENERIC_CANCER_ALIASES);
 };
 
 /**
@@ -276,6 +309,21 @@ const matchDiseaseText = (queryText, targetText) => {
   const queryProfile = getDiseaseProfile(queryText);
   const targetProfile = getDiseaseProfile(targetText);
 
+  if (queryProfile && targetProfile) {
+    const lungSubtypeConflict =
+      (queryProfile.id === 'lung_nsclc' && targetProfile.id === 'lung_sclc') ||
+      (queryProfile.id === 'lung_sclc' && targetProfile.id === 'lung_nsclc');
+    if (lungSubtypeConflict) {
+      return {
+        matched: false,
+        specific: false,
+        generic: false,
+        queryProfile,
+        targetProfile
+      };
+    }
+  }
+
   if (queryProfile && targetProfile && queryProfile.id === targetProfile.id) {
     return {
       matched: true,
@@ -327,13 +375,26 @@ const matchDiseaseText = (queryText, targetText) => {
 
 // 仅包含 inclusion 相关文本用于加分，exclusion 不参与加分避免误匹配
 const getTrialInclusionText = (trial) => {
+  const si = trial && trial.structured_inclusion && typeof trial.structured_inclusion === 'object'
+    ? trial.structured_inclusion
+    : null;
+  const structuredParts = si
+    ? [
+        ...(Array.isArray(si.allowed_cancer_types) ? si.allowed_cancer_types : []),
+        ...(Array.isArray(si.required_genes) ? si.required_genes : []),
+        ...(Array.isArray(si.required_stage) ? si.required_stage : []),
+        ...(Array.isArray(si.required_prior_therapies) ? si.required_prior_therapies : []),
+        ...(Array.isArray(si.other_key_criteria) ? si.other_key_criteria : [])
+      ]
+    : [];
   return [
     safeText(trial.name),
     safeText(trial.indication),
     safeText(trial.description),
     safeText(trial.brief_inclusion),
     ...(parseArrayField(trial.inclusion_criteria)),
-    ...(Array.isArray(trial.disease_tags) ? trial.disease_tags : [])
+    ...(Array.isArray(trial.disease_tags) ? trial.disease_tags : []),
+    ...structuredParts
   ].join(' ');
 };
 
@@ -414,6 +475,144 @@ const isStrictGeneRequirement = (trialText, gene) => {
   return null;
 };
 
+const getRecordDiagnosis = (record = {}) => (
+  record.diagnosis || record.structured?.entities?.diagnosis || ''
+);
+
+const getRecordGeneText = (record = {}) => (
+  record.gene_mutation || record.structured?.entities?.geneMutation || ''
+);
+
+const isNsclcSclcConflict = (leftId, rightId) => (
+  (leftId === 'lung_nsclc' && rightId === 'lung_sclc') ||
+  (leftId === 'lung_sclc' && rightId === 'lung_nsclc')
+);
+
+const hasOtherActionableDriverExclusion = (si = {}) => {
+  const text = [
+    ...(Array.isArray(si.other_key_criteria) ? si.other_key_criteria : []),
+    ...(Array.isArray(si.excluded_prior_therapies) ? si.excluded_prior_therapies : [])
+  ].join(' ');
+  return /(其他|other).{0,12}(可靶向|actionable|targetable|驱动|driver).{0,12}(改变|突变|alteration)/i.test(text) ||
+    /排除存在其他可靶向改变/.test(text);
+};
+
+const isHer2NegativeByRecord = (record = {}) => {
+  const text = safeLower([
+    getRecordDiagnosis(record),
+    getRecordGeneText(record),
+    record.pathology,
+    record.structured?.entities?.pathologyType
+  ].filter(Boolean).join(' '));
+  return /三阴|tnbc|triple\s*negative/i.test(text) ||
+    /her\s*2|her2|erbb2/i.test(text) && /(阴性|negative|0\b|1\+)/i.test(text);
+};
+
+const allKnownGenesAreWild = (patientGeneMap) => {
+  const entries = Array.from(patientGeneMap.values());
+  return entries.length > 0 && entries.every((info) => info && info.status === 'wild');
+};
+
+const evaluateStructuredGeneHardExclusion = (record, si) => {
+  const requiredGenes = Array.isArray(si?.required_genes)
+    ? si.required_genes.map((item) => safeText(item)).filter(Boolean)
+    : [];
+  if (!requiredGenes.length) return null;
+
+  const requiredText = requiredGenes.join('；');
+  const trialReqMap = parseTrialGeneRequirements(requiredText);
+  if (!trialReqMap || trialReqMap.size === 0) return null;
+
+  const requiredKeys = Array.from(trialReqMap.keys());
+  const requiresHer2 = requiredKeys.includes('HER2') || /HER2|ERBB2/i.test(requiredText);
+  if (requiresHer2 && isHer2NegativeByRecord(record)) {
+    return {
+      reason: `试验要求${requiredText}，但患者病历提示 HER2 阴性/三阴性`,
+      code: 'her2_negative'
+    };
+  }
+
+  const patientGeneText = getRecordGeneText(record);
+  const patientGeneMap = parsePatientGenes(patientGeneText);
+  if (!patientGeneMap || patientGeneMap.size === 0) return null;
+
+  const geneResults = matchGenesAgainstTrial(patientGeneMap, trialReqMap);
+  const explicitMismatch = geneResults.find((r) => !r.matched && (
+    r.patientStatus === 'wild' ||
+    r.patientStatus === 'mutant' ||
+    r.patientStatus === 'mixed'
+  ));
+  if (explicitMismatch) {
+    return {
+      reason: `试验要求${requiredText}，但患者${explicitMismatch.label}`,
+      code: 'gene_opposite_status'
+    };
+  }
+
+  const hasOverlap = requiredKeys.some((gene) => patientGeneMap.has(gene));
+  if (hasOverlap) return null;
+
+  const hasMutantDriver = Array.from(patientGeneMap.values()).some((info) => info && info.status === 'mutant');
+  if (hasMutantDriver && hasOtherActionableDriverExclusion(si)) {
+    const mutantGenes = Array.from(patientGeneMap.entries())
+      .filter(([, info]) => info && info.status === 'mutant')
+      .map(([gene]) => gene);
+    return {
+      reason: `试验要求${requiredText}且排除其他可靶向改变，患者已有${mutantGenes.join('、')}阳性驱动改变`,
+      code: 'other_actionable_driver'
+    };
+  }
+
+  if (/突变|激活|阳性|positive|mutation|activating/i.test(requiredText) && allKnownGenesAreWild(patientGeneMap)) {
+    return {
+      reason: `试验要求${requiredText}，但患者已报告基因均为野生型/阴性`,
+      code: 'all_reported_wild'
+    };
+  }
+
+  return null;
+};
+
+const isExplicitCancerExclusion = (record, trial) => {
+  const result = { mismatch: false, reason: null, patientProfile: null };
+  const patientProfile = getDiseaseProfile(getRecordDiagnosis(record));
+  result.patientProfile = patientProfile;
+  if (!patientProfile || !trial) return result;
+
+  const si = trial.structured_inclusion && typeof trial.structured_inclusion === 'object'
+    ? trial.structured_inclusion
+    : {};
+  const exclusionText = [
+    ...(Array.isArray(si.allowed_cancer_types) ? si.allowed_cancer_types : []),
+    ...(Array.isArray(si.other_key_criteria) ? si.other_key_criteria : []),
+    ...(parseArrayField(trial.exclusion_criteria))
+  ].join(' ');
+  if (!exclusionText) return result;
+
+  const segments = [];
+  const normalized = exclusionText.replace(/\s+/g, '');
+  const re = /(除外|排除|不接收|暂不接收|不包括|excluding|except)([^；;。,\n]+)/ig;
+  let match;
+  while ((match = re.exec(normalized)) !== null) {
+    segments.push(match[2]);
+  }
+
+  for (const seg of segments) {
+    const excludedProfile = getDiseaseProfile(seg);
+    const strictAliases = patientProfile.aliases.filter((alias) => {
+      const normalized = normalizeText(alias);
+      return normalized.length >= 3 && !['肺癌', '癌', 'cancer', 'carcinoma'].includes(normalized);
+    });
+    if ((excludedProfile && excludedProfile.id === patientProfile.id) || containsAlias(seg, strictAliases)) {
+      result.mismatch = true;
+      result.reason = `试验明确排除${patientProfile.label}患者`;
+      return result;
+    }
+  }
+
+  return result;
+};
+
 /**
  * 检查 trial 是否能从 disease_tags / inclusion text 推出「另一癌种」profile
  * 且患者癌种 profile 在该 trial 文本里完全不命中 → 视为癌种不一致。
@@ -424,16 +623,13 @@ const isStrictGeneRequirement = (trialText, gene) => {
 const isCancerTypeMismatch = (patient, trial) => {
   const result = { mismatch: false, patientProfile: null, trialProfile: null, reason: null };
   if (!patient || !trial) return result;
-  const patientText = patient.diagnosis || patient.structured?.entities?.diagnosis || '';
+  const patientText = getRecordDiagnosis(patient);
   const patientProfile = getDiseaseProfile(patientText);
   result.patientProfile = patientProfile;
   if (!patientProfile) {
     // 无法识别患者癌种（例如小肠腺癌等罕见癌种）→ 不在硬排除范围内，避免误杀
     return result;
   }
-
-  // 泛瘤种 trial 直接放行
-  if (hasGenericCancerSignal(trial)) return result;
 
   const inclusionText = getTrialInclusionText(trial);
   const _normalizedInclusion = normalizeText(inclusionText);
@@ -442,9 +638,30 @@ const isCancerTypeMismatch = (patient, trial) => {
   const diseaseTags = Array.isArray(trial.disease_tags) ? trial.disease_tags : [];
   const tagText = diseaseTags.join(' ');
 
+  const si = trial.structured_inclusion && typeof trial.structured_inclusion === 'object'
+    ? trial.structured_inclusion
+    : {};
+  const allowedCancerTypes = Array.isArray(si.allowed_cancer_types) ? si.allowed_cancer_types : [];
+  for (const cancerType of [...allowedCancerTypes, ...diseaseTags]) {
+    if (/(除外|排除|不包括|excluding|except)/i.test(cancerType)) continue;
+    const typeProfile = getDiseaseProfile(cancerType);
+    if (typeProfile && isNsclcSclcConflict(patientProfile.id, typeProfile.id)) {
+      result.mismatch = true;
+      result.trialProfile = typeProfile;
+      result.reason = `试验适应症（${typeProfile.label}）与患者癌种（${patientProfile.label}）不一致`;
+      return result;
+    }
+  }
+
+  // 泛瘤种 trial 直接放行；但 NSCLC/SCLC 明确冲突已在上方优先排除。
+  if (hasGenericCancerSignal(trial)) return result;
+
   // 患者癌种是否在试验文本/标签中命中？
-  const patientHitInTrial = containsAlias(inclusionText, patientProfile.aliases)
-    || (tagText && containsAlias(tagText, patientProfile.aliases));
+  const patientAliasesForTrial = patientProfile.id === 'lung_nsclc' || patientProfile.id === 'lung_sclc'
+    ? patientProfile.aliases.filter((alias) => normalizeText(alias) !== '肺癌')
+    : patientProfile.aliases;
+  const patientHitInTrial = containsAlias(inclusionText, patientAliasesForTrial)
+    || (tagText && containsAlias(tagText, patientAliasesForTrial));
 
   if (patientHitInTrial) return result; // 命中即视为同癌种，放行
 
@@ -458,6 +675,13 @@ const isCancerTypeMismatch = (patient, trial) => {
       otherProfile = candidate;
       break;
     }
+  }
+
+  if (otherProfile && isNsclcSclcConflict(patientProfile.id, otherProfile.id)) {
+    result.mismatch = true;
+    result.trialProfile = otherProfile;
+    result.reason = `试验适应症（${otherProfile.label}）与患者癌种（${patientProfile.label}）不一致`;
+    return result;
   }
 
   if (otherProfile) {
@@ -576,6 +800,36 @@ const scoreRecordAgainstTrial = (record, trial) => {
       return { score: 0, reasons: [`ECOG评分（${ecog}）超过试验要求（≤${si.ecog_max}）`], excluded: true };
     }
 
+    // 治疗线数硬排除：treatmentLine 表示下一线治疗，既往线数 = treatmentLine - 1。
+    const patientLineForGate = getPatientTreatmentLine(record);
+    if (patientLineForGate != null) {
+      const priorLines = Math.max(0, patientLineForGate - 1);
+      if (si.prior_lines_min != null && priorLines < si.prior_lines_min) {
+        return {
+          score: 0,
+          reasons: [`既往治疗线数（${priorLines}线）低于试验要求（≥${si.prior_lines_min}线）`],
+          excluded: true
+        };
+      }
+      if (si.prior_lines_max != null && priorLines > si.prior_lines_max) {
+        return {
+          score: 0,
+          reasons: [`既往治疗线数（${priorLines}线）超过试验允许范围（≤${si.prior_lines_max}线）`],
+          excluded: true
+        };
+      }
+    }
+
+    const structuredGeneExclusion = evaluateStructuredGeneHardExclusion(record, si);
+    if (structuredGeneExclusion) {
+      return {
+        score: 0,
+        reasons: [structuredGeneExclusion.reason],
+        excluded: true,
+        exclusionCode: structuredGeneExclusion.code
+      };
+    }
+
     // A9: 先验疗法硬排除 —— 若患者既往用过被试验排除的疗法，直接排除
     // 仅匹配具体疗法/靶点名称，跳过过于笼统或带时间限定的描述
     if (Array.isArray(si.excluded_prior_therapies) && si.excluded_prior_therapies.length > 0) {
@@ -610,6 +864,12 @@ const scoreRecordAgainstTrial = (record, trial) => {
 
   // ---- 癌种一致性硬排除（PRD-2026Q2）----
   // 仅在高置信度时触发：泛瘤种 trial / 罕见癌种患者 / 同癌种命中均会放行。
+  // 0) 泛瘤种 trial 也可能显式写“除外/排除某癌种”，这类规则优先于泛瘤种放行。
+  const explicitCancerExclusion = isExplicitCancerExclusion(record, trial);
+  if (explicitCancerExclusion.mismatch) {
+    return { score: 0, reasons: [explicitCancerExclusion.reason], excluded: true };
+  }
+
   // 1) 跨癌种不一致（HER2+ 乳腺癌 trial vs 肝癌患者 等）
   const ctMismatch = isCancerTypeMismatch(record, trial);
   if (ctMismatch.mismatch) {
@@ -902,10 +1162,18 @@ const captureException = (_sentry && _sentry.captureException)
 
 const matchRecordsToTrials = (records, trials, minScore = SCORE_MIN) => {
   const matches = [];
+  let structuredProfile = null;
+  try {
+    const built = require('./patientProfile').buildProfile(records || []);
+    structuredProfile = built && built.structuredProfile ? built.structuredProfile : null;
+  } catch (error) {
+    structuredProfile = null;
+  }
   for (const trial of trials) {
     let best = null;
     for (const record of records) {
-      const scored = scoreRecordAgainstTrial(record, trial);
+      const scored = scoreRecordHybrid(record, trial, structuredProfile);
+      if (scored.excluded) continue;
       if (!best || scored.score > best.score) {
         best = scored;
       }
@@ -1020,9 +1288,23 @@ const scoreRecordHybrid = (record, trial, structuredProfile = null) => {
 
   // If criterion-level evaluation found a hard exclusion, trust it
   if (cs.excluded) {
+    const failedReasons = criterionResults.results
+      .filter((r) => (
+        (r.is_exclusion && r.status === 'met') ||
+        (!r.is_exclusion && r.status === 'not_met')
+      ))
+      .map((r) => {
+        const label = r.subcategory || r.category || '入排标准';
+        return `${label}：${r.evidence}`;
+      })
+      .filter(Boolean);
     return {
       score: 0,
-      reasons: heuristic.reasons,
+      reasons: [
+        `条目级硬排除：${cs.inclusionFailures}项入组不符，${cs.exclusionViolations}项排除标准命中`,
+        ...failedReasons,
+        ...(heuristic.reasons || [])
+      ],
       excluded: true,
       criterionResults
     };
@@ -1032,11 +1314,14 @@ const scoreRecordHybrid = (record, trial, structuredProfile = null) => {
   const criterionScore = cs.score; // 0-99
   const heuristicScore = heuristic.score;
   const blendedScore = Math.round(heuristicScore * 0.4 + criterionScore * 0.6);
-  const finalScore = Math.min(99, Math.max(0, blendedScore));
+  const finalScore = cs.requiresReview
+    ? Math.min(70, Math.max(0, blendedScore))
+    : Math.min(99, Math.max(0, blendedScore));
 
   // Merge reasons: keep heuristic reasons, prepend criterion summary
   const criterionSummary = `条目级匹配率 ${cs.matchRate}%（${cs.met}项符合，${cs.not_met}项不符，${cs.uncertain}项待确认）`;
-  const mergedReasons = [criterionSummary, ...heuristic.reasons];
+  const reviewReason = cs.requiresReview ? [`${cs.criticalUncertain}项关键入组信息待补充，暂不作为确定匹配`] : [];
+  const mergedReasons = [criterionSummary, ...reviewReason, ...heuristic.reasons];
 
   return {
     score: finalScore,

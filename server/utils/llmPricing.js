@@ -25,6 +25,9 @@ const RATE_TABLE = {
   doubao: {
     // 火山方舟（Volcano Engine Ark）OpenAI 兼容
     // 注意：Ark 控制台要求带版本日期后缀的具体模型 ID（短名形如 doubao-seed-1.6-vision 会 404）。
+    // Doubao Seed 2.0 Lite 分段计费；TreatBot OCR 结构化 prompt 通常 <32K，
+    // 这里记录首档公开价，benchmark 仍允许用环境变量覆盖。
+    'doubao-seed-2-0-lite-260215':          { inputPerM: 0.60, outputPerM: 3.60,  unit: 'CNY' },
     'doubao-seed-1-6-vision-250815':        { inputPerM: 0.86, outputPerM: 8.28,  unit: 'CNY' },
     'doubao-1-5-vision-pro-32k-250115':     { inputPerM: 0.86, outputPerM: 8.28,  unit: 'CNY' },
     // 短名保留，方便手动覆盖；与上面 250815 同价

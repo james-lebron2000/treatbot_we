@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 
 jest.mock('axios');
+jest.setTimeout(15000);
 
 describe('Volcengine OCRNormal provider', () => {
   const ORIGINAL_ENV = { ...process.env };

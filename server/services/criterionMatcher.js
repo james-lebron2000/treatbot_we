@@ -370,7 +370,7 @@ const evaluateGeneRequirement = (s, profile) => {
     }
 
     if (!patient) {
-      results.push({ gene: geneReq, matched: false, reason: `未检测到${geneNameMatch[1]}` });
+      results.push({ gene: geneReq, matched: false, unknown: true, reason: `未检测到${geneNameMatch[1]}` });
       continue;
     }
 
@@ -378,24 +378,26 @@ const evaluateGeneRequirement = (s, profile) => {
     const reqWantsWild = /(野生|阴性|wildtype|wild[- ]?type|negative)/i.test(geneReq);
 
     if (patient.status === 'pending') {
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}待检测` });
+      results.push({ gene: geneReq, matched: false, unknown: true, reason: `${geneNameMatch[1]}待检测` });
     } else if (reqWantsMutant && patient.status === 'mutant') {
       results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}突变/阳性符合` });
     } else if (reqWantsWild && patient.status === 'wild') {
       results.push({ gene: geneReq, matched: true, reason: `${geneNameMatch[1]}野生型符合` });
     } else if (reqWantsMutant && patient.status === 'wild') {
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}为野生型，试验需突变` });
+      results.push({ gene: geneReq, matched: false, hardMismatch: true, reason: `${geneNameMatch[1]}为野生型，试验需突变` });
     } else if (reqWantsWild && patient.status === 'mutant') {
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}为突变阳性，试验需野生型` });
+      results.push({ gene: geneReq, matched: false, hardMismatch: true, reason: `${geneNameMatch[1]}为突变阳性，试验需野生型` });
     } else if (patient.status === 'mixed') {
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}状态存在冲突描述` });
+      results.push({ gene: geneReq, matched: false, unknown: true, reason: `${geneNameMatch[1]}状态存在冲突描述` });
     } else {
-      results.push({ gene: geneReq, matched: false, reason: `${geneNameMatch[1]}检测到但状态不确定` });
+      results.push({ gene: geneReq, matched: false, unknown: true, reason: `${geneNameMatch[1]}检测到但状态不确定` });
     }
   }
 
   const allMatched = results.every(r => r.matched);
   const anyMatched = results.some(r => r.matched);
+  const anyHardMismatch = results.some(r => r.hardMismatch);
+  const anyUnknown = results.some(r => r.unknown);
   const evidence = results.map(r => r.reason).join('；');
 
   if (allMatched) {
@@ -403,6 +405,12 @@ const evaluateGeneRequirement = (s, profile) => {
   }
   if (anyMatched) {
     return { status: UNCERTAIN, evidence: `部分基因符合：${evidence}`, confidence: 0.5 };
+  }
+  if (anyUnknown && !anyHardMismatch) {
+    return { status: UNCERTAIN, evidence: `基因信息待补充：${evidence}`, confidence: 0.45 };
+  }
+  if (anyUnknown && anyHardMismatch) {
+    return { status: UNCERTAIN, evidence: `存在基因不符风险且信息不完整：${evidence}`, confidence: 0.5 };
   }
   return { status: NOT_MET, evidence, confidence: 0.80 };
 };
@@ -488,7 +496,14 @@ const evaluateRequiredTherapy = (s, profile) => {
 
     // Direct keyword match
     if (!found) {
-      found = patientTherapies.includes(reqNorm.substring(0, Math.min(6, reqNorm.length)));
+      const alternatives = reqNorm
+        .split(/或|和|及|\/|、|,|，|;|；/)
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 2);
+      found = alternatives.some((part) => patientTherapies.includes(part.substring(0, Math.min(6, part.length))));
+      if (!found) {
+        found = patientTherapies.includes(reqNorm.substring(0, Math.min(6, reqNorm.length)));
+      }
     }
 
     if (!found) {
@@ -547,14 +562,29 @@ const evaluateAllCriteria = (criteria, profile) => {
   const inclusionFailures = results.filter(r => !r.is_exclusion && r.status === NOT_MET);
 
   const excluded = exclusionViolations.length > 0 || inclusionFailures.length > 0;
+  const criticalUncertain = results.filter((r) => (
+    !r.is_exclusion &&
+    r.status === UNCERTAIN &&
+    (
+      r.category === 'molecular' ||
+      r.category === 'treatment_history' ||
+      ['gene_requirement', 'required_prior_therapy', 'histology', 'measurable_lesion'].includes(r.subcategory)
+    )
+  ));
+  const requiresReview = criticalUncertain.length > 0;
 
-  // Compute a normalized match score (0-100)
-  const scorableCriteria = results.filter(r => r.status !== UNCERTAIN);
-  const metCount = scorableCriteria.filter(r =>
-    (r.is_exclusion && r.status === NOT_MET) || // Exclusion not triggered = good
-    (!r.is_exclusion && r.status === MET)         // Inclusion met = good
-  ).length;
-  const matchRate = scorableCriteria.length > 0 ? metCount / scorableCriteria.length : 0;
+  // Compute a normalized match score (0-100).
+  // Uncertain is not binaryized: it gets partial credit so missing-data cases
+  // stay in a calibrated middle band instead of being pushed to 0 or 99.
+  const points = results.reduce((sum, r) => {
+    const good =
+      (r.is_exclusion && r.status === NOT_MET) ||
+      (!r.is_exclusion && r.status === MET);
+    if (good) return sum + 1;
+    if (r.status === UNCERTAIN) return sum + 0.45;
+    return sum;
+  }, 0);
+  const matchRate = results.length > 0 ? points / results.length : 0;
 
   return {
     results,
@@ -564,9 +594,12 @@ const evaluateAllCriteria = (criteria, profile) => {
       not_met,
       uncertain,
       excluded,
+      requiresReview,
+      criticalUncertain: criticalUncertain.length,
       exclusionViolations: exclusionViolations.length,
       inclusionFailures: inclusionFailures.length,
       matchRate: Math.round(matchRate * 100),
+      uncertainRate: Math.round((uncertain / results.length) * 100),
       score: Math.round(matchRate * 99) // 0-99 scale to match existing engine
     }
   };

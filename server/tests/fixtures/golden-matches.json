@@ -7,7 +7,11 @@
     "labels": {
       "eligible": "Patient clearly meets all key inclusion criteria and no exclusion criteria",
       "ineligible": "Patient fails one or more hard criteria (age, ECOG, cancer type mismatch, etc.)",
-      "uncertain": "Patient may qualify but missing key information or borderline on criteria"
+      "uncertain": "Patient may qualify but missing key information or borderline on criteria",
+      "uncertain_subtypes": {
+        "missing_data": "Key eligibility field is absent or not assessed; the correct product behavior is to ask for more data instead of excluding the patient.",
+        "borderline_risk": "Known facts create material exclusion risk, but available evidence is insufficient for a deterministic hard exclusion."
+      }
     }
   },
   "patients": [
@@ -269,12 +273,14 @@
       "patient_id": "P01",
       "trial_id": "WS2202",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "NSCLC trial, patient is NSCLC with EGFR mutation; depends on specific trial gene requirements"
     },
     {
       "patient_id": "P01",
       "trial_id": "LM299-01-102",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "NSCLC trial for post-TKI patients; depends on specific EGFR mutation and prior treatment criteria"
     },
     {
@@ -299,6 +305,7 @@
       "patient_id": "P03",
       "trial_id": "GS-US-600-6165",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "SCLC trial requiring prior platinum, patient qualifies; but excludes prior irinotecan/topotecan — need to verify patient hasn't received these"
     },
     {
@@ -335,6 +342,7 @@
       "patient_id": "P05",
       "trial_id": "RG001",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "HCC trial with no excluded therapies listed but requires histology and measurable lesion — depends on imaging availability"
     },
     {
@@ -353,6 +361,7 @@
       "patient_id": "P06",
       "trial_id": "YST-02-105",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "Trial requires prior standard treatment including immunotherapy; patient is treatment-naive"
     },
     {
@@ -389,12 +398,14 @@
       "patient_id": "P08",
       "trial_id": "SYS6005-001",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "Broad solid tumor trial including breast cancer if ROR1+; TNBC status and BRCA1 mutation noted but ROR1 status unknown"
     },
     {
       "patient_id": "P08",
       "trial_id": "SCTB39G-X201",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "Broad trial not listing breast cancer explicitly in allowed types; TNBC may fit under '其他实体瘤'"
     },
     {
@@ -425,12 +436,14 @@
       "patient_id": "P10",
       "trial_id": "22752",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "Trial accepts CRC with HER2 mutation but patient has BRAF V600E; HER2 status not assessed"
     },
     {
       "patient_id": "P10",
       "trial_id": "SCTB39G-X201",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "Broad trial including CRC; excludes prior PD-L1+CTLA4 combo but patient only had PD-1 mono — may qualify"
     },
     {
@@ -497,12 +510,14 @@
       "patient_id": "P06",
       "trial_id": "SCTB39G-X201",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "Trial accepts HCC but requires prior standard treatment failure; patient is treatment-naive"
     },
     {
       "patient_id": "P07",
       "trial_id": "SYS6005-001",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "Broad trial including breast cancer if ROR1+; patient's ROR1 status unknown"
     },
     {
@@ -521,18 +536,21 @@
       "patient_id": "P10",
       "trial_id": "XP-001-V2-01",
       "label": "uncertain",
+      "uncertain_type": "missing_data",
       "reason": "Need to check trial specifics for CRC with MSI-H/BRAF V600E post-immunotherapy"
     },
     {
       "patient_id": "P11",
       "trial_id": "YKSW202402",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "Gastric cancer trial but need to check specific inclusion criteria match for HER2-negative patient"
     },
     {
       "patient_id": "P12",
       "trial_id": "YKSW202402",
       "label": "uncertain",
+      "uncertain_type": "borderline_risk",
       "reason": "Gastric cancer trial; patient is HER2+, depends on trial's HER2 requirement"
     },
     {
