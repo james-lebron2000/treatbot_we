@@ -1,33 +1,22 @@
-# TreatBot Caddy 反代配置（唯一源 — deploy.yml 会把本文件 scp 到 /etc/caddy/Caddyfile）
+# TreatBot — Caddy 站点片段（deploy.yml 安装到 /etc/caddy/conf.d/treatbot.caddy）
 #
-# 修复：原线上配置中 `/api/demo/*` 缺了 `path` 关键字，导致 Caddy 把它当成未知 matcher 名丢弃，
-# 请求落到 `handle /api/*` catch-all → :5101（Python 服务）→ 返回 404
-# {"success":false,"message":"Not found","code":"not_found"}。
-# 本文件把它补回 `path /api/demo/*` 并保留原 `/api/demo/*` 作为 bare path shorthand 不再使用。
+# 架构：/etc/caddy/Caddyfile 为根，只含全局选项 + `import /etc/caddy/conf.d/*.caddy`。
+# 每个项目只维护自己的片段，互不覆盖 —— 防止再次出现"整文件被覆盖导致 inseq.top 掉线"
+# （2026-05-31 TumorBoard 部署覆盖共享 Caddyfile，抹掉本块，导致 HTTPS 故障）。
 #
-# 路由拓扑（所有请求经 Caddy:443 → 下游）：
-#   /                         → 127.0.0.1:3000  (Express static landing page)
+# TLS：Caddy 自动 HTTPS（Let's Encrypt/ZeroSSL，自动续期）。全局 email 在根 Caddyfile。
+#      旧手动证书 /etc/caddy/ssl/* 已弃用（保留作应急回退，不再被引用）。
+#
+# 路由拓扑（请求经 Caddy:443 → 下游）：
+#   /                         → 127.0.0.1:3000  (Express 落地页)
 #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
-#   /h5 → redir /h5/quick-match
-#   /h5/*                     → 127.0.0.1:3100  (Next.js)
-#   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
-#   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
+#   /h5 → redir /h5/quick-match ; /h5/*  → 127.0.0.1:3100  (Next.js)
+#   /api/demo/*, /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
 #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
 #   /api/track, /api/me/*     → 127.0.0.1:3000  (Express, treatbot-api)
-#   /api/*  (所有其他)         → 127.0.0.1:5101  (遗留 Python 服务)
-#
-# 历史记录：
-#   2026-04-29 补 /api/track + /api/me/* —— 此前漏配导致小程序 §B.2 漏斗埋点
-#   与 §A.2 合规自助接口在生产环境直接 404（落到了 Python :5101 catch-all）。
-#   /demo-assets/*, /uploads/* → static via Express :3000
-
-{
-    # Caddy admin API 只绑 localhost（防止腾讯云告警误判未授权接口暴露）
-    admin 127.0.0.1:2019
-}
-
+#   /api/*  (其他)             → 127.0.0.1:5101  (遗留 Python 服务)
+#   /uploads/*                → /opt/treatbot/server/uploads (静态)
 inseq.top, www.inseq.top {
-    tls /etc/caddy/ssl/cert.pem /etc/caddy/ssl/key.pem
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
