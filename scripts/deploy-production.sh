@@ -31,8 +31,8 @@ Options:
   --identity FILE         SSH private key file. Default: SSH agent/config
   --sha SHA               Git commit to package. Default: current HEAD
   --skip-web-build        Reuse existing web/dist instead of running npm ci && npm run build
-  --backend-only          Deploy backend only; do not upload/promote web and do not patch Caddyfile
-  --no-caddy              Do not replace /etc/caddy/Caddyfile
+  --backend-only          Deploy backend only; do not upload/promote web and do not install the Caddy fragment
+  --no-caddy              Do not install /etc/caddy/conf.d/treatbot.caddy
   --no-smoke              Skip public smoke checks after deployment
   --public-url URL        Public base URL for smoke checks. Default: https://inseq.top
   --ghcr-image IMAGE      Optional GHCR image to pull before local build fallback
@@ -122,7 +122,7 @@ else
   GHCR_IMAGE="ghcr.io/james-lebron2000/treatbot-api:${SHA}"
 fi
 
-if [ ! -f server/Dockerfile ] || [ ! -f web/package.json ] || [ ! -f deploy/Caddyfile ]; then
+if [ ! -f server/Dockerfile ] || [ ! -f web/package.json ] || [ ! -f deploy/treatbot.caddy ]; then
   echo "Run this script from the repository root, or keep it under scripts/." >&2
   exit 1
 fi
@@ -207,7 +207,7 @@ fi
 
 echo "Packing server source from git commit..."
 git archive --format=tar "$SHA" server shared .dockerignore | gzip -9 > "$RELEASE_DIR/server-src.tar.gz"
-cp deploy/Caddyfile "$RELEASE_DIR/deploy/Caddyfile"
+cp deploy/treatbot.caddy "$RELEASE_DIR/deploy/treatbot.caddy"
 cp deploy/nginx-patch.conf "$RELEASE_DIR/deploy/nginx-patch.conf"
 
 echo "Release files:"
@@ -227,10 +227,10 @@ if [ -f web-dist.tar.gz ]; then
   mv web-dist.tar.gz /tmp/web-dist.tar.gz
 fi
 mv server-src.tar.gz /tmp/server-src.tar.gz
-mv deploy/Caddyfile /tmp/deploy/Caddyfile
+mv deploy/treatbot.caddy /tmp/deploy/treatbot.caddy
 mv deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
 rm -rf /tmp/treatbot-upload
-ls -lh /tmp/server-src.tar.gz /tmp/deploy/Caddyfile /tmp/deploy/nginx-patch.conf
+ls -lh /tmp/server-src.tar.gz /tmp/deploy/treatbot.caddy /tmp/deploy/nginx-patch.conf
 [ ! -f /tmp/web-dist.tar.gz ] || ls -lh /tmp/web-dist.tar.gz
 REMOTE_UPLOAD
 
@@ -546,48 +546,74 @@ else
 fi
 
 if [ "${APPLY_CADDY:-1}" = "1" ]; then
-  echo "::group::E) Apply Caddyfile"
-  NEW_CADDYFILE=/tmp/deploy/Caddyfile
-  if [ ! -f "$NEW_CADDYFILE" ]; then
-    echo "  warn $NEW_CADDYFILE missing; skipping Caddyfile swap"
+  echo "::group::E) Install Caddy fragment (/etc/caddy/conf.d/treatbot.caddy)"
+  NEW_FRAGMENT=/tmp/deploy/treatbot.caddy
+  CONFD=/etc/caddy/conf.d
+  TARGET="$CONFD/treatbot.caddy"
+  if [ ! -f "$NEW_FRAGMENT" ]; then
+    echo "  warn $NEW_FRAGMENT missing; skipping Caddy fragment install"
   elif ! command -v caddy >/dev/null 2>&1; then
-    echo "  warn caddy command missing; skipping Caddyfile swap"
+    echo "  warn caddy command missing; skipping Caddy fragment install"
+  elif [ ! -f /etc/caddy/Caddyfile ] || ! grep -qE '^[[:space:]]*import[[:space:]].*conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
+    # root 必须是 全局选项 + import conf.d/*.caddy；否则片段不会被加载。绝不在此覆盖 root。
+    echo "  warn root /etc/caddy/Caddyfile missing 'import .../conf.d/*.caddy'; not installing (live unchanged)"
+    echo "       先人工把 root 切成 全局选项 + import（参考 deploy/Caddyfile.root），再重跑。"
   else
-    CADDY_BAK="$BACKUP_ROOT/Caddyfile.before-manual.${TS}"
-    if [ -f /etc/caddy/Caddyfile ]; then
-      sudo -n cp /etc/caddy/Caddyfile "$CADDY_BAK"
-      sudo -n chown "$(whoami):$(whoami)" "$CADDY_BAK"
-      echo "  ok current Caddyfile backed up to $CADDY_BAK"
+    sudo -n mkdir -p "$CONFD"
+    HAD_FRAG=0
+    FRAG_BAK="$BACKUP_ROOT/treatbot.caddy.before-manual.${TS}"
+    if [ -f "$TARGET" ]; then
+      sudo -n cp "$TARGET" "$FRAG_BAK"
+      sudo -n chown "$(whoami):$(whoami)" "$FRAG_BAK"
+      HAD_FRAG=1
+      echo "  ok current fragment backed up to $FRAG_BAK"
     fi
 
+    # 临时目录组装整体配置预校验（root 全局选项 + 其他项目片段 + 新片段），不触碰 live。
+    STAGE=$(mktemp -d)
+    cp "$CONFD"/*.caddy "$STAGE/" 2>/dev/null || true
+    cp "$NEW_FRAGMENT" "$STAGE/treatbot.caddy"
+    # 组装根必须放在 STAGE 之外：否则 import $STAGE/*.caddy 会通配到根自身 → 循环报错。
+    STAGE_ROOT=$(mktemp)
+    sed '/^[[:space:]]*import /d' /etc/caddy/Caddyfile > "$STAGE_ROOT"
+    printf 'import %s/*.caddy\n' "$STAGE" >> "$STAGE_ROOT"
     set +e
-    VALIDATE=$(sudo -n caddy validate --config "$NEW_CADDYFILE" --adapter caddyfile 2>&1)
+    VALIDATE=$(sudo -n caddy validate --config "$STAGE_ROOT" --adapter caddyfile 2>&1)
     VRC=$?
     set -e
+    rm -rf "$STAGE"; rm -f "$STAGE_ROOT"
     echo "$VALIDATE" | sed 's/^/    /' | head -40
 
     if [ "$VRC" = "0" ]; then
-      sudo -n cp "$NEW_CADDYFILE" /etc/caddy/Caddyfile
-      sudo -n chown root:root /etc/caddy/Caddyfile
-      sudo -n chmod 644 /etc/caddy/Caddyfile
+      sudo -n cp "$NEW_FRAGMENT" "$TARGET"
+      sudo -n chown root:root "$TARGET"
+      sudo -n chmod 644 "$TARGET"
       if sudo -n systemctl reload caddy; then
         sleep 2
         PUB_CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$PUBLIC_URL/api/demo/samples" || echo "000")
         echo "  public /api/demo/samples=$PUB_CODE"
-        if [ "$PUB_CODE" != "200" ] && [ -f "$CADDY_BAK" ]; then
-          echo "  warn public smoke failed; restoring Caddyfile"
-          sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+        if [ "$PUB_CODE" != "200" ]; then
+          echo "  warn public smoke failed; rolling back fragment"
+          if [ "$HAD_FRAG" = "1" ]; then
+            sudo -n cp "$FRAG_BAK" "$TARGET"; sudo -n chown root:root "$TARGET"; sudo -n chmod 644 "$TARGET"
+          else
+            sudo -n rm -f "$TARGET"
+          fi
           sudo -n systemctl reload caddy || true
         else
-          echo "  ok Caddyfile applied"
+          echo "  ok fragment installed"
         fi
-      elif [ -f "$CADDY_BAK" ]; then
-        echo "  warn caddy reload failed; restoring"
-        sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+      else
+        echo "  warn caddy reload failed; rolling back fragment"
+        if [ "$HAD_FRAG" = "1" ]; then
+          sudo -n cp "$FRAG_BAK" "$TARGET"; sudo -n chown root:root "$TARGET"; sudo -n chmod 644 "$TARGET"
+        else
+          sudo -n rm -f "$TARGET"
+        fi
         sudo -n systemctl reload caddy || true
       fi
     else
-      echo "  warn caddy validate failed; not swapping"
+      echo "  warn whole-config validate failed; not installing"
     fi
   fi
   rm -rf /tmp/deploy

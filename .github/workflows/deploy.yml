@@ -360,7 +360,7 @@ jobs:
         )
 
         cp web-dist.tar.gz release-upload/web-dist.tar.gz
-        cp deploy/Caddyfile release-upload/deploy/Caddyfile
+        cp deploy/treatbot.caddy release-upload/deploy/treatbot.caddy
         cp deploy/nginx-patch.conf release-upload/deploy/nginx-patch.conf
 
         echo "Web tarball: $(du -h web-dist.tar.gz | cut -f1)"
@@ -384,7 +384,7 @@ jobs:
         }
 
         upload_file release-upload/web-dist.tar.gz /tmp/web-dist.tar.gz
-        upload_file release-upload/deploy/Caddyfile /tmp/deploy/Caddyfile
+        upload_file release-upload/deploy/treatbot.caddy /tmp/deploy/treatbot.caddy
         upload_file release-upload/deploy/nginx-patch.conf /tmp/deploy/nginx-patch.conf
 
     # ---- Step 2: SSH 进服务器执行替换 ----
@@ -940,59 +940,94 @@ jobs:
           fi
 
           ###############################################
-          # PART C.5 — Apply deploy/Caddyfile + disable nginx（若还在跑）
+          # PART C.5 — 安装 treatbot 片段到 /etc/caddy/conf.d/treatbot.caddy + disable nginx（若还在跑）
+          #   绝不覆盖 root /etc/caddy/Caddyfile，也绝不碰其他项目片段（如 tumorboard.caddy）。
+          #   2026-05-31 共享 root Caddyfile 被他项目整文件覆盖 → inseq.top 掉线，故拆 conf.d。
           ###############################################
-          echo "::group::C.5) Apply new Caddyfile + retire nginx"
+          echo "::group::C.5) Install /etc/caddy/conf.d/treatbot.caddy + retire nginx"
 
-          NEW_CADDYFILE=/tmp/deploy/Caddyfile
-          if [ ! -f "$NEW_CADDYFILE" ]; then
-            echo "  ⚠ $NEW_CADDYFILE not uploaded — skipping Caddyfile swap"
+          NEW_FRAGMENT=/tmp/deploy/treatbot.caddy
+          CONFD=/etc/caddy/conf.d
+          TARGET="$CONFD/treatbot.caddy"
+          if [ ! -f "$NEW_FRAGMENT" ]; then
+            echo "  ⚠ $NEW_FRAGMENT not uploaded — skipping Caddy fragment install"
+          elif [ ! -f /etc/caddy/Caddyfile ] || ! grep -qE '^[[:space:]]*import[[:space:]].*conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
+            # root 必须是 "全局选项(email) + import conf.d/*.caddy"，否则片段不会被加载。
+            # 此处只告警、绝不改 root（root 可能含其他项目内容）。模板见仓库 deploy/Caddyfile.root。
+            echo "  ⚠ root /etc/caddy/Caddyfile 缺少 'import .../conf.d/*.caddy' — 跳过安装（live 零改动）"
+            echo "    先人工把 root 切成 全局选项 + import（参考 deploy/Caddyfile.root），再重跑部署。"
           else
-            echo "  ✓ New Caddyfile uploaded ($(wc -l < $NEW_CADDYFILE) lines)"
-            CADDY_BAK=~/treatbot-deploy-backups/Caddyfile.before-swap.${TS}
-            sudo -n cp /etc/caddy/Caddyfile "$CADDY_BAK"
-            sudo -n chown $(whoami):$(whoami) "$CADDY_BAK"
-            echo "  ✓ Current Caddyfile backed up to $CADDY_BAK"
+            echo "  ✓ New fragment uploaded ($(wc -l < $NEW_FRAGMENT) lines)"
+            sudo -n mkdir -p "$CONFD"
 
-            # diff 预览
-            echo "  --- diff (current → new) ---"
-            sudo -n diff /etc/caddy/Caddyfile "$NEW_CADDYFILE" | sed 's/^/    /' | head -80 || true
-            echo "  --- end diff ---"
+            # 备份现有片段（若有）并展示 diff
+            HAD_FRAG=0
+            FRAG_BAK=~/treatbot-deploy-backups/treatbot.caddy.before-swap.${TS}
+            if [ -f "$TARGET" ]; then
+              sudo -n cp "$TARGET" "$FRAG_BAK"
+              sudo -n chown $(whoami):$(whoami) "$FRAG_BAK"
+              HAD_FRAG=1
+              echo "  ✓ 现有片段备份 → $FRAG_BAK"
+              echo "  --- diff (current → new) ---"
+              diff "$TARGET" "$NEW_FRAGMENT" | sed 's/^/    /' | head -80 || true
+              echo "  --- end diff ---"
+            else
+              echo "  （conf.d 尚无 treatbot.caddy，本次为首次安装）"
+            fi
 
-            # caddy validate（不会动运行中服务）
+            # 临时目录组装"整体"配置做预校验：root 全局选项 + 其他项目片段 + 新 treatbot 片段。
+            # 这样在【不触碰】live conf.d 的前提下，捕获语法错误与跨片段冲突（如域名重复）。
+            # /etc/caddy/{Caddyfile,conf.d/*} 均为 644，普通用户可读，无需 sudo。
+            STAGE=$(mktemp -d)
+            cp "$CONFD"/*.caddy "$STAGE/" 2>/dev/null || true
+            cp "$NEW_FRAGMENT" "$STAGE/treatbot.caddy"
+            # 组装根必须放在 STAGE 【之外】：否则 `import $STAGE/*.caddy` 会通配到根自身 → import 循环报错。
+            STAGE_ROOT=$(mktemp)
+            sed '/^[[:space:]]*import /d' /etc/caddy/Caddyfile > "$STAGE_ROOT"
+            printf 'import %s/*.caddy\n' "$STAGE" >> "$STAGE_ROOT"
             set +e
-            VALIDATE=$(sudo -n caddy validate --config "$NEW_CADDYFILE" --adapter caddyfile 2>&1)
+            VALIDATE=$(sudo -n caddy validate --config "$STAGE_ROOT" --adapter caddyfile 2>&1)
             VRC=$?
             set -e
-            echo "  --- validate (rc=$VRC) ---"
+            rm -rf "$STAGE"; rm -f "$STAGE_ROOT"
+            echo "  --- whole-config validate (rc=$VRC) ---"
             echo "$VALIDATE" | sed 's/^/    /' | head -30
             echo "  --- end validate ---"
 
-            if [ "$VRC" = "0" ]; then
-              sudo -n cp "$NEW_CADDYFILE" /etc/caddy/Caddyfile
-              sudo -n chown root:root /etc/caddy/Caddyfile
-              sudo -n chmod 644 /etc/caddy/Caddyfile
+            if [ "$VRC" != "0" ]; then
+              echo "  ❌ 整体校验失败 — 不安装（live 配置零改动）"
+            else
+              # 校验通过：安装片段 → reload → 烟雾测试 → 失败回滚（回滚也只动本片段）
+              sudo -n cp "$NEW_FRAGMENT" "$TARGET"
+              sudo -n chown root:root "$TARGET"
+              sudo -n chmod 644 "$TARGET"
               if sudo -n systemctl reload caddy; then
-                echo "  ✅ Caddy swapped + reloaded"
-                # 烟雾：新配置下 /api/demo/samples 应该 200（之前 404）
+                echo "  ✅ 片段已安装 + reload"
+                # 烟雾：treatbot 专有 API /api/demo/samples 应 200（落 Express :3000，而非 :5101 → 404）
                 sleep 2
                 SMOKE_CODE=$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/demo/samples || echo "000")
                 PUB_CODE=$(curl -sS -o /dev/null -w "%{http_code}" https://inseq.top/api/demo/samples || echo "000")
                 echo "  smoke: 127.0.0.1:3000/api/demo/samples=$SMOKE_CODE  inseq.top/api/demo/samples=$PUB_CODE"
                 if [ "$PUB_CODE" != "200" ]; then
-                  echo "  ❌ public /api/demo/samples did not return 200 — restoring"
-                  sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+                  echo "  ❌ public /api/demo/samples 非 200 — 回滚片段 + reload"
+                  if [ "$HAD_FRAG" = "1" ]; then
+                    sudo -n cp "$FRAG_BAK" "$TARGET"; sudo -n chown root:root "$TARGET"; sudo -n chmod 644 "$TARGET"
+                  else
+                    sudo -n rm -f "$TARGET"
+                  fi
                   sudo -n systemctl reload caddy
                 else
-                  echo "  ✅ /api/demo/samples=200 — Caddyfile swap confirmed healthy"
+                  echo "  ✅ /api/demo/samples=200 — 片段安装确认健康"
                 fi
               else
-                echo "  ❌ systemctl reload caddy failed — restoring"
-                sudo -n cp "$CADDY_BAK" /etc/caddy/Caddyfile
+                echo "  ❌ systemctl reload caddy 失败 — 回滚片段 + reload"
+                if [ "$HAD_FRAG" = "1" ]; then
+                  sudo -n cp "$FRAG_BAK" "$TARGET"; sudo -n chown root:root "$TARGET"; sudo -n chmod 644 "$TARGET"
+                else
+                  sudo -n rm -f "$TARGET"
+                fi
                 sudo -n systemctl reload caddy || true
               fi
-            else
-              echo "  ❌ validate failed — NOT swapping"
             fi
           fi
 

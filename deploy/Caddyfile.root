@@ -1,0 +1,15 @@
+# /etc/caddy/Caddyfile — 共享根配置（仅全局选项 + import）
+# 各项目只维护自己的片段，互不覆盖（2026-05-31 整文件被覆盖导致 inseq.top 掉线，故拆分）：
+#   /etc/caddy/conf.d/treatbot.caddy   (inseq.top, www.inseq.top — 由 treatbot CI 部署)
+#   /etc/caddy/conf.d/tumorboard.caddy (mdt.inseq.top, minio.inseq.top — 由 TumorBoard 维护)
+# 改动后：sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+{
+    # 全局选项
+    # 联系邮箱(Let's Encrypt 用,过期前提醒)
+    email admin@inseq.top
+    # 如果 Let's Encrypt 在国内连接慢,可切 ZeroSSL:
+    # acme_ca https://acme.zerossl.com/v2/DV90
+}
+
+import /etc/caddy/conf.d/*.caddy
