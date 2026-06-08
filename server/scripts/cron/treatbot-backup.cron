@@ -1,0 +1,26 @@
+# Treatbot 备份 + 恢复演练 cron 片段
+# ------------------------------------------------------------------
+# 安装（在生产宿主机上，需 root）：
+#   sudo cp /opt/treatbot/server/scripts/cron/treatbot-backup.cron /etc/cron.d/treatbot-backup
+#   sudo chmod 644 /etc/cron.d/treatbot-backup
+#   sudo systemctl restart cron   # Debian/Ubuntu；CentOS 用 crond
+# 验证：
+#   sudo run-parts --test /etc/cron.d/   # 或直接手动跑一次脚本看输出
+#
+# 前置：脚本依赖 DB_PASSWORD / COS_BUCKET 等环境变量。两种做法二选一：
+#   (a) 在脚本顶部 source /opt/treatbot/server/.env
+#   (b) 用 docker exec 进容器跑（容器已注入 env，推荐）—— 见下方注释行
+#
+# 注意：cron 不读用户 shell 环境；务必用绝对路径，并把密钥放进脚本可读到的地方。
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# —— 每日 02:00 全量备份（mysqldump → gzip → COS）——
+0 2 * * * root . /opt/treatbot/server/.env && /opt/treatbot/server/scripts/backup.sh >> /var/log/treatbot-backup.log 2>&1
+
+# —— 每周一 03:00 恢复演练（验证备份真的可恢复，失败会在日志里报非0）——
+0 3 * * 1 root . /opt/treatbot/server/.env && /opt/treatbot/server/scripts/restoreDrill.sh >> /var/log/treatbot-restore-drill.log 2>&1
+
+# 可选（容器化部署推荐）：用 docker exec 跑备份，避免在宿主机装 mysql client
+# 0 2 * * * root docker exec treatbot-api node /app/scripts/backupDb.js >> /var/log/treatbot-backup.log 2>&1
