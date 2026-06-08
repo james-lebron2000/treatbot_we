@@ -456,9 +456,13 @@ const findMatches = async (req, res, next) => {
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
+        // CLINICAL-SAFETY FIX：与 getMatches 行为对齐 —— 硬排除（年龄/ECOG/癌种/先验疗法
+        // 不符）的试验绝不能返回给患者。此前 findMatches 漏掉此过滤，会把"仅限 18-65 岁"等
+        // 明确不符的试验推给患者，构成临床误导。
+        if (scored.excluded) return null;
         return buildDetailedMatchItem(trial, scored);
       })
-      .filter((item) => trialMatchesFilters(item, filters))
+      .filter((item) => item && trialMatchesFilters(item, filters))
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
