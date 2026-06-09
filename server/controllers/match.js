@@ -132,7 +132,7 @@ const getUserCompletedRecords = async (userId) => {
       status: 'completed',
       deleted_at: null
     },
-    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'created_at'],
+    attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment', 'treatment_line', 'pdl1', 'structured', 'created_at'],
     order: [['created_at', 'DESC']]
   });
 };
@@ -191,7 +191,7 @@ const getMatches = async (req, res, next) => {
           user_id: req.userId,
           deleted_at: null
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment', 'treatment_line', 'pdl1', 'structured', 'status']
       });
       if (!record) {
         throw new BusinessError('病历不存在或无权限访问', 404);
@@ -404,7 +404,7 @@ const findMatches = async (req, res, next) => {
           user_id: req.userId,
           deleted_at: null
         },
-        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'status']
+        attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment', 'treatment_line', 'pdl1', 'structured', 'status']
       });
 
       if (!profileRecord) {
