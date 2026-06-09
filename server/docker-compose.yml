@@ -6,6 +6,11 @@ services:
     build: .
     container_name: treatbot-api
     restart: always
+    # 单机 3.6GB 与 MDT/TumorBoard 共用：限内存上限 + 软预留，oom_score_adj 让宿主 OOM 时优先杀外部进程而非本服务
+    mem_limit: 1024m
+    memswap_limit: 2048m
+    mem_reservation: 256m
+    oom_score_adj: -300
     ports:
       - "127.0.0.1:3000:3000"
     environment:
@@ -24,7 +29,8 @@ services:
       - WEAPP_SECRET=${WEAPP_SECRET}
       - WEAPP_SESSION_TTL=${WEAPP_SESSION_TTL:-7200}
       - TREATBOT_LOGIN_ENABLED=${TREATBOT_LOGIN_ENABLED:-false}
-      - TREATBOT_LOGIN_FIXED_CODE=${TREATBOT_LOGIN_FIXED_CODE:-000000}
+      # 不再下发固定登录码默认值；如需启用 web 登录请配真实短信，FIXED_CODE 留空即禁用万能码
+      - TREATBOT_LOGIN_FIXED_CODE=${TREATBOT_LOGIN_FIXED_CODE:-}
       - COS_SECRET_ID=${COS_SECRET_ID}
       - COS_SECRET_KEY=${COS_SECRET_KEY}
       - COS_BUCKET=${COS_BUCKET}
@@ -73,6 +79,11 @@ services:
     image: mysql:8.0
     container_name: treatbot-mysql
     restart: always
+    # DB 最受保护：oom_score_adj=-800，宿主内存耗尽时几乎不会被 OOM-killer 选中
+    mem_limit: 768m
+    memswap_limit: 1536m
+    mem_reservation: 256m
+    oom_score_adj: -800
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
       - MYSQL_DATABASE=treatbot
@@ -98,6 +109,10 @@ services:
     image: redis:7-alpine
     container_name: treatbot-redis
     restart: always
+    mem_limit: 384m
+    memswap_limit: 768m
+    mem_reservation: 128m
+    oom_score_adj: -100
     command: >
       sh -c "if [ -n \"${REDIS_PASSWORD}\" ]; then
         redis-server --appendonly yes --requirepass \"${REDIS_PASSWORD}\";

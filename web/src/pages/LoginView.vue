@@ -4,7 +4,7 @@
     <p class="muted">输入手机号就能开始。我们只用它给您发短信，没有骚扰，您随时可以注销。</p>
     <input v-model.trim="phone" placeholder="手机号（仅用于登录，不外传）" maxlength="11" inputmode="numeric" />
     <div style="display:flex;gap:8px;align-items:stretch;">
-      <input v-model.trim="code" placeholder="验证码 (6 位，演示环境请输 000000)" maxlength="6" inputmode="numeric" @keyup.enter="submit" style="flex:1;" />
+      <input v-model.trim="code" placeholder="短信验证码（6 位）" maxlength="6" inputmode="numeric" @keyup.enter="submit" style="flex:1;" />
       <button type="button" class="btn" :disabled="sendingCode || codeCountdown > 0" @click="onSendCode" style="white-space:nowrap;">
         {{ sendingCode ? '发送中…' : (codeCountdown > 0 ? `${codeCountdown}s 后可重发` : '获取验证码') }}
       </button>

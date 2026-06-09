@@ -456,6 +456,8 @@ echo "    PARSE_STATUS_RATE_LIMIT_MAX=3600"
 docker run -d --name treatbot-api \
   --network server_treatbot-network \
   --restart unless-stopped \
+  --memory 1024m --memory-swap 2048m --memory-reservation 256m \
+  --oom-score-adj -300 \
   -p 3000:3000 \
   --env-file "$BACKUP_ENV" \
   "${OCR_ENV_FLAGS[@]}" \
