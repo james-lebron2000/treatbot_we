@@ -180,7 +180,7 @@ jobs:
       DB_HOST: 127.0.0.1
       DB_PORT: '3306'
       DB_USER: root
-      DB_PASS: rootpw
+      DB_PASSWORD: rootpw   # config/database.js reads DB_PASSWORD, not DB_PASS（否则空密码连库，集成形同空跑）
       DB_NAME: treatbot_test
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: '6379'

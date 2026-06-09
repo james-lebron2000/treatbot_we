@@ -144,6 +144,21 @@ const parseArrayField = (value) => {
   return [];
 };
 
+// 取反前缀：needle 在 container 中出现，但紧邻前一个字是 非/未/无/不 时，属于"取反同名"伪匹配
+// （如 小细胞肺癌 ⊂ 非小细胞肺癌），必须排除——否则 SCLC 患者会被误判进 NSCLC 试验且不触发癌种硬排除。
+const NEGATION_PREFIX = /[非未无不]/;
+const includesSansNegation = (container, needle) => {
+  if (!needle || !container) return false;
+  let from = 0;
+  for (;;) {
+    const idx = container.indexOf(needle, from);
+    if (idx === -1) return false;
+    const prev = idx > 0 ? container[idx - 1] : '';
+    if (!NEGATION_PREFIX.test(prev)) return true; // 干净（未被取反）的一次命中
+    from = idx + 1; // 这一处被取反，继续找下一处
+  }
+};
+
 const containsAlias = (text, aliases = []) => {
   const normalizedText = normalizeText(text);
   if (!normalizedText) {
@@ -151,8 +166,10 @@ const containsAlias = (text, aliases = []) => {
   }
   return aliases.some((alias) => {
     const normalizedAlias = normalizeText(alias);
-    // 双向匹配：text 包含 alias，或 alias 包含 text（如 "胰腺癌" ⊂ "胰腺导管腺癌"）
-    return normalizedText.includes(normalizedAlias) || normalizedAlias.includes(normalizedText);
+    if (!normalizedAlias) return false;
+    // 双向包含（如 "胰腺癌" ⊂ "胰腺导管腺癌"），但排除取反前缀造成的伪匹配（小细胞 vs 非小细胞）
+    return includesSansNegation(normalizedText, normalizedAlias)
+        || includesSansNegation(normalizedAlias, normalizedText);
   });
 };
 
@@ -558,8 +575,13 @@ const scoreRecordAgainstTrial = (record, trial) => {
   const reasons = [];
 
   // ---- 结构化入组条件硬过滤（structured_inclusion 由 LLM 预解析）----
+  // OCR 置信度闸（Q4-T0-8）：抽取置信度过低时，不拿可能出错的结构化字段做"硬排除"，避免误杀；
+  // 改由文本信号评分 + 人工核对。置信度兼容 0-1 与 0-100 两种刻度。
+  const _ocrConf = record?.structured?.confidence;
+  const _ocrConf01 = typeof _ocrConf === 'number' ? (_ocrConf > 1 ? _ocrConf / 100 : _ocrConf) : null;
+  const _ocrLowConf = _ocrConf01 != null && _ocrConf01 < 0.55;
   const si = trial.structured_inclusion;
-  if (si && typeof si === 'object') {
+  if (si && typeof si === 'object' && !_ocrLowConf) {
     const patientAge = getPatientAge(record);
     // 年龄硬排除
     if (patientAge != null) {
@@ -579,7 +601,7 @@ const scoreRecordAgainstTrial = (record, trial) => {
     // A9: 先验疗法硬排除 —— 若患者既往用过被试验排除的疗法，直接排除
     // 仅匹配具体疗法/靶点名称，跳过过于笼统或带时间限定的描述
     if (Array.isArray(si.excluded_prior_therapies) && si.excluded_prior_therapies.length > 0) {
-      const patientTx = normalizeText(record.treatment || '');
+      const patientTx = normalizeText(record.treatment || record.structured?.entities?.treatment || '');
       if (patientTx) {
         for (const therapy of si.excluded_prior_therapies) {
           const normTherapy = normalizeText(therapy);
@@ -788,9 +810,8 @@ const scoreRecordAgainstTrial = (record, trial) => {
       reasons.push(`ECOG体能评分（${ecogNum}分）可能超出试验要求（≤${trialEcogMax}），存在排除风险`);
     }
   } else {
-    // ECOG 未知时默认视为符合要求（不扣分，给予基础加分）
-    score += 5;
-    reasons.push('ECOG体能评分默认符合要求');
+    // ECOG 未知：缺失的安全数据不应被当作"合格"而加分（旧实现 +5 会系统性高估匹配）。中性处理 + 提示补录。
+    reasons.push('缺少 ECOG 体能评分，建议补充后再评估');
   }
 
   // ---- 城市匹配 ----

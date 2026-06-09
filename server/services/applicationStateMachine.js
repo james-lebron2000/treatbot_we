@@ -185,6 +185,7 @@ const findCroCompanyByTrialId = async (trialId) => {
     `SELECT id, name, cpa_price, cpa_qualified_status
        FROM cro_companies
       WHERE JSON_CONTAINS(trial_ids, JSON_QUOTE(:trialId))
+      ORDER BY id ASC
       LIMIT 2`,
     {
       replacements: { trialId: String(trialId) },

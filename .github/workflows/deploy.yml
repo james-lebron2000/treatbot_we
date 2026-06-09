@@ -68,14 +68,15 @@ jobs:
         ! NODE_ENV=production JWT_SECRET=abc123short node -e "require('./utils/jwtSecret')" 2>/dev/null
         echo "✅ JWT_SECRET guard intact"
 
-  # PRD-2026Q4 T0-11：slow lane —— required-but-non-blocking，目标 ~3min。
+  # slow lane —— 集成测试，BLOCKING deploy。
+  # 修复（2026-06 审阅）：此前 continue-on-error:true 且无任何 job needs 它 = 形同虚设，
+  # 集成全挂也能上生产。现去掉 continue-on-error，并让 test gate needs 它（见下）。
   # service-container 起 MySQL+Redis，跑 migrate + tests/api.test.js（真集成）。
-  # 失败时自动开 issue + Slack on-call webhook 通知，但 continue-on-error: true 不阻 deploy。
+  # ⚠️ 若本 lane 当前为红，请修复 api.test.js / 集成环境——这正是要它能阻断部署的原因。
   slow:
-    name: slow (integration, non-blocking)
+    name: slow (integration, blocking deploy)
     runs-on: ubuntu-latest
     needs: fast
-    continue-on-error: true
     services:
       mysql:
         image: mysql:8.0
@@ -226,14 +227,13 @@ jobs:
             labels: ['ci-slow-failure']
           });
 
-  # 保留 test job 名作为 build-api / build-web / deploy 的依赖锚点
-  # （只是把 fast 当成新的 test gate，避免 deploy 流水线断链）
+  # build-api / build-web / deploy 的依赖锚点：要求 fast + slow(集成) 双绿才放行部署链。
   test:
     name: test (gate)
     runs-on: ubuntu-latest
-    needs: fast
+    needs: [fast, slow]
     steps:
-    - run: echo "fast lane passed; deploy chain may proceed"
+    - run: echo "fast + slow(integration) both green; deploy chain may proceed"
 
   build-api:
     needs: test
