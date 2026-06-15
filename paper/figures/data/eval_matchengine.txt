@@ -1,0 +1,20 @@
+=== TreatBot Match Engine Evaluation ===
+Threshold: 42 (SCORE_MIN)
+Dataset: 50 patient-trial pairs, 12 patients
+
+--- Binary Classification (eligible vs ineligible) ---
+  TP: 13  FP: 12
+  FN: 0  TN: 11
+  Precision: 52.0%
+  Recall:    100.0%
+  F1 Score:  68.4%
+  Accuracy:  66.7%
+
+--- Ranking Quality ---
+  Mean nDCG@10: 80.1%
+
+--- Uncertain Pairs ---
+  Moderate scores: 10/14
+
+
+SUMMARY: P=52.0 R=100.0 F1=68.4 nDCG=80.1 threshold=42

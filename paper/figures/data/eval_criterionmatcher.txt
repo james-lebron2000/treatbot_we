@@ -1,0 +1,15 @@
+=== Criterion-Level Matcher Evaluation ===
+Dataset: 50 pairs, evaluated 50
+
+--- Binary Classification ---
+  TP: 13  FP: 0
+  FN: 0  TN: 23
+  Precision: 100.0%
+  Recall:    100.0%
+  F1 Score:  100.0%
+  Accuracy:  100.0%
+
+--- Uncertain ---
+  Moderate scores: 0/14
+
+CRITERION_SUMMARY: P=100.0 R=100.0 F1=100.0 Acc=100.0
