@@ -673,6 +673,15 @@ const getCurrentCase = async (userId) => {
   return serializeCase(medicalCase);
 };
 
+// 列出该账号的全部病例（= 病人）。多病人索引与"匹配按病例隔离"判定都用它。
+const listCases = async (userId) => {
+  const rows = await MedicalCase.findAll({
+    where: { user_id: userId },
+    order: [['updated_at', 'DESC']]
+  });
+  return rows.map(serializeCase);
+};
+
 const getCaseById = async (userId, caseId) => {
   const medicalCase = await MedicalCase.findOne({ where: { id: caseId, user_id: userId } });
   return serializeCase(medicalCase);
@@ -787,6 +796,7 @@ module.exports = {
   upsertCaseFromRecords,
   safeUpsertCaseFromRecords,
   getCurrentCase,
+  listCases,
   getCaseById,
   getCaseEvidence,
   applyCaseRevisions,

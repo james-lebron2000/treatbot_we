@@ -124,17 +124,31 @@ const getProfileRecordFromFilters = (filters) => {
   };
 };
 
-const getUserCompletedRecords = async (userId) => {
+const getUserCompletedRecords = async (userId, caseId = null) => {
   // PRD-2026Q2 §3.5：匹配引擎只取用户"有效"的已完成病历
+  // 多病人安全：传入 caseId 时按病例(=病人)隔离，绝不跨病人合并画像。
+  const where = { user_id: userId, status: 'completed', deleted_at: null };
+  if (caseId) where.case_id = caseId;
   return MedicalRecord.findAll({
-    where: {
-      user_id: userId,
-      status: 'completed',
-      deleted_at: null
-    },
+    where,
     attributes: ['id', 'diagnosis', 'stage', 'gene_mutation', 'treatment_line', 'pdl1', 'structured', 'created_at'],
     order: [['created_at', 'DESC']]
   });
+};
+
+// 决定匹配应隔离到哪个病例：显式 caseId 优先；否则仅当账号存在 >1 病例(多病人)时取活动病例隔离。
+// 单病人/无病例时返回 null —— 保持现状，避免单病人老数据(可能 case_id 为空)被误排除（今日为 no-op）。
+const resolveMatchCaseId = async (userId, explicitCaseId) => {
+  if (explicitCaseId) return explicitCaseId;
+  try {
+    const { listCases } = require('../services/medicalCaseService');
+    const cases = await listCases(userId);
+    if (!Array.isArray(cases) || cases.length <= 1) return null;
+    const active = cases.find((c) => c && c.status === 'active') || cases[0];
+    return active && active.id ? active.id : null;
+  } catch (_) {
+    return null;
+  }
 };
 
 const buildDetailedMatchItem = (trial, scored) => {
@@ -200,7 +214,9 @@ const getMatches = async (req, res, next) => {
     } else if (hasProfileFilters(filters)) {
       profileRecords = [getProfileRecordFromFilters(filters)];
     } else {
-      profileRecords = await getUserCompletedRecords(req.userId);
+      // 多病人安全：按病例隔离匹配画像（显式 caseId 或活动病例），绝不跨病人合并。
+      const caseId = await resolveMatchCaseId(req.userId, safeText(req.query.caseId));
+      profileRecords = await getUserCompletedRecords(req.userId, caseId);
     }
 
     if (!profileRecords.length) {
@@ -321,7 +337,8 @@ const getTrialDetail = async (req, res, next) => {
       return res.status(404).json({ code: 404, message: '试验不存在', data: null });
     }
 
-    const records = await getUserCompletedRecords(req.userId);
+    const caseId = await resolveMatchCaseId(req.userId, safeText(req.query.caseId));
+    const records = await getUserCompletedRecords(req.userId, caseId);
     const normalizedTrial = sanitizeTrial(trial);
 
     // Build consolidated profile + hybrid scoring for the trial detail
@@ -607,5 +624,8 @@ module.exports = {
   getTrialDetail,
   findMatches,
   searchTrials,
-  getFilterOptions
+  getFilterOptions,
+  // 暴露给单测：多病人匹配隔离
+  getUserCompletedRecords,
+  resolveMatchCaseId
 };
