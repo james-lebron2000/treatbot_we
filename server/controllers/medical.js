@@ -1232,6 +1232,7 @@ const getParseStatus = async (req, res, next) => {
         userId: req.userId,
         recordIds: [record.id],
         batchId: record.batch_id || null,
+        caseId: (req.query && req.query.caseId) || null, // 多病人：归属到指定病人
         metadata: { source: 'parse-status' }
       });
     }
@@ -1314,6 +1315,7 @@ const getParseStatusBatch = async (req, res, next) => {
         userId: req.userId,
         recordIds: completedIds,
         batchId: inferredBatchId || null,
+        caseId: ((req.method === 'POST' ? req.body && req.body.caseId : req.query && req.query.caseId)) || null, // 多病人：归属到指定病人
         metadata: { source: 'parse-status-batch' }
       });
     }
@@ -1354,6 +1356,40 @@ const getCurrentCase = async (req, res, next) => {
       }
     }
     res.json(success({ case: caseProfile || null }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 多病人：列出本账号下全部病人病例（病人索引）。
+const listPatientCases = async (req, res, next) => {
+  try {
+    const cases = await medicalCaseService.listCases(req.userId);
+    res.json(success({ cases }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 多病人：新建一个病人（返回 caseId；后续上传/匹配带上它即归属该病人）。
+const createPatientCase = async (req, res, next) => {
+  try {
+    const patientLabel = (req.body && req.body.patientLabel) || null;
+    const created = await medicalCaseService.createCase(req.userId, patientLabel);
+    res.json(success({ case: created }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 多病人：给某病人改名。
+const setCasePatientLabel = async (req, res, next) => {
+  try {
+    const updated = await medicalCaseService.setPatientLabel(
+      req.userId, req.params.caseId, (req.body && req.body.patientLabel) || null
+    );
+    if (!updated) return res.status(404).json({ code: 404, message: '病例不存在或无权限', data: null });
+    res.json(success({ case: updated }));
   } catch (err) {
     next(err);
   }
@@ -1428,6 +1464,9 @@ const getRecords = async (req, res, next) => {
       offset
     });
     const { count, rows } = recordResult;
+    // 多病人：caseId → 病人名 映射，供"我的病历"按病人分组/展示。
+    const _cases = await medicalCaseService.listCases(req.userId);
+    const caseLabelById = new Map((_cases || []).map((c) => [c.caseId || c.id, c.patientLabel || null]));
 
     // 获取预签名URL
     const list = await Promise.all(rows.map(async (r) => {
@@ -1456,6 +1495,8 @@ const getRecords = async (req, res, next) => {
         // 详情/匹配页仍按需计算；列表只返回缓存字段或 0，后续可接异步 materialized count。
         matchCount: Number(r.match_count || r.matchCount || 0),
         updatedAt: r.updated_at,
+        caseId: r.case_id || null,
+        patientLabel: r.case_id ? (caseLabelById.get(r.case_id) || null) : null,
         result,
         imageUrl
       };
@@ -2223,6 +2264,9 @@ module.exports = {
   handleParseStatusStream,
   getCurrentCase,
   getCase,
+  listPatientCases,
+  createPatientCase,
+  setCasePatientLabel,
   getCaseEvidence,
   applyCaseRevisions,
   getTimeline,

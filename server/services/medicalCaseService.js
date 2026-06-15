@@ -414,7 +414,18 @@ const lockOptions = (transaction) => (
     : {}
 );
 
-const findOrCreateActiveCase = async (userId, transaction) => {
+const findOrCreateActiveCase = async (userId, transaction, opts = {}) => {
+  const { caseId = null } = opts;
+  // 多病人：指定 caseId 时归属到该病人病例（必须属于本账号）。
+  if (caseId) {
+    const target = await MedicalCase.findOne({
+      where: { id: caseId, user_id: userId },
+      transaction,
+      ...lockOptions(transaction)
+    });
+    if (target) return target;
+    // 指定 caseId 不存在/不属于本账号 → 退化为默认活动病例，避免凭空造病人。
+  }
   let medicalCase = await MedicalCase.findOne({
     where: { user_id: userId, status: 'active' },
     order: [['updated_at', 'DESC']],
@@ -590,12 +601,12 @@ const createUploadBatch = async ({ userId, records = [], totalCount = 0, metadat
   };
 };
 
-const upsertCaseFromRecords = async ({ userId, recordIds = [], batchId = null, metadata = {} }) => {
+const upsertCaseFromRecords = async ({ userId, recordIds = [], batchId = null, metadata = {}, caseId = null }) => {
   const ids = unique(recordIds);
   if (!ids.length) return null;
 
   return runWithCaseWriteRetry(() => sequelize.transaction(async (transaction) => {
-    const medicalCase = await findOrCreateActiveCase(userId, transaction);
+    const medicalCase = await findOrCreateActiveCase(userId, transaction, { caseId });
     const existingRecordIds = unique(medicalCase.source_record_ids || []);
     const sourceRecordIds = unique([...existingRecordIds, ...ids]);
     const records = await MedicalRecord.findAll({
@@ -681,6 +692,28 @@ const listCases = async (userId) => {
     order: [['updated_at', 'DESC']]
   });
   return rows.map(serializeCase);
+};
+
+// 多病人：新建一个病人病例（账号下可有多个）。返回序列化新病例（含 caseId）。
+const createCase = async (userId, patientLabel = null) => {
+  const medicalCase = await MedicalCase.create({
+    user_id: userId,
+    status: 'active',
+    patient_label: patientLabel ? String(patientLabel).slice(0, 64) : null,
+    source_record_ids: [],
+    entities: {},
+    summary: {},
+    completeness: buildCompleteness({})
+  });
+  return serializeCase(medicalCase);
+};
+
+// 给某病例命名/改名（病人显示名）。属于本账号才生效。
+const setPatientLabel = async (userId, caseId, patientLabel) => {
+  const medicalCase = await MedicalCase.findOne({ where: { id: caseId, user_id: userId } });
+  if (!medicalCase) return null;
+  await medicalCase.update({ patient_label: patientLabel ? String(patientLabel).slice(0, 64) : null });
+  return serializeCase(medicalCase);
 };
 
 const getCaseById = async (userId, caseId) => {
@@ -798,6 +831,8 @@ module.exports = {
   safeUpsertCaseFromRecords,
   getCurrentCase,
   listCases,
+  createCase,
+  setPatientLabel,
   getCaseById,
   getCaseEvidence,
   applyCaseRevisions,

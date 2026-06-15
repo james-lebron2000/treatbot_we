@@ -92,6 +92,10 @@ router.get('/medical/parse-status-stream', authMiddleware, parseStreamLimiter, m
 // Phase E.6 / Review #3：每次调用都跑 LLM（~$0.05/call），强制走 uploadLimiter (30/h) 防被滥用。
 router.get('/medical/timeline', authMiddleware, uploadLimiter, medicalController.getTimeline);
 router.get('/medical/cases/current', authMiddleware, medicalController.getCurrentCase);
+// 多病人：病人(病例)列表 / 新建病人 / 改名（一账号管多病人）
+router.get('/medical/cases', authMiddleware, medicalController.listPatientCases);
+router.post('/medical/cases', authMiddleware, medicalController.createPatientCase);
+router.patch('/medical/cases/:caseId', authMiddleware, medicalController.setCasePatientLabel);
 router.get('/medical/cases/:caseId', authMiddleware, medicalController.getCase);
 router.post('/medical/cases/:caseId/revisions', authMiddleware, medicalController.applyCaseRevisions);
 router.get('/medical/cases/:caseId/evidence', authMiddleware, medicalController.getCaseEvidence);
