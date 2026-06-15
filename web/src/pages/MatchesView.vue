@@ -2,12 +2,13 @@
   <section class="grid">
     <h2>为您家人找到的可能性</h2>
 
-    <!-- PRD-2026Q2 §3.5：当前病历切换入口（徽标）。没有 active 病历时也展示，便于引导用户。 -->
+    <!-- PRD-2026Q2 §3.5 + 多病人（F5）：当前病人 / 病历切换入口（徽标）。没有 active 也展示，便于引导。 -->
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#f9fafb;border-color:#e5e7eb;">
       <div style="flex:1;min-width:0;">
-        <p class="muted" style="margin:0;font-size:0.75rem;">当前病历</p>
+        <p class="muted" style="margin:0;font-size:0.75rem;">{{ hasMultiplePatients ? '当前病人' : '当前病历' }}</p>
         <p style="margin:2px 0 0;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          {{ activeRecordLabel }}
+          <span v-if="hasMultiplePatients" style="color:#1d4ed8;font-weight:500;">{{ activePatientLabel }}</span>
+          <span v-if="hasMultiplePatients" style="color:#cbd5e1;margin:0 6px;">·</span>{{ activeRecordLabel }}
         </p>
       </div>
       <router-link to="/records" class="btn ghost" style="padding:6px 12px;font-size:0.85rem;white-space:nowrap;">切换</router-link>
@@ -166,7 +167,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../services/api'
 import { sortMatches } from '../utils/schema'
-import { usePatientStore } from '../stores/patient'
+import { usePatientStore, patientDisplayLabel } from '../stores/patient'
 import RecordSummaryCard from '../components/RecordSummaryCard.vue'
 // Q3-红线 §A.2.1：报名前如果未记录 share_with_cro scope，弹同意 modal。
 import ConsentModal from '../components/ConsentModal.vue'
@@ -182,6 +183,15 @@ const patientStore = usePatientStore()
 
 const hasRecord = computed(() => Object.keys(patientStore.structuredRecord || {}).length > 0)
 const summaryOpen = ref(true)
+
+// 多病人（F5）：账号里 ≥2 位病人时，徽标展示「当前病人」让用户确认匹配是针对谁。
+const hasMultiplePatients = computed(() => patientStore.cases.length > 1)
+const activePatientLabel = computed(() => {
+  const active = patientStore.activeCase
+  if (!active) return ''
+  const idx = patientStore.cases.findIndex((c) => (c.caseId || c.id) === (active.caseId || active.id))
+  return patientDisplayLabel(active, idx < 0 ? 0 : idx)
+})
 
 // PRD-2026Q2 §3.5：当前病历徽标。优先用 store.records 里 active 的那一条的诊断文本；
 // 手动录入态 (activeRecordId 为 null) 且 structuredRecord 有 diagnosis 时，展示手动录入 hint。
@@ -349,6 +359,10 @@ const loadMatches = async () => {
     const rec = patientStore.structuredRecord || {}
     const params: Record<string, unknown> = {
       recordId: patientStore.currentRecordId || undefined,
+      // 多病人（F5）：把当前病人的 caseId 传给匹配，画像隔离到这位病人，绝不跨病人合并。
+      // 后端优先级：recordId > filters > caseId —— 所以手动录入/指定记录时它被忽略（无害），
+      // 「整位病人」匹配（无 recordId、无手动 filters）时它生效。
+      caseId: patientStore.activeCaseId || undefined,
       page: currentPage.value,
       pageSize
     }
@@ -456,7 +470,14 @@ onMounted(() => {
   if (!patientStore.records.length) {
     patientStore.loadRecords().catch(() => null)
   }
-  loadMatches()
+  // 多病人（F5）：先把病人索引拉好（确定 activeCaseId），再跑匹配，
+  // 这样首个 getMatches 就能带上 caseId 把画像隔离到当前病人。失败不阻塞。
+  const startMatching = () => { loadMatches() }
+  if (!patientStore.cases.length) {
+    patientStore.loadCases().then(startMatching).catch(startMatching)
+  } else {
+    startMatching()
+  }
   loadFilterOptions()
   checkShareConsent()
 })

@@ -14,7 +14,7 @@
 // 本模块对外保留旧的 stage-based `StreamEvent` 接口（UploadView 早期版本以 stage 为中心写的渲染逻辑），
 // 在 dispatch 这一层把 main 的 status-based frame 折成 stage：
 //   - status='running' + statusPhase='queued'/'analyzing' / 未携带 streaming payload → 'preprocess'
-//   - status='running' + 携带 rawText                                       → 'ocr_text'
+//   - status='running' + 携带 textLength/rawText                             → 'ocr_text'
 //   - status='running' + 携带 fieldGroup+fields                              → 'field_group'
 //   - status='running' + statusPhase='structuring'                          → 'preprocess'（进度条 90%）
 //   - status='completed'                                                    → 'completed'
@@ -41,8 +41,9 @@ export interface StreamEvent {
   progress: number | null
   ts: number
   seq?: number
-  // stage='ocr_text'
+  // stage='ocr_text'（默认只有 textLength；rawText 仅受控调试环境可能出现）
   rawText?: string
+  textLength?: number
   // stage='field_group'
   fieldGroup?: 'basic' | 'diagnosis' | 'treatment' | 'timeline'
   fields?: Record<string, unknown>
@@ -104,15 +105,19 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       fields: payload.fields
     }
   }
-  // streaming 扩展：rawText（取得 OCR 全文，前端展开 raw text 折叠面板）
-  if (typeof payload.rawText === 'string' && payload.rawText.length) {
+  // streaming 扩展：OCR 取文完成。生产默认不下发 rawText，只给 textLength/pageCount 这类非敏感进展。
+  if (
+    (typeof payload.rawText === 'string' && payload.rawText.length) ||
+    typeof payload.textLength === 'number'
+  ) {
     return {
       recordId,
       stage: 'ocr_text',
       progress,
       ts,
       seq: typeof payload.seq === 'number' ? payload.seq : undefined,
-      rawText: payload.rawText
+      rawText: typeof payload.rawText === 'string' ? payload.rawText : undefined,
+      textLength: typeof payload.textLength === 'number' ? payload.textLength : undefined
     }
   }
 
@@ -122,8 +127,7 @@ const folMainFrameToStage = (payload: any): StreamEvent | null => {
       ? r.entities
       : r
     // 把 main 的扁平字段重新包成 UploadView 期望的 { entities, text, provider, confidence }。
-    // 注意：main 的 result.rawText 是截断到 500 字的 preview，不能当全量 text 用；
-    // 但 UploadView 的 normalizeRecord 仅用 entities 的字段，text 仅做兜底显示，所以这里截断版本就够了。
+    // 注意：生产 SSE 默认不再携带 result.rawText；最终全文仍只能从授权读档/轮询接口按需获取。
     const entities: Record<string, unknown> = { ...sourceEntities }
     delete entities.id
     delete entities.recordId

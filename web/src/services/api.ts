@@ -273,12 +273,16 @@ export const api = {
     }>>('/api/medical/upload-batch', formData, config)
     return unwrap(data)
   },
-  async getParseStatus(fileId: string) {
-    const { data } = await http.get<ApiResponse<any>>(`/api/medical/parse-status?fileId=${fileId}`)
+  // 多病人：可选 caseId —— 解析完成时把记录归属到指定病人（病例）。
+  async getParseStatus(fileId: string, caseId?: string) {
+    const query = new URLSearchParams({ fileId })
+    if (caseId) query.set('caseId', caseId)
+    const { data } = await http.get<ApiResponse<any>>(`/api/medical/parse-status?${query.toString()}`)
     return unwrap<any>(data)
   },
   // Phase E.2：批量查询解析状态（POST 体；最多 20 个 fileId）
-  async getParseStatusBatch(fileIds: string[], batchId?: string) {
+  // 多病人：可选 caseId 一并入体，解析完成时整批归属到该病人（病例）。
+  async getParseStatusBatch(fileIds: string[], batchId?: string, caseId?: string) {
     const { data } = await http.post<ApiResponse<{
       entries: Array<{
         fileId: string; recordId: string; status: string; progress: number;
@@ -286,7 +290,11 @@ export const api = {
       }>;
       total: number; completedCount: number; erroredCount: number; done: boolean;
       batch?: any; case?: any;
-    }>>('/api/medical/parse-status-batch', { fileIds, ...(batchId ? { batchId } : {}) })
+    }>>('/api/medical/parse-status-batch', {
+      fileIds,
+      ...(batchId ? { batchId } : {}),
+      ...(caseId ? { caseId } : {})
+    })
     return unwrap(data)
   },
   // Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线
@@ -309,6 +317,26 @@ export const api = {
   async getCurrentMedicalCase() {
     const { data } = await http.get<ApiResponse<any>>('/api/medical/cases/current')
     return unwrap<any>(data)
+  },
+  // 多病人：列出本账号下全部病人（病例索引）。返回 { cases: [...] }。
+  async getMedicalCases() {
+    const { data } = await http.get<ApiResponse<{ cases: any[] }>>('/api/medical/cases')
+    return unwrap<{ cases: any[] }>(data)
+  },
+  // 多病人：新建一个病人（病例），返回其 caseId；后续上传/匹配带上它即归属该病人。
+  async createPatientCase(patientLabel?: string) {
+    const { data } = await http.post<ApiResponse<{ case: any }>>('/api/medical/cases', {
+      patientLabel: patientLabel || null
+    })
+    return unwrap<{ case: any }>(data)
+  },
+  // 多病人：给某病人改名（显示名）。
+  async renamePatient(caseId: string, patientLabel: string) {
+    const { data } = await http.patch<ApiResponse<{ case: any }>>(
+      `/api/medical/cases/${encodeURIComponent(caseId)}`,
+      { patientLabel: patientLabel || null }
+    )
+    return unwrap<{ case: any }>(data)
   },
   async getMedicalCase(caseId: string) {
     const { data } = await http.get<ApiResponse<any>>(`/api/medical/cases/${encodeURIComponent(caseId)}`)
@@ -338,6 +366,10 @@ export const api = {
     if (params.page !== undefined) query.set('page', String(params.page))
     if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize))
     if (params.recordId !== undefined) query.set('recordId', String(params.recordId))
+    // 多病人：caseId 把匹配画像隔离到选中的病人（后端：无 recordId 时 caseId 生效）。
+    if (params.caseId !== undefined && params.caseId !== null && `${params.caseId}` !== '') {
+      query.set('caseId', String(params.caseId))
+    }
     query.set('filters', JSON.stringify(payload))
 
     try {

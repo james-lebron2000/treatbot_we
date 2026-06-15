@@ -55,6 +55,28 @@
         <button class="btn ghost" @click="goManualEntry" style="width:100%;">直接告诉我们关键信息 →</button>
       </div>
 
+      <!-- 多病人（F5）：这份病历是给谁的？ 选已有病人，或新建一位病人。
+           账号里已有 ≥1 位病人时才出现这个问题；首登单病人保持原有惰性建例流程不变。 -->
+      <div v-if="patientCases.length" class="card grid" style="gap:10px;background:#f8fafc;border-color:#e2e8f0;">
+        <div>
+          <h3 style="margin:0 0 2px;font-size:0.98rem;">这份病历是给谁的？</h3>
+          <p class="muted" style="margin:0;font-size:0.82rem;">分开管理家里不同人的病历，匹配更准、不串号。</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select v-model="targetCaseSelection" style="flex:1;min-width:160px;">
+            <option v-for="(c, idx) in patientCases" :key="c.caseId || c.id" :value="c.caseId || c.id">
+              {{ labelOf(c, idx) }}
+            </option>
+            <option value="__new__">+ 新病人…</option>
+          </select>
+        </div>
+        <div v-if="targetCaseSelection === '__new__'">
+          <label style="font-size:0.82rem;color:#374151;display:block;margin-bottom:4px;">新病人的名字</label>
+          <input v-model="newPatientName" placeholder="例如：妈妈、爸爸、本人" />
+          <p class="muted" style="margin:4px 0 0;font-size:0.76rem;">起个好认的名字就行，之后可以改。</p>
+        </div>
+      </div>
+
       <div class="card grid">
         <h3 style="margin:0;">上传病历</h3>
         <label class="upload-area" :class="{ 'has-files': files.length }">
@@ -98,7 +120,7 @@
       <StreamingRecordCard
         :record="parsedRecord"
         :filled-groups="filledGroups"
-        :raw-text="streamRawText"
+        :raw-text="allowRawTextPreview ? streamRawText : ''"
         :stage="currentStage"
         :upload-percent="uploadPercent"
       />
@@ -212,7 +234,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../services/api'
 import { FIELD_SCHEMAS, getMissingFields, normalizeRecord } from '../utils/schema'
-import { usePatientStore } from '../stores/patient'
+import { usePatientStore, patientDisplayLabel, type PatientCase } from '../stores/patient'
 import RecordSummaryCard from '../components/RecordSummaryCard.vue'
 // PRD-2026Q4 流式 OCR：边解析边渲染的字段卡 + SSE 客户端
 import StreamingRecordCard from '../components/StreamingRecordCard.vue'
@@ -249,6 +271,58 @@ const preparingFiles = ref(false)
 const uploadIndex = ref(0)
 const remark = ref('')
 const uploading = ref(false)
+
+// 多病人（F5）：这份病历是给谁的？
+// - targetCaseSelection：下拉选中的病人 caseId，或 '__new__' 表示新建。
+// - newPatientName：新建病人时填的名字。
+// - targetCaseId：真正生效的 caseId（uploadAndParse 时解析；解析完成的轮询带上它即归属该病人）。
+const patientCases = ref<PatientCase[]>([])
+const targetCaseSelection = ref<string>('')
+const newPatientName = ref<string>('')
+const targetCaseId = ref<string>('')
+const labelOf = (c: PatientCase, idx: number) => patientDisplayLabel(c, idx)
+
+// 拉病人索引；默认选中当前活动病人（没有则首位）。失败不阻塞上传（单病人仍可用）。
+const loadPatientCases = async () => {
+  try {
+    const list = await patientStore.loadCases()
+    patientCases.value = Array.isArray(list) ? list : []
+    const activeId = patientStore.activeCaseId
+    const ids = patientCases.value.map((c) => c.caseId || c.id)
+    if (activeId && ids.includes(activeId)) {
+      targetCaseSelection.value = activeId
+    } else if (ids.length) {
+      targetCaseSelection.value = ids[0]
+    } else {
+      targetCaseSelection.value = '' // 账号一位病人都没有 —— 走默认/惰性建例路径
+    }
+  } catch {
+    patientCases.value = []
+  }
+}
+
+// 解析这次上传归属的 caseId：新病人则先建例拿 id；已选则用选中的；都没有则用当前活动病人。
+const resolveTargetCaseId = async (): Promise<string> => {
+  if (targetCaseSelection.value === '__new__') {
+    const created = await patientStore.addPatient(newPatientName.value.trim())
+    if (created) {
+      // 同步刷新本地下拉，并把选择切到新病人
+      patientCases.value = patientStore.cases as PatientCase[]
+      targetCaseSelection.value = created
+      newPatientName.value = ''
+    }
+    return created || ''
+  }
+  const chosen = `${targetCaseSelection.value || ''}`.trim()
+  if (chosen) {
+    // 让后续匹配也默认锁定到这位病人
+    if (patientStore.activeCaseId !== chosen) patientStore.setActiveCase(chosen)
+    return chosen
+  }
+  // 兜底：当前活动病人（可能为空 —— 后端会惰性建例）
+  return `${patientStore.activeCaseId || ''}`.trim()
+}
+
 const parseStatus = ref('')
 const parseProgress = ref(0)
 const parsedRecord = ref<Record<string, unknown>>({})
@@ -266,6 +340,7 @@ const filledGroups = ref<GroupName[]>([])
 const streamRawText = ref<string>('')
 const currentStage = ref<'received' | 'preprocess' | 'ocr_text' | 'field_group' | 'completed' | 'error'>('received')
 const uploadPercent = ref<number>(0)
+const allowRawTextPreview = import.meta.env.VITE_OCR_STREAM_RAW_TEXT_ENABLED === 'true'
 let streamCloser: (() => void) | null = null
 let lastSeqByRecordId = new Map<string, number>()
 const submitting = ref(false)
@@ -655,7 +730,8 @@ const retryParse = async () => {
 
 const pollStatus = async () => {
   if (!fileId.value) return
-  const status = await api.getParseStatus(fileId.value)
+  // 多病人：带上 targetCaseId，解析完成时把这条记录归属到选中的病人。
+  const status = await api.getParseStatus(fileId.value, targetCaseId.value || undefined)
   parseStatus.value = status.status || 'parsing'
   parseProgress.value = Number(status.progress || 0)
   if (status.status === 'completed') {
@@ -806,7 +882,8 @@ const isCompletedStatus = (status: unknown) => COMPLETED_STATUSES.has(String(sta
 const isErrorStatus = (status: unknown) => ERROR_STATUSES.has(String(status || '').toLowerCase())
 
 const pollBatchOnce = async (): Promise<{ done: boolean; mergedResult: Record<string, unknown>; firstError?: string }> => {
-  const status = await api.getParseStatusBatch(fileIds.value, batchId.value)
+  // 多病人：带上 targetCaseId，整批解析完成时归属到选中的病人。
+  const status = await api.getParseStatusBatch(fileIds.value, batchId.value, targetCaseId.value || undefined)
   const entries = Array.isArray(status.entries) ? status.entries : []
   batchStats.total = Number(status.total || entries.length || fileIds.value.length || 0)
   batchStats.completedCount = Number(status.completedCount || entries.filter((entry: any) => isCompletedStatus(entry.status)).length || 0)
@@ -898,6 +975,10 @@ const uploadAndParse = async () => {
   track('upload_start', { fileCount: files.value.length })
 
   try {
+    // Step 0（多病人）：确定这次上传归属哪位病人。新病人会先建例拿到 caseId；
+    // 解析完成的轮询带上它，记录就挂到这位病人名下。
+    targetCaseId.value = await resolveTargetCaseId()
+
     // Step 1：一次性批量上传（Treatbot Web 原生支持 <input multiple>）
     parseStatus.value = 'uploading'
     pollStartTime = Date.now()
@@ -990,7 +1071,7 @@ const uploadAndParse = async () => {
         if (typeof evt.progress === 'number' && evt.progress > parseProgress.value) {
           parseProgress.value = evt.progress
         }
-        if (evt.stage === 'ocr_text' && evt.rawText) {
+        if (evt.stage === 'ocr_text' && evt.rawText && allowRawTextPreview) {
           streamRawText.value = evt.rawText
         }
         if (evt.stage === 'field_group' && evt.fieldGroup && evt.fields) {
@@ -1109,6 +1190,8 @@ const toMatches = async () => {
 
 onMounted(() => {
   checkUploadConsent()
+  // 多病人：拉病人索引填充「这份病历是给谁的？」下拉。
+  loadPatientCases()
 })
 
 onUnmounted(() => {
