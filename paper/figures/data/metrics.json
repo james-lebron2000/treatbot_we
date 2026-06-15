@@ -1,0 +1,139 @@
+{
+  "_provenance": {
+    "note": "Every number here was regenerated from a real run of a repo script or read from a committed repo artifact. No hand-entered or model-estimated values. Figures read ONLY from this file.",
+    "generated_on": "2026-06-01",
+    "sources": {
+      "gold_standard": "node server/scripts/evalMatchEngine.js (dataset header) + direct count of server/tests/fixtures/golden-matches.json",
+      "match_engine": "node server/scripts/evalMatchEngine.js  (raw: paper/figures/data/eval_matchengine.txt)",
+      "criterion_matcher": "node server/scripts/evalCriterionMatcher.js  (raw: paper/figures/data/eval_criterionmatcher.txt)",
+      "corpus": "key count of server/data/decomposed_criteria.json and server/data/structured_inclusion.json",
+      "ocr_benchmark": "docs/bench-vision-llm-2026-05-01.md (committed benchmark, Run 2 aggregates and per-file table)",
+      "scoring_weights": "README.md + server/services/matchEngine.js"
+    }
+  },
+
+  "gold_standard": {
+    "version": "1.0",
+    "created": "2026-04-15",
+    "nature": "curated / semi-synthetic, constructed from de-identified clinical patterns; SMALL — not a prospective cohort",
+    "patients": 12,
+    "pairs": 50,
+    "labels": { "eligible": 13, "ineligible": 23, "uncertain": 14 },
+    "cancer_types": ["lung_nsclc", "lung_sclc", "liver", "breast", "colorectal", "gastric"],
+    "relevance_for_ndcg": { "eligible": 2, "uncertain": 1, "ineligible": 0 }
+  },
+
+  "match_engine": {
+    "label": "Weighted two-stage scorer (matchEngine.scoreRecordAgainstTrial)",
+    "threshold": 42,
+    "precision": 52.0,
+    "recall": 100.0,
+    "f1": 68.4,
+    "accuracy": 66.7,
+    "ndcg_at_10": 80.1,
+    "confusion": { "TP": 13, "FP": 12, "FN": 0, "TN": 11 },
+    "uncertain_in_moderate_band": { "hit": 10, "total": 14 }
+  },
+
+  "criterion_matcher": {
+    "label": "Criterion-level matcher (criterionMatcher.evaluateAllCriteria)",
+    "threshold": 42,
+    "precision": 100.0,
+    "recall": 100.0,
+    "f1": 100.0,
+    "accuracy": 100.0,
+    "ndcg_at_10": null,
+    "confusion": { "TP": 13, "FP": 0, "FN": 0, "TN": 23 },
+    "uncertain_in_moderate_band": { "hit": 0, "total": 14 }
+  },
+
+  "false_positive_example": {
+    "trial_id": "22615",
+    "patients_wrongly_matched_by_match_engine": ["P01", "P02", "P03", "P04"],
+    "match_engine_scores": { "P01": 63, "P02": 78, "P03": 60, "P04": 53 },
+    "gold_reason": "Trial requires HER2 TKD activating mutation; patients have EGFR/ALK/other drivers, not HER2",
+    "criterion_matcher_verdict": "excluded (gene criterion NOT_MET) -> correct"
+  },
+
+  "corpus": {
+    "trials_indexed": 496,
+    "trials_with_decomposed_criteria": 496,
+    "trials_with_structured_inclusion": 496,
+    "note": "README states 496 actively-recruiting trials; both criteria files key on 496 trial ids"
+  },
+
+  "scoring_weights": {
+    "disease_exact": 34,
+    "disease_direction": 26,
+    "gene_mutation": 20,
+    "stage": 10,
+    "treatment_line": 10,
+    "ecog": 6,
+    "pdl1": 6,
+    "disease_tag_bonus": 5,
+    "city": 3,
+    "base": 10,
+    "max": 99
+  },
+
+  "ocr_benchmark": {
+    "date": "2026-05-01",
+    "n_documents": 6,
+    "documents": [
+      "LSLI text PDF (5.9MB/13p, pancreatic Ca, gene report)",
+      "MSHU scanned PDF (23MB/22p, urothelial Ca)",
+      "Huang gene report (1.0MB/41p, text PDF)",
+      "A-Yu-Li mixed report (12MB/76p)",
+      "t1.png (2.7MB, colorectal Ca record)",
+      "t4.png (495KB, record image)"
+    ],
+    "path_note": "All PDFs fell back to the vision path this run (markitdown[pdf] not installed), so costs represent the vision-path upper bound; the production text path is cheaper.",
+    "providers": {
+      "doubao": {
+        "model": "doubao-seed-1-6-vision-250815",
+        "vision_capable": true,
+        "success": 6, "fail": 0,
+        "total_cny": 0.2364,
+        "avg_latency_ms": 85191,
+        "avg_prompt_tokens": 3246,
+        "avg_completion_tokens": 4421
+      },
+      "kimi": {
+        "model": "moonshot-v1-128k-vision-preview",
+        "vision_capable": true,
+        "success": 6, "fail": 0,
+        "total_cny": 0.3535,
+        "avg_latency_ms": 29740,
+        "avg_prompt_tokens": 2530,
+        "avg_completion_tokens": 1445,
+        "risk": "repetition / max_tokens truncation on long records (t1.png hit 4000-token cap and looped)"
+      },
+      "minimax": {
+        "model": "MiniMax-M2 (Coding-Plan key, text-only)",
+        "vision_capable": false,
+        "usable_for_ocr": false,
+        "note": "Returns HTTP 200 but ignores the image and fabricates text; e.g. invented an ovarian-cyst case for a colorectal-cancer image"
+      }
+    },
+    "pricing_cny_per_1m_tokens": {
+      "doubao": { "input": 0.86, "output": 8.28 },
+      "kimi": { "input": 6.84, "output": 28.80 },
+      "minimax": { "input": 1.20, "output": 6.00 }
+    }
+  },
+
+  "ocr_benchmark_per_file": [
+    { "file": "LSLI-pancreatic", "provider": "kimi",   "mode": "vision_pdf", "latency_ms": 35579, "total_tokens": 4510,  "cny": 0.0593 },
+    { "file": "LSLI-pancreatic", "provider": "doubao", "mode": "vision_pdf", "latency_ms": 92368, "total_tokens": 8926,  "cny": 0.0433 },
+    { "file": "MSHU-urothelial", "provider": "kimi",   "mode": "vision_pdf", "latency_ms": 37825, "total_tokens": 4444,  "cny": 0.0574 },
+    { "file": "MSHU-urothelial", "provider": "doubao", "mode": "vision_pdf", "latency_ms": 148977,"total_tokens": 11443, "cny": 0.0642 },
+    { "file": "Huang-gene",      "provider": "kimi",   "mode": "vision_pdf", "latency_ms": 25059, "total_tokens": 4672,  "cny": 0.0640 },
+    { "file": "Huang-gene",      "provider": "doubao", "mode": "vision_pdf", "latency_ms": 91839, "total_tokens": 9623,  "cny": 0.0491 },
+    { "file": "t1.png",          "provider": "kimi",   "mode": "vision_image", "latency_ms": 67617, "total_tokens": 5159, "cny": 0.1231 },
+    { "file": "t1.png",          "provider": "doubao", "mode": "vision_image", "latency_ms": 117135,"total_tokens": 6979, "cny": 0.0467 },
+    { "file": "t4.png",          "provider": "kimi",   "mode": "vision_image", "latency_ms": 5396,  "total_tokens": 1421, "cny": 0.0155 },
+    { "file": "t4.png",          "provider": "doubao", "mode": "vision_image", "latency_ms": 32955, "total_tokens": 3312, "cny": 0.0163 },
+    { "file": "A-Yu-Li-mixed",   "provider": "kimi",   "mode": "vision_pdf", "latency_ms": 6963,  "total_tokens": 3642,  "cny": 0.0343 },
+    { "file": "A-Yu-Li-mixed",   "provider": "doubao", "mode": "vision_pdf", "latency_ms": 27872, "total_tokens": 5716,  "cny": 0.0167 }
+  ]
+}
