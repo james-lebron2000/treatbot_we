@@ -1,6 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 const logger = require('../utils/logger');
 const { success, error } = require('../utils/response');
@@ -52,6 +53,21 @@ const normalizePhone = (value) => {
   }
   return '';
 };
+
+// openid 单一来源：手机号通道（H5 短信 / 账号密码）统一用 h5_${phone}，
+// 保证同一手机号无论走短信、密码还是后续绑定，都落在同一个 User 行。
+const h5OpenidForPhone = (phone) => `h5_${phone}`;
+
+// 账号密码通道（手机号 + 密码）。与微信/短信共用同一 User 行，password_hash 是挂在
+// 已有账号上的可选凭证（models/user.js §A.2.4）。PASSWORD_AUTH_ENABLED 默认开，置
+// 'false' 可一键关闭注册 + 密码登录两个入口；per-call 重读，避免模块顶层 const 冻结
+// （同 H5_LOGIN_ENABLED 的历史教训）。
+const MIN_PASSWORD_LENGTH = 8;
+const BCRYPT_ROUNDS = 10;
+const isPasswordAuthEnabled = () => process.env.PASSWORD_AUTH_ENABLED !== 'false';
+// 密码登录时即便「该手机号未注册」也跑满一次 bcrypt.compare，抹平 has/no-account 的
+// 响应时序差，堵掉靠耗时枚举已注册手机号的侧信道。模块加载时生成一次合法 hash。
+const DUMMY_BCRYPT_HASH = bcrypt.hashSync('treatbot-timing-equalizer', BCRYPT_ROUNDS);
 
 // PRD-2026Q2 §3.4：refresh token 带 jti，登录/刷新时把 jti 写到 Redis
 // （key = refresh:{userId}:{jti}，TTL = refresh 过期秒数）。刷新时必须命中白名单；
@@ -429,7 +445,7 @@ const h5Login = async (req, res, next) => {
 
     let user = await User.findOne({ where: { phone: normalizedPhone } });
     if (!user) {
-      const openid = `h5_${normalizedPhone}`;
+      const openid = h5OpenidForPhone(normalizedPhone);
       const [createdUser] = await User.findOrCreate({
         where: { openid },
         defaults: {
@@ -442,6 +458,110 @@ const h5Login = async (req, res, next) => {
       user = createdUser;
     } else if (!user.phone) {
       await user.update({ phone: normalizedPhone });
+    }
+
+    res.json(success(await buildLoginResponse(user)));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 账号密码注册（手机号 + 短信验证码 + 密码）
+ * - 验证码校验复用 H5 那套：固定码（dev/演示）优先，其次 Redis 一次性动态码
+ * - openid = h5_${phone}，与短信/微信登录共用同一 User 行：
+ *     · 全新手机号        → 建行并写 password_hash
+ *     · 老用户（短信/微信登录过、还没设密码）→ 视作「为已有账号补设密码」
+ *     · 已设过密码        → 409，引导去登录（绝不覆盖旧密码）
+ * - 注册即登录：成功直接发 token pair
+ */
+const register = async (req, res, next) => {
+  try {
+    if (!isPasswordAuthEnabled()) {
+      return res.status(501).json(error('当前环境未开启账号密码注册', 501));
+    }
+
+    const { phone, code, password } = req.body || {};
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json(error('请输入有效手机号', 400));
+    }
+    if (!password || `${password}`.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json(error(`密码至少 ${MIN_PASSWORD_LENGTH} 位`, 400));
+    }
+
+    const fixedMatch = getH5LoginFixedCode() && `${code}` === `${getH5LoginFixedCode()}`;
+    if (!fixedMatch) {
+      const verify = await smsService.verifyCode(normalizedPhone, code);
+      if (!verify.valid) {
+        return res.status(400).json(error(verify.message, 400));
+      }
+    }
+
+    const openid = h5OpenidForPhone(normalizedPhone);
+    const passwordHash = await bcrypt.hash(`${password}`, BCRYPT_ROUNDS);
+
+    const [user, created] = await User.findOrCreate({
+      where: { openid },
+      defaults: {
+        openid,
+        nickname: `用户${normalizedPhone.slice(-4)}`,
+        avatar_url: '',
+        phone: normalizedPhone,
+        password_hash: passwordHash
+      }
+    });
+
+    if (!created) {
+      if (user.deleted_at) {
+        return res.status(403).json(error('该账号已注销，如需恢复请联系客服', 403));
+      }
+      if (user.password_hash) {
+        return res.status(409).json(error('该手机号已注册，请直接登录', 409));
+      }
+      // 老用户补设密码 + 回填可能缺失的 phone（短信用户首次设密码走这里）
+      await user.update({
+        password_hash: passwordHash,
+        phone: user.phone || normalizedPhone
+      });
+    }
+
+    logger.info('账号密码注册成功', { userId: user.id, created });
+    res.json(success(await buildLoginResponse(user)));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 账号密码登录（手机号 + 密码）
+ * - 错误统一返回「手机号或密码错误」，不区分「未注册 / 未设密码 / 密码错」，防手机号枚举
+ * - 即便用户不存在也跑满一次 bcrypt.compare（DUMMY_BCRYPT_HASH），抹平时序侧信道
+ */
+const passwordLogin = async (req, res, next) => {
+  try {
+    if (!isPasswordAuthEnabled()) {
+      return res.status(501).json(error('当前环境未开启账号密码登录', 501));
+    }
+
+    const { phone, password } = req.body || {};
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone || !password) {
+      return res.status(400).json(error('请输入手机号和密码', 400));
+    }
+
+    const user = await User.findOne({ where: { openid: h5OpenidForPhone(normalizedPhone) } });
+    const invalidCredentials = () => res.status(401).json(error('手机号或密码错误', 401));
+
+    // 不可登录的几种情况（不存在 / 已注销 / 没设过密码）也跑一次假比对再统一报错。
+    if (!user || user.deleted_at || !user.password_hash) {
+      await bcrypt.compare(`${password}`, DUMMY_BCRYPT_HASH);
+      return invalidCredentials();
+    }
+
+    const matched = await bcrypt.compare(`${password}`, user.password_hash);
+    if (!matched) {
+      return invalidCredentials();
     }
 
     res.json(success(await buildLoginResponse(user)));
@@ -545,6 +665,8 @@ const sendVerificationCode = async (req, res, next) => {
 module.exports = {
   weappLogin,
   h5Login,
+  register,
+  passwordLogin,
   refreshToken,
   bindPhone,
   sendVerificationCode

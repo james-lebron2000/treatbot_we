@@ -46,6 +46,9 @@ router.post('/track', funnelController.track);
 router.post('/auth/weapp-login', strictLimiter, normalizePii, authController.weappLogin);
 router.post('/auth/send-code', strictLimiter, normalizePii, authController.sendVerificationCode);
 router.post('/auth/h5-login', strictLimiter, normalizePii, authController.h5Login);
+// 账号密码：注册（手机号+验证码+密码）与密码登录，与 h5-login 同等敏感 → 同等限流 + PII 归一化。
+router.post('/auth/register', strictLimiter, normalizePii, authController.register);
+router.post('/auth/password-login', strictLimiter, normalizePii, authController.passwordLogin);
 // PRD-2026Q4 T0-7 followup（路由审计）：refreshToken 是凭证再签发路径，
 // 与 weapp-login / send-code / h5-login 同等敏感 → 同等限流。老实现漏了 strictLimiter，
 // 暴露 refresh-token 撞库 / 暴破面（leaked refresh token 在过期前可被重放）。

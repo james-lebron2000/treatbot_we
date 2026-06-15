@@ -265,6 +265,15 @@ export const api = {
     const { data } = await http.post<ApiResponse<{ token: string }>>('/api/auth/h5-login', payload)
     return unwrap<{ token: string }>(data)
   },
+  // 账号密码：注册（手机号+验证码+密码，注册即登录）与密码登录，返回与 h5-login 同构的 token pair。
+  async register(payload: { phone: string; code: string; password: string }) {
+    const { data } = await http.post<ApiResponse<{ token: string; refreshToken?: string }>>('/api/auth/register', payload)
+    return unwrap<{ token: string; refreshToken?: string }>(data)
+  },
+  async passwordLogin(payload: { phone: string; password: string }) {
+    const { data } = await http.post<ApiResponse<{ token: string; refreshToken?: string }>>('/api/auth/password-login', payload)
+    return unwrap<{ token: string; refreshToken?: string }>(data)
+  },
   async uploadMedicalRecord(file: File, type: string, remark: string) {
     const formData = new FormData()
     formData.append('file', file)
