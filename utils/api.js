@@ -1122,6 +1122,17 @@ const buildMatchQueryParams = (params = {}, payload = {}) => {
   return query
 }
 
+// A 轨：标准治疗（指南）匹配。无本地兜底——后端不可用时直接抛错，页面给「稍后再试」。
+const getGuidelines = (params = {}) => {
+  const recordId = params && params.recordId ? `${params.recordId}` : ''
+  const qs = recordId ? buildQueryString({ recordId }) : ''
+  return request({ url: `/api/medical/guidelines${qs}`, method: 'GET' })
+}
+
+// 病种科普（公开）：列出覆盖癌种 / 按癌种取标准治疗概览。无需登录。
+const getGuidelineCancers = () => request({ url: '/api/guidelines/cancers', method: 'GET' })
+const getCancerEducation = (key) => request({ url: `/api/guidelines/cancer/${encodeURIComponent(key)}`, method: 'GET' })
+
 const getMatches = async (params = {}) => {
   const payload = buildMatchPayload(params)
   if (shouldUseLocalFallback() && isEndpointUnavailable('trialsMatchFind')) {
@@ -1530,6 +1541,9 @@ module.exports = {
   enrichMedicalRecord,
   getTrials,
   getMatches,
+  getGuidelines,
+  getGuidelineCancers,
+  getCancerEducation,
   getTrialDetail,
   applyTrial,
   getApplications,

@@ -13,6 +13,7 @@ const authController = require('../controllers/auth');
 const userController = require('../controllers/user');
 const medicalController = require('../controllers/medical');
 const matchController = require('../controllers/match');
+const guidelineController = require('../controllers/guideline');
 const applicationController = require('../controllers/application');
 const adminController = require('../controllers/admin');
 // Q3-红线 §A.2：用户合规自助接口（注销 / 数据导出 / consent / 改密码）
@@ -99,6 +100,11 @@ router.put('/medical/records/:id/activate', authMiddleware, medicalController.ac
 
 // ===== 匹配相关（需要认证） =====
 router.get('/matches', authMiddleware, matchController.getMatches);
+// A 轨：标准治疗（指南）匹配
+router.get('/medical/guidelines', authMiddleware, guidelineController.getGuidelines);
+// 病种科普（公开、无 PHI）：按癌种了解标准治疗，无需上传病历
+router.get('/guidelines/cancers', guidelineController.getCancerList);
+router.get('/guidelines/cancer/:key', guidelineController.getCancerEducationHandler);
 router.get('/matches/search', authMiddleware, matchController.searchTrials);
 router.get('/matches/filters', authMiddleware, matchController.getFilterOptions);
 router.post('/trials/matches/find', authMiddleware, matchController.findMatches);

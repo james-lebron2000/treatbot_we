@@ -30,10 +30,10 @@
     <view class="hero-content">
       <!-- PRD-2026Q2 §P0-6：用 view 而非 text 承载 pill 样式
            （text 元素在 WeChat 下 padding/inline-flex 表现不稳，导致 pill 高度被压扁） -->
-      <view class="hero-eyebrow"><text>数愈健康 · 用药全程免费</text></view>
+      <view class="hero-eyebrow"><text>数愈健康 · 临床研究全程免费</text></view>
       <text class="hero-title">让每一份病历</text>
       <text class="hero-title">都找到<text class="accent">能用的新药</text></text>
-      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂、找到能免费用上的新药。数据完全由您掌管。</text>
+      <text class="hero-subtitle">把病历放心交给我们 —— 一次上传，我们帮您看懂病历、找到能报名参加的新药临床研究。数据完全由您掌管。</text>
     </view>
     <image class="hero-image" src="/images/hero-doctor.png" mode="aspectFit"></image>
   </view>
@@ -48,7 +48,7 @@
     </view>
     <view class="stat-item">
       <text class="stat-number">10,000+</text>
-      <text class="stat-label">已找到免费用药</text>
+      <text class="stat-label">已匹配新药研究</text>
       <text class="stat-caption">含三甲合作渠道</text>
     </view>
     <view class="stat-item">
@@ -142,11 +142,11 @@
           </view>
           <view class="match-score">
             <text class="score-value">{{item.matchScore}}%</text>
-            <text class="score-label">匹配度</text>
+            <text class="score-label">入组符合度</text>
           </view>
         </view>
         <view class="match-tags">
-          <text class="pill pill-mint">免费用药</text>
+          <text class="pill pill-mint">研究用药·免费</text>
           <text class="pill pill-brand">{{item.phase}}</text>
           <text class="pill pill-amber">{{item.location}}</text>
         </view>
@@ -192,5 +192,6 @@
     <text class="tips-text">隐私零存储 · 信息只在您账户里 · 随时可带走或删除</text>
   </view>
 
+  <medical-disclaimer />
   <help-fab />
 </view>

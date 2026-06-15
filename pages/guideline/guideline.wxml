@@ -1,0 +1,130 @@
+<view class="container">
+  <!-- P0 急症红旗（与新药页同源） -->
+  <view class="emergency-banner" wx:if="{{safety && safety.redFlag}}">
+    <view class="emergency-head">
+      <icon name="alert-circle" color="red" size="40" strokeWidth="2.5" />
+      <text class="emergency-title">{{emergencyCopy.title}}</text>
+    </view>
+    <text class="emergency-cats">病历中注意到：{{safety.categoryLabels}}</text>
+    <text class="emergency-body">{{emergencyCopy.body}}</text>
+    <button class="btn btn-danger emergency-cta" bindtap="callEmergency">
+      <icon name="phone-call" color="white" size="32" />
+      <text>{{emergencyCopy.cta}}</text>
+    </button>
+  </view>
+
+  <view class="page-header">
+    <text class="page-title">看懂家人的病 · 标准治疗</text>
+    <text class="page-subtitle">先了解指南推荐的规范治疗，心里有把尺子，再决定要不要看新药研究。一切请以主诊医生为准。</text>
+  </view>
+
+  <view class="loading" wx:if="{{loading}}"><text>马上好…</text></view>
+  <view class="empty-state" wx:if="{{!loading && errorMessage}}"><text>{{errorMessage}}</text></view>
+
+  <!-- 未匹配：整理中 / 未登录 / 无病历 / 癌种暂未覆盖 -->
+  <view class="card empty-guide" wx:if="{{!loading && !errorMessage && (!result || !result.matched)}}">
+    <icon name="clipboard-list" color="brand" size="96" strokeWidth="1.5" />
+    <block wx:if="{{pendingRecord}}">
+      <text class="empty-guide-title">病历整理中…</text>
+      <text class="empty-guide-desc">我们正在看懂这份病历，整理好后这里会显示规范治疗。可下拉刷新，或点下面再看看。</text>
+      <button class="btn btn-primary" bindtap="loadGuidelines">刷新看看</button>
+    </block>
+    <block wx:else>
+      <text class="empty-guide-title">先上传一份病历</text>
+      <text class="empty-guide-desc">{{(result && result.coverageNote) || '上传病历后，我们会帮您把诊断、分期、基因结果整理出来，并对照指南给出规范治疗的大致方向。'}}</text>
+      <button class="btn btn-primary" bindtap="goToUpload">上传病历</button>
+    </block>
+
+    <!-- P2.3 病种科普：无门槛入口，没上传也能先了解 -->
+    <view class="cancer-picker" wx:if="{{cancers.length > 0}}">
+      <text class="cancer-picker-label">或先按病种了解标准治疗：</text>
+      <view class="cancer-chips">
+        <text class="cancer-chip" wx:for="{{cancers}}" wx:key="key" data-key="{{item.key}}" bindtap="pickCancer">{{item.plainName}}</text>
+      </view>
+    </view>
+  </view>
+
+  <block wx:if="{{!loading && !errorMessage && result && result.matched}}">
+    <!-- 病种科普模式提示 -->
+    <view class="edu-note" wx:if="{{mode === 'education'}}">
+      <text class="edu-note-text">这是「{{result.cancer.plainName}}」的标准治疗概览。上传病历后，可按您家人的分期和基因精准匹配。</text>
+      <text class="edu-note-link" bindtap="exitEducation">← 用我的病历匹配</text>
+    </view>
+
+    <!-- 看懂这个病 -->
+    <view class="card disease-card">
+      <view class="card-eyebrow"><icon name="lightbulb" color="brand" size="32" /><text>看懂这个病</text></view>
+      <text class="disease-name">{{result.cancer.plainName}}</text>
+      <text class="disease-intro">{{result.cancer.intro}}</text>
+      <view class="key-tests" wx:if="{{result.cancer.keyTests.length > 0}}">
+        <text class="key-tests-title">定方案前，通常要先明确：</text>
+        <view class="key-test" wx:for="{{result.cancer.keyTests}}" wx:key="*this">
+          <icon name="check" color="mint" size="28" strokeWidth="2.5" />
+          <text class="key-test-text">{{item}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 走到哪一步（科普模式不显示，无画像） -->
+    <view class="card journey-card" wx:if="{{mode !== 'education'}}">
+      <view class="card-eyebrow"><icon name="map-pin" color="brand" size="32" /><text>走到哪一步了</text></view>
+      <view class="journey-chips">
+        <text class="journey-chip">分期：{{stageLabel || '待确认'}}</text>
+      </view>
+      <text class="journey-text">{{journeyText}}</text>
+    </view>
+
+    <!-- 数据不足提示 -->
+    <view class="notice notice-amber" wx:if="{{result.flags.needsGeneTest}}">
+      <icon name="alert-circle" color="amber" size="32" />
+      <text class="notice-text">晚期肺癌选药高度依赖基因检测和 PD-L1 结果。如果还没做，建议先和医生确认——做完才能更准地匹配标准方案与新药。</text>
+    </view>
+    <view class="notice notice-blue" wx:if="{{result.flags.stageUnknown}}">
+      <icon name="alert-circle" color="brand" size="32" />
+      <text class="notice-text">暂时没读到明确分期，下面先把可能相关的方案都列出来。补充分期后会更贴合。</text>
+    </view>
+
+    <!-- 标准方案列表 -->
+    <view class="section-title" wx:if="{{result.regimens.length > 0}}">指南推荐的标准治疗</view>
+    <view class="card regimen-card" wx:for="{{result.regimens}}" wx:key="id">
+      <view class="regimen-head">
+        <text class="regimen-title">{{item.title}}</text>
+        <text class="regimen-evidence" wx:if="{{item.evidenceLevel}}">证据 {{item.evidenceLevel}}</text>
+      </view>
+      <text class="regimen-plain">{{item.plain}}</text>
+      <view class="regimen-meta">
+        <view class="meta-row" wx:if="{{item.drugsText}}"><text class="meta-k">常见用药</text><text class="meta-v">{{item.drugsText}}</text></view>
+        <view class="meta-row" wx:if="{{item.insurance}}"><text class="meta-k">医保</text><text class="meta-v">{{item.insurance}}</text></view>
+        <view class="meta-row" wx:if="{{item.sideEffectsText}}"><text class="meta-k">常见副作用</text><text class="meta-v">{{item.sideEffectsText}}</text></view>
+        <view class="meta-row" wx:if="{{item.source}}"><text class="meta-k">来源</text><text class="meta-v">{{item.source}}</text></view>
+      </view>
+      <view class="regimen-doctor"><icon name="alert-circle" color="text-dim" size="26" /><text class="regimen-doctor-text">{{item.talkToDoctor}}</text></view>
+    </view>
+
+    <view class="notice" wx:if="{{result.regimens.length === 0}}">
+      <text class="notice-text">没有自动匹配到对应阶段的标准方案 —— 可能是分期/线数信息不全，请直接咨询主诊医生。</text>
+    </view>
+
+    <!-- 可及性：怎么少花钱用上规范治疗 -->
+    <view class="card access-card" wx:if="{{result.accessGuidance.length > 0}}">
+      <view class="card-eyebrow"><icon name="lock" color="brand" size="32" /><text>可及性 · 怎么用得起</text></view>
+      <view class="access-item" wx:for="{{result.accessGuidance}}" wx:key="*this">
+        <icon name="check" color="mint" size="26" strokeWidth="2.5" />
+        <text class="access-item-text">{{item}}</text>
+      </view>
+      <text class="access-disclaimer" wx:if="{{result.accessDisclaimer}}">{{result.accessDisclaimer}}</text>
+    </view>
+
+    <!-- 跨到 B 轨（新药研究） -->
+    <view class="cross-track" bindtap="goToMatches">
+      <view class="cross-track-body">
+        <text class="cross-track-title">在标准治疗之外，看看可参加的新药研究 →</text>
+        <text class="cross-track-desc">临床研究通常在标准方案进展后、或作为替代时考虑，是否参加请由医生评估。</text>
+      </view>
+      <icon name="arrow-right" color="brand" size="32" />
+    </view>
+  </block>
+
+  <medical-disclaimer wx:if="{{!loading}}" text="{{disclaimerLong}}" tone="card" />
+  <help-fab />
+</view>

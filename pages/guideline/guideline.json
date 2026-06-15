@@ -1,10 +1,9 @@
 {
   "usingComponents": {
-    "help-fab": "/components/help-fab/help-fab",
     "icon": "/components/icon/icon",
-    "parse-progress-banner": "/components/parse-progress-banner/parse-progress-banner",
+    "help-fab": "/components/help-fab/help-fab",
     "medical-disclaimer": "/components/medical-disclaimer/medical-disclaimer"
   },
   "enablePullDownRefresh": true,
-  "backgroundColor": "#f0f7ff"
+  "navigationBarTitleText": "标准治疗"
 }

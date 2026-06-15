@@ -1392,7 +1392,8 @@ Page({
       }
       wx.setStorageSync('structuredRecordDraft', parsedData)
 
-      wx.switchTab({ url: '/pages/matches/matches' })
+      // P2：上传完成先落「治疗方案」(标准治疗 A 轨)，再由用户决定看新药研究
+      wx.switchTab({ url: '/pages/guideline/guideline' })
     } catch (error) {
       wx.showToast({
         // PRD-2026Q2 §3.7：进入匹配失败归为 network/unknown，走 shared copy.

@@ -203,7 +203,7 @@ Page({
   },
 
   goToMatches() {
-    wx.switchTab({
+    wx.navigateTo({
       url: '/pages/matches/matches'
     })
   },

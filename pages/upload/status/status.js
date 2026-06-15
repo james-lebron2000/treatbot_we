@@ -101,9 +101,9 @@ Page({
     wx.showToast({ title: '进入编辑模式', icon: 'none' })
   },
 
-  // 查看找到的新药
+  // 查看找到的新药（matches 已非 tab，改 navigateTo）
   goToMatches() {
-    wx.switchTab({ url: '/pages/matches/matches' })
+    wx.navigateTo({ url: '/pages/matches/matches' })
   },
 
   // 重试
