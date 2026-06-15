@@ -45,9 +45,28 @@
     <view class="tips">手机号仅在你主动报名时用于后续联系，不影响病历识别和匹配。</view>
   </view>
 
+  <!-- P0：报名前强制知情同意。报名 = 把病历交给申办方/CRO 做入组评估，必须显式勾选。 -->
+  <view class="card consent-card">
+    <view class="card-title">{{consent.title}}</view>
+    <view class="consent-bullets">
+      <view class="consent-bullet" wx:for="{{consent.bullets}}" wx:key="*this">
+        <icon name="check" color="brand" size="26" strokeWidth="2.5" />
+        <text class="consent-bullet-text">{{item}}</text>
+      </view>
+    </view>
+    <view class="consent-check" bindtap="toggleConsent">
+      <view class="consent-box {{consentChecked ? 'checked' : ''}}">
+        <icon wx:if="{{consentChecked}}" name="check" color="white" size="26" strokeWidth="3" />
+      </view>
+      <text class="consent-check-text">{{consent.checkbox}}</text>
+    </view>
+  </view>
+
   <view class="action-bar">
-    <button class="btn btn-primary" bindtap="submitApplication" loading="{{submitting}}">
+    <button class="btn btn-primary" bindtap="submitApplication" loading="{{submitting}}" disabled="{{!consentChecked}}">
       提交报名
     </button>
   </view>
+
+  <medical-disclaimer />
 </view>

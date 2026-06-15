@@ -299,7 +299,7 @@ Page({
     if (this.data.recordId) {
       wx.setStorageSync('currentRecordId', this.data.recordId)
     }
-    wx.switchTab({ url: '/pages/matches/matches' })
+    wx.navigateTo({ url: '/pages/matches/matches' })
   },
 
   goToCompletion() {

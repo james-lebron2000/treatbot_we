@@ -1,0 +1,176 @@
+/* A 轨页面样式。尺寸 rpx（1px=2rpx），颜色走 var(--*)。 */
+
+.page-header {
+  margin-bottom: 24rpx;
+}
+.page-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+.page-subtitle {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.loading, .empty-state {
+  padding: 60rpx 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* 急症红旗（与 matches 同款，页面级 wxss 需各自定义） */
+.emergency-banner {
+  background: var(--red-soft, #fef2f2);
+  border: 2rpx solid var(--red, #dc2626);
+  border-radius: 24rpx;
+  padding: 36rpx;
+  margin-bottom: 32rpx;
+}
+.emergency-head { display: flex; align-items: center; gap: 16rpx; margin-bottom: 16rpx; }
+.emergency-title { font-size: 34rpx; font-weight: 700; color: var(--red-text, #b91c1c); }
+.emergency-cats { display: block; font-size: 28rpx; font-weight: 600; color: var(--red-text, #b91c1c); margin-bottom: 12rpx; }
+.emergency-body { display: block; font-size: 28rpx; line-height: 1.6; color: var(--text); margin-bottom: 24rpx; }
+.emergency-cta { width: 100%; display: flex; align-items: center; justify-content: center; gap: 12rpx; }
+
+/* 卡片小标题 */
+.card-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--brand);
+  margin-bottom: 16rpx;
+}
+
+/* 看懂这个病 */
+.disease-name { display: block; font-size: 36rpx; font-weight: 700; color: var(--text); margin-bottom: 12rpx; }
+.disease-intro { display: block; font-size: 28rpx; line-height: 1.7; color: var(--text); }
+.key-tests { margin-top: 24rpx; padding-top: 24rpx; border-top: 2rpx solid var(--line); }
+.key-tests-title { display: block; font-size: 26rpx; font-weight: 600; color: var(--text); margin-bottom: 12rpx; }
+.key-test { display: flex; align-items: flex-start; gap: 12rpx; margin-bottom: 10rpx; }
+.key-test-text { flex: 1; font-size: 26rpx; line-height: 1.55; color: var(--text-muted); }
+
+/* 走到哪一步 */
+.journey-chips { margin-bottom: 12rpx; }
+.journey-chip {
+  display: inline-block;
+  padding: 8rpx 20rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+.journey-text { display: block; font-size: 28rpx; line-height: 1.65; color: var(--text); }
+
+/* 提示条 */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 20rpx;
+  margin-bottom: 24rpx;
+  background: var(--bg-soft);
+}
+.notice-amber { background: var(--amber-soft, #fffbeb); }
+.notice-blue { background: var(--brand-soft); }
+.notice-text { flex: 1; font-size: 26rpx; line-height: 1.6; color: var(--text); }
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin: 8rpx 0 20rpx;
+}
+
+/* 标准方案卡片 */
+.regimen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+.regimen-title { flex: 1; font-size: 30rpx; font-weight: 700; color: var(--text); line-height: 1.5; }
+.regimen-evidence {
+  flex-shrink: 0;
+  padding: 6rpx 16rpx;
+  background: var(--mint-soft, #ecfdf5);
+  color: var(--mint-text);
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+.regimen-plain { display: block; font-size: 28rpx; line-height: 1.7; color: var(--text); margin-bottom: 20rpx; }
+.regimen-meta { border-top: 2rpx solid var(--line); padding-top: 16rpx; }
+.meta-row { display: flex; gap: 16rpx; margin-bottom: 10rpx; }
+.meta-k { flex-shrink: 0; width: 140rpx; font-size: 26rpx; color: var(--text-muted); }
+.meta-v { flex: 1; font-size: 26rpx; color: var(--text); line-height: 1.55; }
+.regimen-doctor {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid var(--line);
+}
+.regimen-doctor-text { flex: 1; font-size: 24rpx; line-height: 1.5; color: var(--text-dim); }
+
+/* 可及性卡片 */
+.access-item { display: flex; align-items: flex-start; gap: 12rpx; margin-bottom: 14rpx; }
+.access-item-text { flex: 1; font-size: 26rpx; line-height: 1.6; color: var(--text); }
+.access-disclaimer { display: block; margin-top: 8rpx; font-size: 22rpx; line-height: 1.5; color: var(--text-muted); }
+
+/* 跨轨入口 */
+.cross-track {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 32rpx;
+  background: var(--bg);
+  border: 2rpx dashed var(--brand-soft);
+  border-radius: 24rpx;
+  margin: 8rpx 0 24rpx;
+}
+.cross-track-body { flex: 1; }
+.cross-track-title { display: block; font-size: 28rpx; font-weight: 700; color: var(--brand); margin-bottom: 6rpx; }
+.cross-track-desc { display: block; font-size: 24rpx; line-height: 1.55; color: var(--text-muted); }
+
+/* 空状态 */
+.empty-guide { text-align: center; padding: 60rpx 48rpx; }
+.empty-guide-title { display: block; font-size: 32rpx; font-weight: 700; color: var(--text); margin: 24rpx 0 12rpx; }
+.empty-guide-desc { display: block; font-size: 26rpx; line-height: 1.65; color: var(--text-muted); margin-bottom: 32rpx; }
+
+/* 病种科普 chips */
+.cancer-picker { margin-top: 32rpx; padding-top: 32rpx; border-top: 2rpx solid var(--line); }
+.cancer-picker-label { display: block; font-size: 26rpx; color: var(--text-muted); margin-bottom: 16rpx; }
+.cancer-chips { display: flex; flex-wrap: wrap; gap: 16rpx; justify-content: center; }
+.cancer-chip {
+  padding: 14rpx 32rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+/* 科普模式提示条 */
+.edu-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 28rpx;
+  margin-bottom: 24rpx;
+  background: var(--brand-soft);
+  border-radius: 20rpx;
+}
+.edu-note-text { flex: 1; font-size: 24rpx; line-height: 1.5; color: var(--text); }
+.edu-note-link { flex-shrink: 0; font-size: 24rpx; font-weight: 600; color: var(--brand); }
