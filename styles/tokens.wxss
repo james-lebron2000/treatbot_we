@@ -49,4 +49,9 @@ page {
   --s-6: 24px;
   --s-8: 32px;
   --s-12: 48px;
+  --container-read: 760px;
+  --container-app: 960px;
+  --container-wide: 1120px;
+  --container-console: 1440px;
+  --size-tap: 44px;
 }

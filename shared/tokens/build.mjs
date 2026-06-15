@@ -32,6 +32,8 @@ function buildCss(t, selector = ':root') {
     ['r-', t.r],
     ['shadow-', t.shadow],
     ['s-', t.s],
+    ['container-', t.container || {}],
+    ['size-', t.size || {}],
   ]
   for (const [prefix, group] of groups) {
     for (const [k, v] of Object.entries(group)) {
