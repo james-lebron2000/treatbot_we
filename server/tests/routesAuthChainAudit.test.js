@@ -64,6 +64,8 @@ describe('routes/index.js — auth chain regression gates', () => {
       'POST /auth/weapp-login',       // login itself
       'POST /auth/send-code',         // send sms code
       'POST /auth/treatbot-login',    // login itself
+      'POST /auth/register',          // 账号密码注册（公开端点，注册即登录，自带 strictLimiter+normalizePii）
+      'POST /auth/password-login',    // 账号密码登录（公开端点，自带 strictLimiter+normalizePii）
       'POST /auth/refresh',           // refresh uses token in body, not authMiddleware
       'POST /admin/login',            // admin login
       'POST /cro/login'               // cro login

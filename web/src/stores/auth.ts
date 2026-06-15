@@ -22,6 +22,16 @@ export const useAuthStore = defineStore('auth', () => {
     setTokens({ token: res.token, refreshToken: (res as any).refreshToken })
   }
 
+  const register = async (phone: string, code: string, password: string) => {
+    const res = await api.register({ phone, code, password })
+    setTokens({ token: res.token, refreshToken: res.refreshToken })
+  }
+
+  const passwordLogin = async (phone: string, password: string) => {
+    const res = await api.passwordLogin({ phone, password })
+    setTokens({ token: res.token, refreshToken: res.refreshToken })
+  }
+
   const logout = () => {
     token.value = ''
     refreshToken.value = ''
@@ -34,6 +44,8 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     setTokens,
     login,
+    register,
+    passwordLogin,
     logout
   }
 })
