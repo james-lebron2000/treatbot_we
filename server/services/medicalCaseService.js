@@ -402,6 +402,7 @@ const serializeCase = (medicalCase) => {
     completeness: plain.completeness || buildCompleteness(plain.entities || {}),
     validationIssues: plain.validation_issues || [],
     normalizedTags: plain.normalized_tags || {},
+    patientLabel: plain.patient_label || null,
     createdAt: plain.created_at,
     updatedAt: plain.updated_at
   };

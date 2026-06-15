@@ -143,6 +143,17 @@ const ensureMedicalCaseTables = async () => {
     logger.info('创建表: medical_cases');
   }
 
+  // 多病人：medical_cases.patient_label（幂等补列；表已存在的老库也会补上）
+  {
+    const caseCols = await qi.describeTable('medical_cases');
+    if (!caseCols.patient_label) {
+      await qi.addColumn('medical_cases', 'patient_label', {
+        type: DataTypes.STRING(64), allowNull: true, defaultValue: null
+      });
+      logger.info('补列: medical_cases.patient_label');
+    }
+  }
+
   if (!tables.includes('medical_case_versions')) {
     await qi.createTable('medical_case_versions', {
       id: { type: DataTypes.STRING(64), primaryKey: true },

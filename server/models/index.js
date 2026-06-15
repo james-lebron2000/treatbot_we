@@ -205,6 +205,12 @@ const MedicalCase = sequelize.define('MedicalCase', {
   normalized_tags: {
     type: require('sequelize').DataTypes.JSON,
     allowNull: true
+  },
+  // 多病人：该病例对应的病人显示名/标签（同一账号下区分多位病人；保持最小 PII，可空）。
+  patient_label: {
+    type: require('sequelize').DataTypes.STRING(64),
+    allowNull: true,
+    defaultValue: null
   }
 }, {
   tableName: 'medical_cases',
