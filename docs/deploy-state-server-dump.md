@@ -3,20 +3,20 @@
 > Written by `.github/workflows/deploy.yml` after every deploy.
 > autonomous routine reads this file via `git pull` — no GitHub API needed.
 
-- **Run**: 26364966617
-- **Commit**: `1ac43cf11daedfb51d93440d9617449b84ef134e`
-- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/26364966617
-- **Generated at**: 2026-05-24T15:28:00Z
+- **Run**: 27630091515
+- **Commit**: `1581a00a491ee4b4cde942795d6a4c16dd95f72b`
+- **Workflow URL**: https://github.com/james-lebron2000/treatbot_we/actions/runs/27630091515
+- **Generated at**: 2026-06-16T16:03:30Z
 
 ---
 
 ```
-===== Deploy 20260524-231907 — SHA=1ac43cf11daedfb51d93440d9617449b84ef134e =====
+===== Deploy 20260616-235412 — SHA=1581a00a491ee4b4cde942795d6a4c16dd95f72b =====
 ::group::0) Preflight schema repair
 ::endgroup::
 ::group::A) Backend container replace
-  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e
-1ac43cf11daedfb51d93440d9617449b84ef134e: Pulling from james-lebron2000/treatbot-api
+  Pulling image from GHCR: ghcr.io/james-lebron2000/treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b
+1581a00a491ee4b4cde942795d6a4c16dd95f72b: Pulling from james-lebron2000/treatbot-api
 ff86ea2e5edc: Already exists
 e54aec64c365: Already exists
 804d4d68057c: Already exists
@@ -25,14 +25,15 @@ e54aec64c365: Already exists
 2777179321ed: Pulling fs layer
 7254f7eba08e: Pulling fs layer
 b507896b62da: Pulling fs layer
-85f6f76e26bf: Pulling fs layer
-56db476bdb91: Pulling fs layer
-a258a3e4fcd3: Pulling fs layer
-1c92633dd3eb: Pulling fs layer
-56db476bdb91: Waiting
-a258a3e4fcd3: Waiting
-1c92633dd3eb: Waiting
-85f6f76e26bf: Waiting
+f642e3457d72: Pulling fs layer
+1866b4ba8ca2: Pulling fs layer
+c491f237a7d7: Pulling fs layer
+5704add70a4d: Pulling fs layer
+1866b4ba8ca2: Waiting
+c491f237a7d7: Waiting
+5704add70a4d: Waiting
+f642e3457d72: Waiting
+2777179321ed: Verifying Checksum
 2777179321ed: Download complete
 2777179321ed: Pull complete
 context canceled
@@ -47,13 +48,13 @@ context canceled
 #1 DONE 0.0s
 
 #2 resolve image config for docker-image://docker.io/docker/dockerfile:1.6
-#2 DONE 0.4s
+#2 DONE 1.1s
 
 #3 docker-image://docker.io/docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021
 #3 CACHED
 
 #4 [internal] load metadata for docker.io/library/node:20-bookworm-slim
-#4 DONE 0.4s
+#4 DONE 0.8s
 
 #5 [internal] load .dockerignore
 #5 transferring context: 380B done
@@ -63,53 +64,53 @@ context canceled
 #6 DONE 0.0s
 
 #7 [internal] load build context
-#7 transferring context: 7.81MB 0.1s done
-#7 DONE 0.2s
+#7 transferring context: 7.82MB 0.3s done
+#7 DONE 0.3s
 
-#8 [deps 2/5] WORKDIR /app
+#8 [deps 3/5] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 build-essential;     rm -rf /var/lib/apt/lists/*
 #8 CACHED
 
-#9 [runtime 3/8] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils;     PIP_INSTALL_ARGS="--no-cache-dir --break-system-packages --retries 10 --timeout 180";     if [ -n "https://mirrors.cloud.tencent.com/pypi/simple" ]; then       PIP_INSTALL_ARGS="$PIP_INSTALL_ARGS -i https://mirrors.cloud.tencent.com/pypi/simple";     fi;     pip3 install $PIP_INSTALL_ARGS 'markitdown[pdf]==0.1.5';     apt-get purge -y python3-pip;     apt-get autoremove -y;     rm -rf /var/lib/apt/lists/* /root/.cache
+#9 [deps 4/5] COPY server/package*.json ./
 #9 CACHED
 
-#10 [deps 3/5] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 build-essential;     rm -rf /var/lib/apt/lists/*
+#10 [deps 5/5] RUN npm ci --omit=dev
 #10 CACHED
 
-#11 [deps 4/5] COPY server/package*.json ./
+#11 [deps 2/5] WORKDIR /app
 #11 CACHED
 
-#12 [deps 5/5] RUN npm ci --omit=dev
+#12 [runtime 3/8] RUN set -eux;     if [ -n "http://mirrors.cloud.tencent.com/debian-security" ]; then       sed -i "s|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g" /etc/apt/sources.list.d/debian.sources;     fi;     if [ -n "http://mirrors.cloud.tencent.com/debian" ]; then       sed -i "s|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g" /etc/apt/sources.list.d/debian.sources;     fi;     apt-get update;     apt-get install -y --no-install-recommends python3 python3-pip python3-requests poppler-utils;     PIP_INSTALL_ARGS="--no-cache-dir --break-system-packages --retries 10 --timeout 180";     if [ -n "https://mirrors.cloud.tencent.com/pypi/simple" ]; then       PIP_INSTALL_ARGS="$PIP_INSTALL_ARGS -i https://mirrors.cloud.tencent.com/pypi/simple";     fi;     pip3 install $PIP_INSTALL_ARGS 'markitdown[pdf]==0.1.5';     apt-get purge -y python3-pip;     apt-get autoremove -y;     rm -rf /var/lib/apt/lists/* /root/.cache
 #12 CACHED
 
 #13 [runtime 4/8] COPY --from=deps /app/node_modules ./node_modules
 #13 CACHED
 
 #14 [runtime 5/8] COPY server/ ./
-#14 DONE 0.1s
+#14 DONE 0.2s
 
 #15 [runtime 6/8] COPY shared /shared
 #15 DONE 0.0s
 
 #16 [runtime 7/8] RUN mkdir -p logs
-#16 DONE 0.8s
+#16 DONE 0.2s
 
 #17 [runtime 8/8] RUN chown -R node:node /app
-#17 DONE 51.7s
+#17 DONE 75.7s
 
 #18 exporting to image
 #18 exporting layers
-#18 exporting layers 2.8s done
-#18 writing image sha256:8bb0e3f1b29ce6dd1df8c8de2256071196f9334f439d1143e4387f8e2249a5f1 done
-#18 naming to docker.io/library/treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e done
-#18 DONE 2.8s
-  ✓ Image treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e built locally
-  ✓ Image treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e ready in local daemon
-  ✓ Old image 'treatbot-api:0f98035de8fc6033dc9da7ec2b1bab7eaff4cd83' backed up as treatbot-api:rollback-20260524-231907
-  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260524-231907.env (44 vars)
+#18 exporting layers 3.2s done
+#18 writing image sha256:f270aa62de1cc520bd6bf021047bafae609a9d407486bb187bc613f8128ecbbe done
+#18 naming to docker.io/library/treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b done
+#18 DONE 3.2s
+  ✓ Image treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b built locally
+  ✓ Image treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b ready in local daemon
+  ✓ Old image 'treatbot-api:c1ef8edb1eccccf1ae3e4dc0374137eec9d3d491' backed up as treatbot-api:rollback-20260616-235412
+  ✓ Old env backed up to /home/ubuntu/treatbot-deploy-backups/treatbot-api.20260616-235412.env (57 vars)
 treatbot-api
   Cleaning old prev containers:
-treatbot-api-prev-20260522-005350
-  ✓ Old container renamed to treatbot-api-prev-20260524-231907
+treatbot-api-prev-20260616-075952
+  ✓ Old container renamed to treatbot-api-prev-20260616-235412
   OCR env override:
     ✓ KIMI_API_KEY (len=51)
     ✓ KIMI_VISION_MODEL=moonshot-v1-128k-vision-preview
@@ -129,18 +130,18 @@ treatbot-api-prev-20260522-005350
     ✓ ADMIN_LOGIN_KEY_HASH configured (sha256)
     ✓ ADMIN_LOGIN_TOKEN_TTL=3600
     ✓ ADMIN_LOGIN_CAN_REVEAL=true
-8d3dc738a5fd1d13237779c766ae62eb3ae54dde2a587f32a6d09f968c6a9432
+2bfc6c1eb90ab284589f32c1da3c02cc0c13ca47f9c587bf5efc3c199825fc08
   ✓ Healthy after 3s
   ✅ Backend deployed. Rollback cmd:
-     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260524-231907 treatbot-api && docker start treatbot-api
-  ✓ Backend container image verified: treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e
+     docker stop treatbot-api && docker rm treatbot-api && docker rename treatbot-api-prev-20260616-235412 treatbot-api && docker start treatbot-api
+  ✓ Backend container image verified: treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b
 ::endgroup::
 ::group::A.6) DB migrations (idempotent)
   ✅ Migrations done
 ::endgroup::
 ::group::B) Web frontend promote
   ✓ Tarball extracted (2 entries)
-  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260524-231907
+  ✓ Web backed up to /home/ubuntu/treatbot-deploy-backups/web.20260616-235412
   ✅ Web promoted to /var/www/treatbot-web (index.html OK, base=/treatbot/)
 ::endgroup::
 ::group::C) Reverse-proxy discovery (read-only)
@@ -151,118 +152,210 @@ unknown
     caddy: active=active, enabled=enabled
   ===== 2. Listening sockets (top relevant ports) =====
     State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                                  
-    LISTEN 0      4096         0.0.0.0:3000       0.0.0.0:*    users:(("docker-proxy",pid=3048933,fd=4))               
-    LISTEN 0      4096       127.0.0.1:2019       0.0.0.0:*    users:(("caddy",pid=303834,fd=9))                       
-    LISTEN 0      4096               *:443              *:*    users:(("caddy",pid=303834,fd=6))                       
-    LISTEN 0      4096               *:80               *:*    users:(("caddy",pid=303834,fd=12))                      
+    LISTEN 0      4096         0.0.0.0:3001       0.0.0.0:*    users:(("docker-proxy",pid=3101244,fd=4))               
+    LISTEN 0      4096         0.0.0.0:3000       0.0.0.0:*    users:(("docker-proxy",pid=2452092,fd=4))               
+    LISTEN 0      4096       127.0.0.1:2019       0.0.0.0:*    users:(("caddy",pid=303834,fd=6))                       
+    LISTEN 0      4096               *:443              *:*    users:(("caddy",pid=303834,fd=7))                       
+    LISTEN 0      4096               *:80               *:*    users:(("caddy",pid=303834,fd=9))                       
     LISTEN 0      511                *:5101             *:*    users:(("MainThread",pid=3237127,fd=21))                
-    LISTEN 0      4096            [::]:3000          [::]:*    users:(("docker-proxy",pid=3048945,fd=4))               
+    LISTEN 0      4096            [::]:3001          [::]:*    users:(("docker-proxy",pid=3101251,fd=4))               
+    LISTEN 0      4096            [::]:3000          [::]:*    users:(("docker-proxy",pid=2452100,fd=4))               
   ===== 3. Docker containers + ports =====
-    NAMES            IMAGE                                                   PORTS                                                  STATUS
-    treatbot-api     treatbot-api:1ac43cf11daedfb51d93440d9617449b84ef134e   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp              Up 7 seconds (healthy)
-    treatbot-redis   redis:7-alpine                                          0.0.0.0:6379->6379/tcp, :::6379->6379/tcp              Up 2 months (healthy)
-    treatbot-mysql   mysql:8.0                                               0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp   Up 2 months (healthy)
+    NAMES              IMAGE                                                   PORTS                                                           STATUS
+    treatbot-api       treatbot-api:1581a00a491ee4b4cde942795d6a4c16dd95f72b   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp                       Up 7 seconds (healthy)
+    mdt-frontend-1     mdt-frontend                                            0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp                     Up 2 weeks
+    mdt-backend-1      mdt-backend                                             0.0.0.0:8000->8000/tcp, :::8000->8000/tcp                       Up 2 weeks
+    mdt-worker-asr-1   mdt-worker-asr                                          8000/tcp                                                        Up 2 weeks
+    mdt-worker-ocr-1   mdt-worker-ocr                                          8000/tcp                                                        Up 2 weeks
+    mdt-worker-mdt-1   mdt-worker-mdt                                          8000/tcp                                                        Up 2 weeks
+    mdt-redis-1        redis:7-alpine                                          6379/tcp                                                        Up 2 weeks (healthy)
+    mdt-minio-1        minio/minio:latest                                      0.0.0.0:9000-9001->9000-9001/tcp, :::9000-9001->9000-9001/tcp   Up 2 weeks (healthy)
+    mdt-postgres-1     postgres:16-alpine                                      5432/tcp                                                        Up 2 weeks (healthy)
+    treatbot-redis     redis:7-alpine                                          0.0.0.0:6379->6379/tcp, :::6379->6379/tcp                       Up 3 months (healthy)
+    treatbot-mysql     mysql:8.0                                               0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp            Up 11 days (healthy)
   ===== 4. /etc/caddy/Caddyfile (full) =====
-    # TreatBot Caddy 反代配置（唯一源 — deploy.yml 会把本文件 scp 到 /etc/caddy/Caddyfile）
-    #
-    # 修复：原线上配置中 `/api/demo/*` 缺了 `path` 关键字，导致 Caddy 把它当成未知 matcher 名丢弃，
-    # 请求落到 `handle /api/*` catch-all → :5101（Python 服务）→ 返回 404
-    # {"success":false,"message":"Not found","code":"not_found"}。
-    # 本文件把它补回 `path /api/demo/*` 并保留原 `/api/demo/*` 作为 bare path shorthand 不再使用。
-    #
-    # 路由拓扑（所有请求经 Caddy:443 → 下游）：
-    #   /                         → 127.0.0.1:3000  (Express static landing page)
-    #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
-    #   /api/demo/*               → 127.0.0.1:3000  (Express, demo routes)
-    #   /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
-    #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
-    #   /api/track, /api/me/*     → 127.0.0.1:3000  (Express, treatbot-api)
-    #   /api/*  (所有其他)         → 127.0.0.1:5101  (遗留 Python 服务)
-    #
-    # 历史记录：
-    #   2026-04-29 补 /api/track + /api/me/* —— 此前漏配导致小程序 §B.2 漏斗埋点
-    #   与 §A.2 合规自助接口在生产环境直接 404（落到了 Python :5101 catch-all）。
-    #   /demo-assets/*, /uploads/* → static via Express :3000
+    # /etc/caddy/Caddyfile — 共享根配置（仅全局选项 + import）
+    # 各项目只维护自己的片段，互不覆盖（2026-05-31 整文件被覆盖导致 inseq.top 掉线，故拆分）：
+    #   /etc/caddy/conf.d/treatbot.caddy   (inseq.top, www.inseq.top — 由 treatbot CI 部署)
+    #   /etc/caddy/conf.d/tumorboard.caddy (mdt.inseq.top, minio.inseq.top — 由 TumorBoard 维护)
+    # 改动后：sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
     
     {
-        # Caddy admin API 只绑 localhost（防止腾讯云告警误判未授权接口暴露）
-        admin 127.0.0.1:2019
+        # 全局选项
+        # 联系邮箱(Let's Encrypt 用,过期前提醒)
+        email admin@inseq.top
+        # 如果 Let's Encrypt 在国内连接慢,可切 ZeroSSL:
+        # acme_ca https://acme.zerossl.com/v2/DV90
     }
     
-    inseq.top, www.inseq.top {
-        tls /etc/caddy/ssl/cert.pem /etc/caddy/ssl/key.pem
-    
-        header {
-            Strict-Transport-Security "max-age=31536000; includeSubDomains"
-            X-Frame-Options "DENY"
-            X-Content-Type-Options "nosniff"
-            -Server
-        }
-    
-        # Vue SPA（/treatbot/*）
-        handle_path /treatbot/* {
-            root * /var/www/treatbot-web
-            try_files {path} /index.html
-            file_server
-            header Cache-Control "no-store"
-        }
-    
-        # 所有 treatbot-api（Express @ 3000）的专有 API（在 /api/* catch-all 之前）
-        @treatbot_api {
-            path /api/demo/*
-            path /api/auth/treatbot-login /api/auth/send-code /api/auth/weapp-login /api/auth/refresh /api/auth/bind-phone /api/auth/profile
-            path /api/medical/* /api/matches /api/matches/* /api/trials /api/trials/*
-            path /api/applications /api/applications/*
-            path /api/admin/* /api/cro/* /api/user/*
-            # Q3-红线 §B.2 漏斗埋点 + §A.2 合规自助：补齐这两组才算端到端可用
-            path /api/track /api/me/*
-        }
-        handle @treatbot_api {
-            reverse_proxy 127.0.0.1:3000 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    
-        # 遗留 Python 服务（其他所有 /api/*）
-        handle /api/* {
-            reverse_proxy 127.0.0.1:5101 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    
-        # Express 静态：上传文件
-        handle_path /uploads/* {
-            root * /opt/treatbot/server/uploads
-            file_server
-        }
-    
-        # 默认兜底（landing page、/demo-assets/、/health 等都由 Express :3000 处理）
-        handle {
-            reverse_proxy 127.0.0.1:3000 {
-                header_up X-Real-IP {remote_host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
-        }
-    }
+    import /etc/caddy/conf.d/*.caddy
   ===== 5. /etc/caddy/conf.d/* (if any) =====
-    (no conf.d)
+    total 16
+    drwxr-xr-x 2 root root 4096 Jun  2 19:16 .
+    drwxr-xr-x 4 root root 4096 Jun  2 19:16 ..
+    -rw-r--r-- 1 root root 3939 Jun  2 19:16 treatbot.caddy
+    -rw-r--r-- 1 root root 1300 Jun  2 19:16 tumorboard.caddy
+    --- /etc/caddy/conf.d/treatbot.caddy ---
+      # TreatBot — Caddy 站点片段（deploy.yml 安装到 /etc/caddy/conf.d/treatbot.caddy）
+      #
+      # 架构：/etc/caddy/Caddyfile 为根，只含全局选项 + `import /etc/caddy/conf.d/*.caddy`。
+      # 每个项目只维护自己的片段，互不覆盖 —— 防止再次出现"整文件被覆盖导致 inseq.top 掉线"
+      # （2026-05-31 TumorBoard 部署覆盖共享 Caddyfile，抹掉本块，导致 HTTPS 故障）。
+      #
+      # TLS：Caddy 自动 HTTPS（Let's Encrypt/ZeroSSL，自动续期）。全局 email 在根 Caddyfile。
+      #      旧手动证书 /etc/caddy/ssl/* 已弃用（保留作应急回退，不再被引用）。
+      #
+      # 路由拓扑（请求经 Caddy:443 → 下游）：
+      #   /                         → 127.0.0.1:3000  (Express 落地页)
+      #   /treatbot/*               → /var/www/treatbot-web  (Vue SPA + try_files)
+      #   /h5 → redir /h5/quick-match ; /h5/*  → 127.0.0.1:3100  (Next.js)
+      #   /api/demo/*, /api/auth/*, /api/medical/*, /api/matches*, /api/trials*,
+      #   /api/applications*, /api/admin/*, /api/cro/*, /api/user/*,
+      #   /api/track, /api/me/*     → 127.0.0.1:3000  (Express, treatbot-api)
+      #   /api/*  (其他)             → 127.0.0.1:5101  (遗留 Python 服务)
+      #   /uploads/*                → /opt/treatbot/server/uploads (静态)
+      inseq.top, www.inseq.top {
+      
+          header {
+              Strict-Transport-Security "max-age=31536000; includeSubDomains"
+              X-Frame-Options "DENY"
+              X-Content-Type-Options "nosniff"
+              -Server
+          }
+      
+          # Vue SPA（/treatbot/*）
+          handle_path /treatbot/* {
+              root * /var/www/treatbot-web
+              try_files {path} /index.html
+              file_server
+              header Cache-Control "no-store"
+          }
+      
+          # H5（Next.js @ 3100）
+          redir /h5 /h5/quick-match
+          handle /h5/* {
+              reverse_proxy 127.0.0.1:3100 {
+                  header_up X-Real-IP {remote_host}
+                  header_up X-Forwarded-For {remote_host}
+                  header_up X-Forwarded-Proto {scheme}
+                  transport http {
+                      read_timeout 300s
+                      write_timeout 300s
+                  }
+              }
+          }
+      
+          # 所有 treatbot-api（Express @ 3000）的专有 API（在 /api/* catch-all 之前）
+          @treatbot_api {
+              path /api/demo/*
+              path /api/auth/h5-login /api/auth/send-code /api/auth/weapp-login /api/auth/refresh /api/auth/bind-phone /api/auth/profile
+              path /api/medical/* /api/matches /api/matches/* /api/trials /api/trials/*
+              path /api/applications /api/applications/*
+              path /api/admin/* /api/cro/* /api/user/*
+              # Q3-红线 §B.2 漏斗埋点 + §A.2 合规自助：补齐这两组才算端到端可用
+              path /api/track /api/me/*
+          }
+          handle @treatbot_api {
+              reverse_proxy 127.0.0.1:3000 {
+                  header_up X-Real-IP {remote_host}
+                  header_up X-Forwarded-For {remote_host}
+                  header_up X-Forwarded-Proto {scheme}
+                  transport http {
+                      read_timeout 300s
+                      write_timeout 300s
+                  }
+              }
+          }
+      
+          # 遗留 Python 服务（其他所有 /api/*）
+          handle /api/* {
+              reverse_proxy 127.0.0.1:5101 {
+                  header_up X-Real-IP {remote_host}
+                  header_up X-Forwarded-For {remote_host}
+                  header_up X-Forwarded-Proto {scheme}
+                  transport http {
+                      read_timeout 300s
+                      write_timeout 300s
+                  }
+              }
+          }
+      
+          # Express 静态：上传文件
+          handle_path /uploads/* {
+              root * /opt/treatbot/server/uploads
+              file_server
+          }
+      
+          # 默认兜底（landing page、/demo-assets/、/health 等都由 Express :3000 处理）
+          handle {
+              reverse_proxy 127.0.0.1:3000 {
+                  header_up X-Real-IP {remote_host}
+                  header_up X-Forwarded-For {remote_host}
+                  header_up X-Forwarded-Proto {scheme}
+                  transport http {
+                      read_timeout 300s
+                      write_timeout 300s
+                  }
+              }
+          }
+      }
+    --- /etc/caddy/conf.d/tumorboard.caddy ---
+      # ===== 前端 + 后端 API =====
+      mdt.inseq.top {
+          encode gzip
+      
+          # SSE 长连接 — 关 buffer + 30 min 不超时(必须)
+          @sse path /api/v1/jobs/* /api/v1/sessions/*/progress /api/v1/mdt-meetings/*/progress
+          handle @sse {
+              reverse_proxy localhost:8000 {
+                  flush_interval -1
+                  transport http {
+                      read_timeout 30m
+                      write_timeout 30m
+                  }
+              }
+          }
+      
+          # 其他后端 API
+          handle /api/* {
+              reverse_proxy localhost:8000
+          }
+      
+          # 健康检查 — 后端 /health 和 /health/deep(/diagnostics 页面会调 /health/deep)
+          handle /health* {
+              reverse_proxy localhost:8000
+          }
+      
+          # 前端 Next.js(兜底)— host 3001 因为 3000 经常被其他 Node 应用占用
+          handle {
+              reverse_proxy localhost:3001
+          }
+      
+          # 上传容忍度(单张化验单 + 录音分片)
+          request_body {
+              max_size 200MB
+          }
+      
+          log {
+              output file /var/log/caddy/mdt-access.log
+              format console
+              level INFO
+          }
+      }
+      
+      minio.inseq.top {
+          reverse_proxy localhost:9000 {
+          }
+          # 录音整段或 PDF 可能比较大
+          request_body {
+              max_size 500MB
+          }
+          log {
+              output file /var/log/caddy/minio-access.log
+              format console
+              level WARN
+          }
+      }
   ===== 6. /etc/nginx layout =====
     /etc/nginx/sites-available/treatbot
     /etc/nginx/sites-available/default
@@ -813,47 +906,48 @@ unknown
     drwxr-xr-x 14 root   root   4096 Feb 26 16:26 ..
     drwxr-xr-x  2 root   root   4096 Mar 25 16:46 clinicalmatch-home
     drwxr-xr-x  2 root   root   4096 Feb 26 16:26 html
-    drwxr-xr-x  3 ubuntu ubuntu 4096 May 24 23:17 treatbot-web
+    drwxr-xr-x  3 ubuntu ubuntu 4096 Jun 16 23:52 treatbot-web
   ===== 11. Backup nginx tree (NOT removing) =====
-    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260524-231907.tar.gz (16K)
+    ✓ nginx tree → /home/ubuntu/treatbot-deploy-backups/nginx-tree.20260616-235412.tar.gz (16K)
   ===== 12. Backup current Caddyfile =====
-    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260524-231907
-::group::C.5) Apply new Caddyfile + retire nginx
-  ✓ New Caddyfile uploaded (98 lines)
-  ✓ Current Caddyfile backed up to /home/ubuntu/treatbot-deploy-backups/Caddyfile.before-swap.20260524-231907
+    ✓ Caddyfile → /home/ubuntu/treatbot-deploy-backups/Caddyfile.20260616-235412
+::group::C.5) Install /etc/caddy/conf.d/treatbot.caddy + retire nginx
+  ✓ New fragment uploaded (103 lines)
+  ✓ 现有片段备份 → /home/ubuntu/treatbot-deploy-backups/treatbot.caddy.before-swap.20260616-235412
   --- diff (current → new) ---
   --- end diff ---
-  --- validate (rc=0) ---
-    {"level":"info","ts":1779636468.7321565,"msg":"using config from file","file":"/tmp/deploy/Caddyfile"}
-    {"level":"warn","ts":1779636468.7337546,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1779636468.7337687,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1779636468.7340546,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1779636468.7340684,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1779636468.7347069,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"warn","ts":1779636468.7347193,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
-    {"level":"info","ts":1779636468.7360208,"msg":"adapted config to JSON","adapter":"caddyfile"}
-    {"level":"warn","ts":1779636468.7360332,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/deploy/Caddyfile","line":21}
-    {"level":"info","ts":1779636468.7371562,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc00058d680"}
-    {"level":"info","ts":1779636468.7407255,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1779636468.7407422,"logger":"http.auto_https","msg":"skipping automatic certificate management because one or more matching certificates are already loaded","domain":"www.inseq.top","server_name":"srv0"}
-    {"level":"info","ts":1779636468.7407458,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
-    {"level":"info","ts":1779636468.742833,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc00058d680"}
+  --- whole-config validate (rc=0) ---
+    {"level":"info","ts":1781625793.083826,"msg":"using config from file","file":"/tmp/tmp.0pogTmIMyi"}
+    {"level":"warn","ts":1781625793.0855014,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0855293,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0858305,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0858436,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.08594,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0859504,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0860672,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"warn","ts":1781625793.0860777,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream"}
+    {"level":"info","ts":1781625793.0910206,"msg":"adapted config to JSON","adapter":"caddyfile"}
+    {"level":"warn","ts":1781625793.091037,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/tmp/tmp.0pogTmIMyi","line":6}
+    {"level":"info","ts":1781625793.0933392,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc0006fe980"}
+    {"level":"info","ts":1781625793.0934677,"logger":"http.auto_https","msg":"server is listening only on the HTTPS port but has no TLS connection policies; adding one to enable TLS","server_name":"srv0","https_port":443}
+    {"level":"info","ts":1781625793.0934887,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+    {"level":"info","ts":1781625793.096905,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc0006fe980"}
     Valid configuration
   --- end validate ---
-  ✅ Caddy swapped + reloaded
+  ✅ 片段已安装 + reload
   smoke: 127.0.0.1:3000/api/demo/samples=200  inseq.top/api/demo/samples=200
-  ✅ /api/demo/samples=200 — Caddyfile swap confirmed healthy
+  ✅ /api/demo/samples=200 — 片段安装确认健康
 
   ===== Retire nginx (backup + stop + disable) =====
   nginx: active=inactive
 unknown enabled=disabled
 unknown
-  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260524-231907.tar.gz
+  ✓ nginx tree archived → /home/ubuntu/treatbot-deploy-backups/nginx-tree.retired.20260616-235412.tar.gz
   ✓ nginx already disabled
 ::endgroup::
 ::group::D) Smoke tests
   /health (container):
-{"status":"ok","timestamp":"2026-05-24T15:27:51.893Z","version":"1.0.0","environment":"production"}
+{"status":"ok","timestamp":"2026-06-16T16:03:16.301Z","version":"1.0.0","environment":"production"}
   / (via nginx):
     HTTP 200
   /api/demo/samples (via nginx):
@@ -864,5 +958,5 @@ unknown
     HTTP 200
 ::endgroup::
 Total reclaimed space: 0B
-===== ✅ Deploy 20260524-231907 done =====
+===== ✅ Deploy 20260616-235412 done =====
 ```
