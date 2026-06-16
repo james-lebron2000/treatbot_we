@@ -488,10 +488,10 @@ const urgencyLabel = (u?: string) => {
 
 <style scoped>
 .summary-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s-4);
   position: relative;
 }
 
@@ -499,88 +499,91 @@ const urgencyLabel = (u?: string) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
 }
 
 .summary-title {
   margin: 0;
-  font-size: 1rem;
-  color: #1f2937;
+  font-size: var(--fs-subtitle);
+  color: var(--text);
 }
 
 .fill-rate {
-  font-size: 0.78rem;
-  padding: 3px 10px;
-  border-radius: 12px;
+  font-size: var(--fs-caption);
+  padding: 3px var(--s-3);
+  border-radius: var(--r-pill);
   font-weight: 500;
 }
 
-.fill-rate.good { background: #dcfce7; color: #166534; }
-.fill-rate.medium { background: #fef3c7; color: #92400e; }
-.fill-rate.low { background: #fee2e2; color: #991b1b; }
+.fill-rate.good { background: var(--mint-soft); color: var(--mint-text); }
+.fill-rate.medium { background: var(--amber-soft); color: var(--amber-text); }
+.fill-rate.low { background: var(--red-soft); color: var(--red-text); }
 
 /* 主诊断区域 */
 .diagnosis-hero {
-  background: linear-gradient(135deg, #eff6ff, #f0f9ff);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--bg-soft), var(--bg-mint));
+  border-radius: var(--r-sm);
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-3);
 }
 
 .hero-label {
-  font-size: 0.78rem;
-  color: #6b7280;
-  margin-bottom: 4px;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  margin-bottom: var(--s-1);
 }
 
 .hero-value {
-  font-size: 1.15rem;
+  font-size: var(--fs-subtitle);
   font-weight: 600;
-  color: #1e40af;
-  line-height: 1.4;
+  color: var(--brand-hover);
+  line-height: var(--lh-tight);
+  word-break: break-word;
 }
 
 .hero-tags {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
   flex-wrap: wrap;
 }
 
 .hero-tag {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 6px;
-  font-size: 0.78rem;
+  padding: 2px var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
-.hero-tag.stage { background: #fef3c7; color: #92400e; }
-.hero-tag.ecog { background: #dbeafe; color: #1e40af; }
+.hero-tag.stage { background: var(--amber-soft); color: var(--amber-text); }
+.hero-tag.ecog { background: var(--brand-soft); color: var(--brand-hover); }
 
 .hero-meta {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  color: #4b5563;
-  line-height: 1.5;
+  margin-top: var(--s-2);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 
 /* 字段行 */
 .summary-grid {
   display: grid;
-  gap: 10px;
+  gap: var(--s-2);
 }
 
 .field-row {
   display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #f9fafb;
-  border-radius: 8px;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
 }
 
 .field-icon {
-  font-size: 1.1rem;
+  font-size: var(--fs-subtitle);
   flex-shrink: 0;
   width: 24px;
   text-align: center;
@@ -590,40 +593,41 @@ const urgencyLabel = (u?: string) => {
 .field-content { flex: 1; min-width: 0; }
 
 .field-label {
-  font-size: 0.78rem;
-  color: #6b7280;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
   margin-bottom: 2px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: var(--s-1);
 }
 
 .field-value {
-  font-size: 0.92rem;
-  color: #1f2937;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  color: var(--text);
+  line-height: var(--lh-normal);
   word-break: break-word;
 }
 
-.field-value.gene { color: #7c3aed; font-weight: 500; }
-.field-value.treatment { color: #374151; }
+.field-value.gene { color: var(--lilac-text); font-weight: 500; }
+.field-value.treatment { color: var(--text-dim); }
 
 .line-badge {
   display: inline-block;
-  padding: 0 6px;
-  background: #f3e8ff;
-  color: #7c3aed;
-  border-radius: 4px;
-  font-size: 0.72rem;
+  padding: 0 var(--s-1);
+  background: var(--lilac-soft);
+  color: var(--lilac-text);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
 /* Section 折叠样式 */
 .summary-section {
-  margin-top: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
+  margin-top: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -631,9 +635,12 @@ const urgencyLabel = (u?: string) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--s-2);
   width: 100%;
-  padding: 10px 12px;
-  background: #f9fafb;
+  /* a11y：可点的 section 头最小 44px 触达高度 */
+  min-height: var(--size-tap);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-soft);
   border: none;
   cursor: pointer;
   font: inherit;
@@ -641,34 +648,37 @@ const urgencyLabel = (u?: string) => {
 }
 
 .section-title {
-  font-size: 0.92rem;
+  font-size: var(--fs-callout);
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .section-toggle {
-  font-size: 0.78rem;
-  color: #2563eb;
+  font-size: var(--fs-caption);
+  color: var(--brand);
+  flex-shrink: 0;
 }
 
 .section-hint {
-  margin: 6px 12px 0;
-  font-size: 0.78rem;
-  color: #6b7280;
-  line-height: 1.5;
+  margin: var(--s-2) var(--s-3) 0;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 
-.section-body { padding: 8px 12px 12px; }
+.section-body { padding: var(--s-2) var(--s-3) var(--s-3); }
 
 .section-more {
   display: block;
-  margin: 8px auto 0;
+  /* a11y：展开更多按钮最小 44px 触达高度 */
+  min-height: var(--size-tap);
+  margin: var(--s-2) auto 0;
   background: none;
-  border: 1px dashed #cbd5e1;
-  color: #2563eb;
-  border-radius: 6px;
-  padding: 4px 12px;
-  font-size: 0.78rem;
+  border: 1px dashed var(--line);
+  color: var(--brand);
+  border-radius: var(--r-sm);
+  padding: var(--s-1) var(--s-3);
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -676,8 +686,8 @@ const urgencyLabel = (u?: string) => {
 .timeline { list-style: none; padding: 0; margin: 0; }
 .timeline-item {
   position: relative;
-  padding: 8px 0 8px 18px;
-  border-left: 2px solid #e5e7eb;
+  padding: var(--s-2) 0 var(--s-2) 18px;
+  border-left: 2px solid var(--line);
 }
 .timeline-item:last-child { padding-bottom: 0; }
 .tl-dot {
@@ -687,150 +697,154 @@ const urgencyLabel = (u?: string) => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #93c5fd;
+  background: var(--brand-soft);
 }
-.timeline-item.tl-surgery .tl-dot { background: #f97316; }
-.timeline-item.tl-progression .tl-dot { background: #ef4444; }
-.timeline-item.tl-molecular .tl-dot { background: #7c3aed; }
-.timeline-item.tl-treatment .tl-dot { background: #10b981; }
-.timeline-item.tl-imaging .tl-dot { background: #0ea5e9; }
-.timeline-item.tl-diagnosis .tl-dot { background: #1e40af; }
-.tl-date { font-size: 0.78rem; color: #6b7280; }
-.tl-event { font-size: 0.88rem; color: #1f2937; line-height: 1.45; }
+.timeline-item.tl-surgery .tl-dot { background: var(--amber); }
+.timeline-item.tl-progression .tl-dot { background: var(--red); }
+.timeline-item.tl-molecular .tl-dot { background: var(--lilac); }
+.timeline-item.tl-treatment .tl-dot { background: var(--mint); }
+.timeline-item.tl-imaging .tl-dot { background: var(--brand); }
+.timeline-item.tl-diagnosis .tl-dot { background: var(--brand-hover); }
+.tl-date { font-size: var(--fs-caption); color: var(--text-dim); }
+.tl-event { font-size: var(--fs-callout); color: var(--text); line-height: var(--lh-normal); }
 
 /* 分子特征 */
-.mol-block { margin-top: 10px; }
+.mol-block { margin-top: var(--s-2); }
 .mol-block:first-child { margin-top: 0; }
 .mol-block-title {
-  font-size: 0.78rem;
-  color: #6b7280;
-  margin-bottom: 6px;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  margin-bottom: var(--s-1);
 }
-.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--s-1); }
 .chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 0.8rem;
+  gap: var(--s-1);
+  /* 窄屏防溢出：基因+变异长串可换行 */
+  max-width: 100%;
+  padding: 3px var(--s-3);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-callout);
   font-weight: 500;
+  word-break: break-word;
 }
-.chip-sub { font-size: 0.72rem; opacity: 0.8; font-weight: 400; }
-.chip-driver { background: #fee2e2; color: #991b1b; }
-.chip-actionable { background: #dcfce7; color: #166534; }
-.chip-lof { background: #fde68a; color: #92400e; }
-.chip-vus { background: #e5e7eb; color: #374151; }
-.chip-sens { background: #dcfce7; color: #166534; }
-.chip-resist { background: #f3f4f6; color: #6b7280; }
+.chip-sub { font-size: var(--fs-caption); opacity: 0.8; font-weight: 400; }
+.chip-driver { background: var(--red-soft); color: var(--red-text); }
+.chip-actionable { background: var(--mint-soft); color: var(--mint-text); }
+.chip-lof { background: var(--amber-soft); color: var(--amber-text); }
+.chip-vus { background: var(--bg-soft); color: var(--text-dim); }
+.chip-sens { background: var(--mint-soft); color: var(--mint-text); }
+.chip-resist { background: var(--bg-soft); color: var(--text-dim); }
 
 .biomarker-grid, .marker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+  gap: var(--s-1);
 }
 .bm-item, .marker-item {
   display: flex;
   justify-content: space-between;
-  padding: 6px 10px;
-  background: #f9fafb;
-  border-radius: 6px;
-  font-size: 0.82rem;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-callout);
 }
-.bm-key { color: #6b7280; }
-.bm-val { color: #1f2937; font-weight: 500; }
-.marker-flag { color: #dc2626; margin-left: 4px; font-weight: 600; }
+.bm-key { color: var(--text-dim); }
+.bm-val { color: var(--text); font-weight: 500; word-break: break-word; }
+.marker-flag { color: var(--red); margin-left: var(--s-1); font-weight: 600; }
 
 .dm-list, .img-list, .th-list, .gap-list, .action-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.55;
+  font-size: var(--fs-callout);
+  line-height: var(--lh-normal);
 }
 .dm-list li, .img-list li, .gap-list li {
-  padding: 6px 0;
-  border-bottom: 1px dashed #f1f5f9;
-  color: #374151;
+  padding: var(--s-1) 0;
+  border-bottom: 1px dashed var(--line);
+  color: var(--text-dim);
 }
 .dm-list li:last-child, .img-list li:last-child, .gap-list li:last-child { border-bottom: none; }
-.img-list .img-date { color: #6b7280; margin-right: 6px; }
-.img-list .img-mod { color: #1e40af; margin-right: 6px; font-weight: 500; }
-.img-list .img-find { color: #374151; }
+.img-list .img-date { color: var(--text-dim); margin-right: var(--s-1); }
+.img-list .img-mod { color: var(--brand-hover); margin-right: var(--s-1); font-weight: 500; }
+.img-list .img-find { color: var(--text-dim); }
 
 /* 治疗史 */
 .th-list li {
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  background: #f9fafb;
-  border-radius: 6px;
+  padding: var(--s-2) var(--s-3);
+  margin-bottom: var(--s-1);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
 }
 .th-list li:last-child { margin-bottom: 0; }
-.th-name { font-weight: 600; color: #1f2937; }
-.th-meta { font-size: 0.78rem; color: #6b7280; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-.th-response { color: #b45309; }
+.th-name { font-weight: 600; color: var(--text); }
+.th-meta { font-size: var(--fs-caption); color: var(--text-dim); display: flex; gap: var(--s-2); flex-wrap: wrap; margin-top: 2px; }
+.th-response { color: var(--amber); }
 
 /* vMTB */
 .vmtb-card {
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-  border: 1px solid #c7d2fe;
+  margin-bottom: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: linear-gradient(135deg, var(--bg-soft), var(--bg-mint));
+  border: 1px solid var(--brand-soft);
 }
 .vmtb-card:last-child { margin-bottom: 0; }
 .vmtb-label {
-  font-size: 0.78rem;
-  color: #4338ca;
+  font-size: var(--fs-caption);
+  color: var(--lilac-text);
   font-weight: 600;
   margin-bottom: 2px;
 }
 .vmtb-regimen {
-  font-size: 0.95rem;
-  color: #1f2937;
+  font-size: var(--fs-body);
+  color: var(--text);
   font-weight: 500;
-  line-height: 1.4;
+  line-height: var(--lh-tight);
 }
 .vmtb-rationale, .vmtb-monitor {
-  font-size: 0.8rem;
-  color: #4b5563;
-  margin-top: 4px;
-  line-height: 1.5;
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin-top: var(--s-1);
+  line-height: var(--lh-normal);
 }
 
 /* gap / actions */
-.gap-list li::before { content: '· '; color: #f59e0b; }
+.gap-list li::before { content: '· '; color: var(--amber); }
 .action-list li {
-  padding: 6px 0;
+  padding: var(--s-1) 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border-bottom: 1px dashed #f1f5f9;
+  gap: var(--s-2);
+  border-bottom: 1px dashed var(--line);
 }
 .action-list li:last-child { border-bottom: none; }
 .urgency-badge {
   flex-shrink: 0;
-  font-size: 0.72rem;
-  padding: 2px 8px;
-  border-radius: 999px;
+  font-size: var(--fs-caption);
+  padding: 2px var(--s-2);
+  border-radius: var(--r-pill);
   font-weight: 500;
 }
-.u-high { background: #fee2e2; color: #991b1b; }
-.u-medium { background: #fef3c7; color: #92400e; }
-.u-low { background: #dbeafe; color: #1e40af; }
-.action-label { color: #1f2937; }
+.u-high { background: var(--red-soft); color: var(--red-text); }
+.u-medium { background: var(--amber-soft); color: var(--amber-text); }
+.u-low { background: var(--brand-soft); color: var(--brand-hover); }
+.action-label { color: var(--text); }
 
 /* 未识别提示 */
 .missing-hint {
-  margin-top: 10px;
-  padding: 8px 12px;
-  background: #fffbeb;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  color: #92400e;
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--amber-soft);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-callout);
+  color: var(--amber-text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s-1);
 }
 
 .missing-icon { flex-shrink: 0; }
