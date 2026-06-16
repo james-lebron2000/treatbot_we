@@ -454,17 +454,22 @@ const bulkUpdateCroApplicationStatus = async (req, res, next) => {
     }
     const stateMachine = require('../services/applicationStateMachine');
     const results = [];
+    // 跨租户鉴权：与单条更新 updateCroApplicationStatus 同源——校验申请的 trial 属于本 CRO。
+    // 旧实现依赖根本不存在的 req.croId / trial.cro_company_id 字段与 as:'trial' 别名：
+    // 既是永不触发的死代码（鉴权漏洞），其 include 别名又会抛错让每条都失败。
+    // 改用权威来源 req.croCompany.trial_ids 做归属校验，并以 req.croCompany.id 作审计 actor。
+    const allowedTrials = (req.croCompany && req.croCompany.trial_ids) || [];
     for (const id of ids) {
       try {
-        const app = await TrialApplication.findOne({ where: { id }, include: [{ model: Trial, as: 'trial', required: false }] });
+        const app = await TrialApplication.findByPk(id);
         if (!app) { results.push({ id, ok: false, reason: 'not_found' }); continue; }
-        if (app.trial && req.croId && app.trial.cro_company_id && app.trial.cro_company_id !== req.croId) {
+        if (!allowedTrials.includes(app.trial_id)) {
           results.push({ id, ok: false, reason: 'forbidden' });
           continue;
         }
         const prevStatus = app.status;
         const r = await stateMachine.transition(id, status, {
-          actor: { type: 'cro', id: req.croId },
+          actor: { type: 'cro', id: req.croCompany.id },
           reason: remark || null,
           extraFields: remark ? { remark } : {}
         });
