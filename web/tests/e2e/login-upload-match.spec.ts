@@ -127,8 +127,9 @@ test('login → upload → match 全链路', async ({ page }) => {
   await page.goto('/treatbot/login')
   await page.locator('input[placeholder*="手机号"]').fill('13800001111')
   await page.locator('input[placeholder*="验证码"]').fill('000000')
-  // 登录按钮文案在不同状态会切换；用 type=primary + 全宽按钮定位
-  await page.getByRole('button', { name: /登录|进入|提交/ }).click()
+  // 登录按钮文案在不同状态会切换；且登录页有「验证码登录/密码登录」模式切换 tab（含「登录」字样），
+  // 故按角色名正则会 strict-mode 命中多个按钮。精确定位提交按钮：唯一的 .btn.primary 全宽按钮。
+  await page.locator('button.btn.primary').click()
 
   // 跳转默认到 /upload （路由 / redirects /upload）
   await expect(page).toHaveURL(/\/treatbot\/(upload|records|$)/, { timeout: 15_000 })
