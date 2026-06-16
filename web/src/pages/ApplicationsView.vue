@@ -137,6 +137,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../services/api'
+// PRD-2026Q3 §U5：状态标签统一从 shared/copy/statuses.js 取（患者端读 .patient），
+// 与 CRO 端共享单一来源；患者可见文案保持不变。
+// @ts-ignore — plain CJS module（与 shared/copy/help.js、upload.js 同源，无 .d.ts）
+import statuses from '@shared/copy/statuses.js'
 
 const loading = ref(false)
 const error = ref('')
@@ -190,15 +194,12 @@ const filteredList = computed(() => {
   return list.value.filter(a => a.status === activeTab.value)
 })
 
-const statusLabels: Record<string, string> = {
-  pending: '等待研究团队联系',
-  contacted: '研究团队已联系',
-  enrolled: '已成功入组',
-  rejected: '这次不太合适',
-  cancelled: '已取消',
-}
+// 患者可见状态标签：从共享字典读 .patient（单一来源，文案与现网一致）。
+const applicationStatus = (statuses as {
+  applicationStatus: Record<string, { patient: string; cro: string; tone: string }>
+}).applicationStatus
 
-const statusLabel = (s: string) => statusLabels[s] || s
+const statusLabel = (s: string) => applicationStatus[s]?.patient || s
 
 const canCancel = (s: string) => s === 'pending' || s === 'contacted'
 

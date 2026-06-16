@@ -23,6 +23,7 @@ withDefaults(defineProps<{
       `pad-${padding}`,
       { 'is-bordered': bordered, 'is-interactive': interactive },
     ]"
+    :tabindex="interactive ? 0 : undefined"
   >
     <header v-if="$slots.header" class="app-card__header">
       <slot name="header" />
@@ -72,4 +73,13 @@ withDefaults(defineProps<{
 }
 .app-card.is-interactive:hover { box-shadow: var(--shadow-2); }
 .app-card.is-interactive:active { transform: scale(0.995); }
+.app-card.is-interactive:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-card.is-interactive { transition: none; }
+  .app-card.is-interactive:active { transform: none; }
+}
 </style>

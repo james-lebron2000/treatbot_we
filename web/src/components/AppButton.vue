@@ -21,6 +21,7 @@ withDefaults(defineProps<{
   <button
     :type="type"
     :disabled="disabled || loading"
+    :aria-busy="loading || undefined"
     :class="['app-btn', `is-${variant}`, `is-${size}`, { 'is-loading': loading }]"
   >
     <span v-if="loading" class="spinner" aria-hidden="true" />
@@ -46,8 +47,8 @@ withDefaults(defineProps<{
   -webkit-tap-highlight-color: transparent;
 }
 
-.app-btn.is-md { padding: var(--s-3) var(--s-4); min-height: 40px; }
-.app-btn.is-sm { padding: var(--s-2) var(--s-3); min-height: 32px; font-size: var(--fs-caption); }
+.app-btn.is-md { padding: var(--s-3) var(--s-4); min-height: var(--size-tap); }
+.app-btn.is-sm { padding: var(--s-2) var(--s-3); min-height: 36px; font-size: var(--fs-caption); }
 
 .app-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
 .app-btn:active:not(:disabled) { transform: scale(0.98); }
@@ -62,7 +63,7 @@ withDefaults(defineProps<{
   background: var(--brand-soft);
   color: var(--brand);
 }
-.app-btn.is-secondary:hover:not(:disabled) { background: #c7dcfa; }
+.app-btn.is-secondary:hover:not(:disabled) { background: var(--brand-soft); filter: brightness(0.96); }
 
 .app-btn.is-ghost {
   background: transparent;
@@ -75,7 +76,7 @@ withDefaults(defineProps<{
   background: var(--red);
   color: #fff;
 }
-.app-btn.is-danger:hover:not(:disabled) { background: #b91c1c; }
+.app-btn.is-danger:hover:not(:disabled) { background: var(--red-text); }
 
 .app-btn:disabled {
   cursor: not-allowed;
@@ -93,5 +94,11 @@ withDefaults(defineProps<{
 }
 @keyframes app-btn-spin {
   to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-btn { transition: none; }
+  .app-btn:active:not(:disabled) { transform: none; }
+  .spinner { animation-duration: 1.4s; }
 }
 </style>

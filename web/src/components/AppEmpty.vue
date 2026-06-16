@@ -34,11 +34,11 @@ withDefaults(defineProps<{
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: var(--s-12) var(--s-6);
   color: var(--text-dim);
   font-family: var(--font-sans);
 }
 .app-empty.is-md { padding: var(--s-8) var(--s-6); }
+.app-empty.is-lg { padding: var(--s-12) var(--s-6); }
 
 .app-empty__icon {
   width: 72px;

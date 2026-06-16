@@ -76,6 +76,7 @@ const describedBy = computed(() => {
 .req { color: var(--red); margin-left: 2px; }
 .app-input__field {
   width: 100%;
+  min-height: var(--size-tap);
   padding: var(--s-3) var(--s-4);
   font-family: var(--font-sans);
   font-size: var(--fs-body);

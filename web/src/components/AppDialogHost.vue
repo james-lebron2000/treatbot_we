@@ -51,6 +51,7 @@ const onCancel = () => {
       <AppButton
         :variant="dialogState.variant === 'danger' ? 'danger' : 'primary'"
         :loading="dialogState.loading"
+        :data-dialog-default="dialogState.kind !== 'prompt' ? '' : undefined"
         @click="onConfirm"
       >
         {{ dialogState.confirmText }}
