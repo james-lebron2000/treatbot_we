@@ -25,10 +25,10 @@
     </div>
 
     <div class="onboarding-actions">
-      <button class="btn-primary" type="button" @click="confirm">
+      <button class="btn primary onboarding-cta" type="button" @click="confirm">
         {{ data.ctaPrimary }}
       </button>
-      <button class="btn-secondary" type="button" @click="skip">
+      <button class="btn ghost onboarding-cta" type="button" @click="skip">
         {{ data.ctaSecondary }}
       </button>
     </div>
@@ -75,52 +75,58 @@ const skip = () => {
 </script>
 
 <style scoped>
+/* 移动优先：窄屏全宽，桌面收束到约 560px 的舒适阅读列并居中。 */
 .onboarding-shell {
-  max-width: 540px;
-  margin: 0 auto;
-  padding: 28px 20px 32px;
+  max-width: 560px;
+  margin-inline: auto;
+  padding: var(--s-6) var(--s-4) var(--s-8);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--s-6);
 }
+
 .onboarding-header {
   text-align: center;
 }
 .onboarding-title {
-  margin: 0 0 6px;
-  font-size: 1.35rem;
-  color: #0F172A;
+  margin: 0 0 var(--s-2);
+  /* 流式标题：随视口在 title↔display 之间平滑缩放 */
+  font-size: clamp(var(--fs-title), 6vw, var(--fs-display));
+  line-height: var(--lh-tight);
+  color: var(--text);
 }
 .onboarding-subtitle {
   margin: 0;
-  color: #475569;
-  font-size: 0.95rem;
+  color: var(--text-dim);
+  font-size: var(--fs-subtitle);
+  line-height: var(--lh-normal);
 }
+
 .onboarding-steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--s-3);
 }
 .onboarding-step {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 16px;
-  background: #F8FAFC;
-  border-radius: 14px;
-  border: 1px solid #E2E8F0;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  background: var(--bg-soft);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
 }
 .step-icon {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #1F5AC7;
+  width: var(--s-8);
+  height: var(--s-8);
+  border-radius: var(--r-pill);
+  background: var(--brand);
   color: #fff;
-  font-size: 1rem;
+  font-size: var(--fs-body);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -128,54 +134,62 @@ const skip = () => {
 }
 .step-body {
   flex: 1;
+  min-width: 0;
 }
 .step-title {
-  margin: 0 0 4px;
-  font-size: 1rem;
-  color: #0F172A;
+  margin: 0 0 var(--s-1);
+  font-size: var(--fs-subtitle);
+  color: var(--text);
 }
 .step-text {
   margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.55;
-  color: #334155;
+  font-size: var(--fs-callout);
+  line-height: var(--lh-relaxed);
+  color: var(--text-dim);
 }
+
 .onboarding-promise {
   text-align: center;
-  background: #F0F6FF;
-  color: #1F5AC7;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 0.9rem;
+  background: var(--brand-soft);
+  color: var(--brand-hover);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  font-size: var(--fs-callout);
+  line-height: var(--lh-normal);
 }
+
 .onboarding-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--s-2);
 }
-.btn-primary {
-  border: none;
-  background: #1F5AC7;
-  color: #fff;
-  font-size: 1rem;
+/* 窄屏主 CTA 全宽、舒适触达；.btn 已保证 ≥44px 触达高度 */
+.onboarding-cta {
+  width: 100%;
+  font-size: var(--fs-subtitle);
   font-weight: 600;
-  padding: 14px 0;
-  border-radius: 12px;
-  cursor: pointer;
 }
-.btn-secondary {
-  border: 1px solid #CBD5E1;
-  background: #fff;
-  color: #475569;
-  font-size: 0.95rem;
-  padding: 12px 0;
-  border-radius: 12px;
-  cursor: pointer;
-}
+
 .onboarding-helpline {
   margin: 0;
   text-align: center;
-  font-size: 0.82rem;
-  color: #64748B;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+/* 桌面：按钮回到自然宽度并右对齐成一行，给内容更稳的视觉节奏。 */
+@media (min-width: 768px) {
+  .onboarding-shell {
+    padding-block: var(--s-12);
+  }
+  .onboarding-actions {
+    flex-direction: row-reverse;
+    justify-content: center;
+  }
+  .onboarding-cta {
+    width: auto;
+    min-width: 160px;
+  }
 }
 </style>
