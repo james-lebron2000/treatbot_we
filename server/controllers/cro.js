@@ -453,18 +453,23 @@ const bulkUpdateCroApplicationStatus = async (req, res, next) => {
       return res.status(400).json({ code: 400, message: 'status 必填', data: null });
     }
     const stateMachine = require('../services/applicationStateMachine');
+    // SECURITY FIX（跨租户越权 IDOR）：批量更新必须与 updateCroApplicationStatus(单条) 用
+    // 同一套租户隔离 —— req.croCompany.trial_ids 白名单。此前的 `req.croId` 在全仓从未被赋值
+    // （croAuth 中间件只挂 req.croCompany），导致归属校验恒为死代码，任一 CRO 可改任意申请单
+    // 状态、且 actor.id=undefined 不可归因。
+    const allowedTrials = req.croCompany.trial_ids || [];
     const results = [];
     for (const id of ids) {
       try {
-        const app = await TrialApplication.findOne({ where: { id }, include: [{ model: Trial, as: 'trial', required: false }] });
+        const app = await TrialApplication.findByPk(id);
         if (!app) { results.push({ id, ok: false, reason: 'not_found' }); continue; }
-        if (app.trial && req.croId && app.trial.cro_company_id && app.trial.cro_company_id !== req.croId) {
+        if (!allowedTrials.includes(app.trial_id)) {
           results.push({ id, ok: false, reason: 'forbidden' });
           continue;
         }
         const prevStatus = app.status;
         const r = await stateMachine.transition(id, status, {
-          actor: { type: 'cro', id: req.croId },
+          actor: { type: 'cro', id: req.croCompany.id },
           reason: remark || null,
           extraFields: remark ? { remark } : {}
         });
