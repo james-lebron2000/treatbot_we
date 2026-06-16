@@ -481,6 +481,25 @@ const CroCompany = sequelize.define('CroCompany', {
   updatedAt: 'updated_at'
 });
 
+// CPA 计费 / 转化漏斗 / SLA 的单一事实源：申请状态流转事件。表由 migrate.js 建
+// (ensureApplicationStatusEvent)，但模型此前从未定义 → applicationStateMachine.transition
+// 的 .create 与 billing.computeMonthly 的 .findAll 引用 undefined 会崩（CPA 事件管线整体不可用）。
+// 补上模型（与表结构一致；只读 created_at，无 updated_at）。
+const ApplicationStatusEvent = sequelize.define('ApplicationStatusEvent', {
+  id: { type: require('sequelize').DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+  application_id: { type: require('sequelize').DataTypes.STRING(64), allowNull: false },
+  from_status: { type: require('sequelize').DataTypes.STRING(32), allowNull: false },
+  to_status: { type: require('sequelize').DataTypes.STRING(32), allowNull: false },
+  actor_type: { type: require('sequelize').DataTypes.ENUM('user', 'cro', 'admin', 'system'), allowNull: false },
+  actor_id: { type: require('sequelize').DataTypes.STRING(64), allowNull: true },
+  reason: { type: require('sequelize').DataTypes.TEXT, allowNull: true }
+}, {
+  tableName: 'application_status_event',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false
+});
+
 // PRD-2026Q2 §2.3：Admin 审计日志模型
 // 对应迁移 scripts/migrations/20260420_admin_audit_log.sql，
 // 配合 middleware/auditLog.js 在每次 admin 请求 finish 后写一条记录。
@@ -745,6 +764,7 @@ module.exports = {
   MedicalCaseRevision,
   MedicalFieldEvidence,
   TrialApplication,
+  ApplicationStatusEvent,
   CroCompany,
   AdminAuditLog,
   OcrJobFailure,
