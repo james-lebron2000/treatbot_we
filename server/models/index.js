@@ -459,6 +459,20 @@ const CroCompany = sequelize.define('CroCompany', {
   status: {
     type: require('sequelize').DataTypes.ENUM('active', 'disabled'),
     defaultValue: 'active'
+  },
+  // PRD-2026Q3 T1-4：CPA 计费配置。DB 列已存在(migrate.js)，但模型此前漏声明 →
+  // billing.computeMonthly 读到 undefined → 单价 0、合格状态不匹配 → 月账单恒空。
+  cpa_price: {
+    type: require('sequelize').DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'CPA 单价（元）'
+  },
+  cpa_qualified_status: {
+    type: require('sequelize').DataTypes.ENUM('screened', 'enrolled'),
+    allowNull: false,
+    defaultValue: 'screened',
+    comment: '触发计费的合格状态'
   }
 }, {
   tableName: 'cro_companies',

@@ -56,7 +56,8 @@ const computeMonthly = async (month) => {
 
   // 1) 拉所有 CRO 公司及其负责的 trial_ids / 单价 / 合格 status
   const companies = await CroCompany.findAll({
-    where: { status: 'active' }
+    where: { status: 'active' },
+    order: [['id', 'ASC']] // 确定性归属：trial 命中多家时恒取 id 最小者，与状态机 findCroCompanyByTrialId 一致
   });
 
   // trial_id → { croId, croName, qualifiedStatus, unitPrice }

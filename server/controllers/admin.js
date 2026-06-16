@@ -1297,7 +1297,7 @@ const getCroList = async (req, res, next) => {
 
 const createCro = async (req, res, next) => {
   try {
-    const { name, contactName, email, password, trialIds } = req.body || {};
+    const { name, contactName, email, password, trialIds, cpaPrice, cpaQualifiedStatus } = req.body || {};
     if (!name || !email || !password) {
       return res.status(400).json({ code: 400, message: '公司名、邮箱、密码必填', data: null });
     }
@@ -1314,7 +1314,9 @@ const createCro = async (req, res, next) => {
       email: email.toLowerCase().trim(),
       password_hash: passwordHash,
       trial_ids: Array.isArray(trialIds) ? trialIds : [],
-      status: 'active'
+      status: 'active',
+      cpa_price: Number.isFinite(Number(cpaPrice)) && Number(cpaPrice) >= 0 ? Number(cpaPrice) : 0,
+      cpa_qualified_status: ['screened', 'enrolled'].includes(cpaQualifiedStatus) ? cpaQualifiedStatus : 'screened'
     });
 
     logger.info(`[Admin] 创建 CRO: ${company.name} (${company.email})`);
@@ -1327,7 +1329,7 @@ const createCro = async (req, res, next) => {
 const updateCro = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, contactName, email, password, trialIds, status } = req.body || {};
+    const { name, contactName, email, password, trialIds, status, cpaPrice, cpaQualifiedStatus } = req.body || {};
 
     const company = await CroCompany.findByPk(id);
     if (!company) {
@@ -1341,6 +1343,8 @@ const updateCro = async (req, res, next) => {
     if (password) updates.password_hash = await bcrypt.hash(password, 10);
     if (Array.isArray(trialIds)) updates.trial_ids = trialIds;
     if (status && ['active', 'disabled'].includes(status)) updates.status = status;
+    if (cpaPrice !== undefined && Number.isFinite(Number(cpaPrice)) && Number(cpaPrice) >= 0) updates.cpa_price = Number(cpaPrice);
+    if (cpaQualifiedStatus && ['screened', 'enrolled'].includes(cpaQualifiedStatus)) updates.cpa_qualified_status = cpaQualifiedStatus;
 
     await company.update(updates);
     logger.info(`[Admin] 更新 CRO: ${company.name} (${company.id})`);

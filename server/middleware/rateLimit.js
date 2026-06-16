@@ -10,15 +10,23 @@ const logger = require('../utils/logger');
 let _redisClient = null;
 let _redisClientCredKey = '';
 const buildRedisClient = () => {
-  return new Redis({
+  const client = new Redis({
     host: process.env.REDIS_HOST || 'localhost',
     port: process.env.REDIS_PORT || 6379,
     password: process.env.REDIS_PASSWORD || undefined,
     db: 0,
     // lazyConnect:true → 真正发命令时才建 TCP 连接，避免 require 时连不上 Redis
     // 直接报 unhandled error。
-    lazyConnect: true
+    lazyConnect: true,
+    maxRetriesPerRequest: 3,
+    retryStrategy: (times) => Math.min(times * 200, 2000)
   });
+  // 必须挂 'error'：否则 Redis 不可达时 ioredis 抛 unhandled 'error' → crash 进程
+  // （限流/幂等/刷新令牌共用此客户端）。挂上后退化为命令失败而非进程退出。
+  client.on('error', (err) => {
+    logger.warn('[redis] client error', { err: err && err.message ? err.message : String(err) });
+  });
+  return client;
 };
 const getRedisClient = () => {
   const credKey = `${process.env.REDIS_HOST || ''}|${process.env.REDIS_PORT || ''}|${process.env.REDIS_PASSWORD || ''}`;
@@ -54,15 +62,28 @@ const createRateLimiter = (options = {}) => {
     skip
   } = options;
   
+  // 多实例/重启后仍生效：优先 Redis 共享存储（生产已依赖 Redis 做幂等/刷新令牌），
+  // 未配 REDIS_HOST（本地/测试）回退进程内存 MemoryStore。
+  let store;
+  if (process.env.REDIS_HOST || process.env.REDIS_URL) {
+    try {
+      const { RedisStore } = require('rate-limit-redis');
+      store = new RedisStore({ prefix: keyPrefix, sendCommand: (...args) => redisClient.call(...args) });
+    } catch (e) {
+      logger.warn('[rateLimit] RedisStore 初始化失败，回退进程内存', { err: e.message });
+    }
+  }
+
   return rateLimit({
     windowMs,
     max,
     skip,
+    store,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // 优先使用用户 ID，其次是 IP
-      return `${keyPrefix}${req.userId || req.ip}`;
+      // 前缀由 store 统一添加，避免双重前缀
+      return req.userId ? `u:${req.userId}` : `ip:${req.ip}`;
     },
     handler: (req, res) => {
       // express-rate-limit v6+ 将 resetTime 挂在 req.rateLimit 上
