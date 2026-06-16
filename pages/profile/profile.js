@@ -92,7 +92,7 @@ Page({
   },
 
   goToMatches() {
-    wx.switchTab({ url: '/pages/matches/matches' })
+    wx.navigateTo({ url: '/pages/matches/matches' })
   },
 
   // PRD-2026Q2 §P0-8：「正在联络的」菜单项暂时下线（wxml 已注释）。

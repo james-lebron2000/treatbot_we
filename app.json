@@ -8,6 +8,7 @@
     "pages/matches/matches",
     "pages/matches/apply/apply",
     "pages/matches/detail/detail",
+    "pages/guideline/guideline",
     "pages/profile/profile",
     "pages/profile/consent/consent",
     "pages/profile/privacy/privacy",
@@ -40,8 +41,8 @@
         "selectedIconPath": "images/records-active.png"
       },
       {
-        "pagePath": "pages/matches/matches",
-        "text": "新药",
+        "pagePath": "pages/guideline/guideline",
+        "text": "治疗方案",
         "iconPath": "images/match.png",
         "selectedIconPath": "images/match-active.png"
       },

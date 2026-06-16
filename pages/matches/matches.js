@@ -9,6 +9,8 @@ const { track } = require('../../utils/track')
 const glossary = require('../../shared/copy/glossary.js')
 // PRD-2026Q2 §P0-4：matches 场景文案字典（含 0 结果三步兜底文案）
 const matchesCopy = require('../../shared/copy/matches.js')
+// P0 安全护栏：研究性质 / 入组≠疗效 / 急症红旗文案（单一来源）
+const safety = require('../../shared/copy/safety.js')
 // 阿里健康/美团买药货架风格：把研究包装成"药品" — 主标题展示通用名/代号。
 const { resolveDrug } = require('../../utils/drug-extractor')
 
@@ -73,7 +75,38 @@ Page({
     emptyCopy: matchesCopy.empty,
     coverageTitle: matchesCopy.empty.coverage.title.replace('{n}', matchesCopy.empty.coverage.defaultN),
     // PRD-2026Q2 §P1-5：三 stat 区分判定依据 —— 已申请数从 trial.applied 累加
-    appliedCount: 0
+    appliedCount: 0,
+    // P0 安全护栏静态文案（单一来源 shared/copy/safety.js）
+    emergencyCopy: safety.emergency,
+    eligibilityClarifier: safety.eligibility.clarifier,
+    scoreLabel: safety.eligibility.scoreLabel,       // 取代「匹配度」
+    researchTagFree: safety.research.tagFree,         // 取代标签「免费用药」
+    applyCta: safety.research.applyCta,               // 取代按钮「申请免费用药」
+    natureNote: safety.research.natureNote,
+    // 急症红旗：命中后置顶 banner。{ redFlag, categoryLabels }
+    safety: null
+  },
+
+  // 把 server 回的 safety.categories 收敛成可直接渲染的 banner 数据（或 null）。
+  buildSafetyBanner(raw) {
+    if (!raw || !raw.redFlag) return null
+    const labels = (raw.categories || [])
+      .map((c) => (c && c.label) || '')
+      .filter(Boolean)
+    return {
+      redFlag: true,
+      categoryLabels: labels.length ? labels.join('、') : safety.emergency.fallbackCategory
+    }
+  },
+
+  callEmergency() {
+    wx.makePhoneCall({
+      phoneNumber: this.data.emergencyCopy.phone,
+      fail: () => {
+        wx.showToast({ title: `请尽快拨打 ${this.data.emergencyCopy.phone} 或就近就医`, icon: 'none' })
+      }
+    })
+    try { track('emergency_prompt_call', {}) } catch (e) { /* ignore */ }
   },
 
   decorateMatches(list = [], previousMatches = this.data.matches || []) {
@@ -212,7 +245,9 @@ Page({
         errorMessage: '',
         usingFallback: !!res.fallback,
         fallbackMessage: res.message || '',
-        activeParseTask
+        activeParseTask,
+        // P0：急症红旗（命中则置顶急诊 banner）
+        safety: this.buildSafetyBanner(res.safety)
       })
 
       // Q3-红线 §B.2：列表加载完成 = 漏斗 match_view（5s 去重防 onShow 重复）
@@ -306,6 +341,15 @@ Page({
     wx.navigateTo({
       url: '/pages/upload/upload'
     })
+  },
+
+  // A 轨入口：先看标准治疗（指南）。guideline 已是 tab，switchTab 不能带参，
+  // 故把 recordId 写入 storage，guideline 页自取。
+  goToGuideline() {
+    const recordId = this.data.recordId || wx.getStorageSync('currentRecordId') || ''
+    if (recordId) wx.setStorageSync('currentRecordId', recordId)
+    wx.switchTab({ url: '/pages/guideline/guideline' })
+    try { track('guideline_entry', { from: 'matches' }) } catch (e) { /* ignore */ }
   },
 
   // PRD-2026Q2 §P0-4：0 结果三步兜底之一 —— 订阅通知

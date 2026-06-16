@@ -1,6 +1,7 @@
 {
   "usingComponents": {
-    "icon": "/components/icon/icon"
+    "icon": "/components/icon/icon",
+    "medical-disclaimer": "/components/medical-disclaimer/medical-disclaimer"
   },
   "navigationBarTitleText": "病历详情",
   "navigationBarBackgroundColor": "#ffffff",

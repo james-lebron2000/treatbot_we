@@ -1,19 +1,45 @@
 <template>
   <section class="grid login-col">
-    <h2>欢迎回来</h2>
-    <p class="muted">输入手机号就能开始。我们只用它给您发短信，没有骚扰，您随时可以注销。</p>
+    <div v-if="mode !== 'register'" class="auth-tabs">
+      <button type="button" :class="{ active: mode === 'sms' }" @click="switchMode('sms')">验证码登录</button>
+      <button type="button" :class="{ active: mode === 'password' }" @click="switchMode('password')">密码登录</button>
+    </div>
+
+    <h2>{{ mode === 'register' ? '创建账号' : '欢迎回来' }}</h2>
+    <p class="muted">{{ subtitle }}</p>
+
     <input v-model.trim="phone" placeholder="手机号（仅用于登录，不外传）" maxlength="11" inputmode="numeric" />
-    <div class="code-row">
+
+    <div v-if="needsCode" class="code-row">
       <input v-model.trim="code" placeholder="验证码 (6 位，演示环境请输 000000)" maxlength="6" inputmode="numeric" @keyup.enter="submit" class="code-input" />
       <button type="button" class="btn code-btn" :disabled="sendingCode || codeCountdown > 0" @click="onSendCode">
         {{ sendingCode ? '发送中…' : (codeCountdown > 0 ? `${codeCountdown}s 后可重发` : '获取验证码') }}
       </button>
     </div>
+
+    <input
+      v-if="needsPassword"
+      v-model="password"
+      type="password"
+      :placeholder="mode === 'register' ? '设置密码（至少 8 位）' : '密码'"
+      :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+      @keyup.enter="submit"
+    />
+
     <button class="btn primary submit-btn" :disabled="loading" @click="submit">
-      {{ loading ? '正在进入…' : '进入，帮家人找下一步' }}
+      {{ submitLabel }}
     </button>
     <p v-if="error" class="msg msg-error">{{ error }}</p>
     <p v-if="sendCodeHint" class="msg msg-hint">{{ sendCodeHint }}</p>
+
+    <div class="switch-line">
+      <template v-if="mode === 'register'">
+        已有账号？<a href="javascript:void(0)" @click="switchMode('password')">返回登录</a>
+      </template>
+      <template v-else>
+        还没账号？<a href="javascript:void(0)" @click="switchMode('register')">立即注册</a>
+      </template>
+    </div>
 
     <PrivacyPromiseCard size="sm" :show-details-link="true" class="privacy-promise" />
 
@@ -29,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import PrivacyPromiseCard from '../components/PrivacyPromiseCard.vue'
@@ -39,11 +65,16 @@ import { api } from '../services/api'
 // 原发码流程不变。
 import { ensureCaptchaTicket } from '../utils/captcha'
 
+// 三态：验证码登录 / 密码登录 / 注册。三者共用同一手机号账号（后端 openid=h5_${phone}）。
+type AuthMode = 'sms' | 'password' | 'register'
+
 const router = useRouter()
 const authStore = useAuthStore()
 
+const mode = ref<AuthMode>('sms')
 const phone = ref('')
 const code = ref('')
+const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
@@ -52,6 +83,30 @@ const sendingCode = ref(false)
 const sendCodeHint = ref('')
 const codeCountdown = ref(0)
 let countdownTimer: number | null = null
+
+const needsCode = computed(() => mode.value === 'sms' || mode.value === 'register')
+const needsPassword = computed(() => mode.value === 'password' || mode.value === 'register')
+
+const subtitle = computed(() => {
+  if (mode.value === 'password') return '用手机号 + 密码登录。'
+  if (mode.value === 'register') return '设置手机号 + 密码，下次用密码就能直接登录。'
+  return '输入手机号就能开始。我们只用它给您发短信，没有骚扰，您随时可以注销。'
+})
+
+const submitLabel = computed(() => {
+  if (loading.value) return mode.value === 'register' ? '注册中…' : '正在进入…'
+  if (mode.value === 'password') return '登录'
+  if (mode.value === 'register') return '注册并进入'
+  return '进入，帮家人找下一步'
+})
+
+const switchMode = (next: AuthMode) => {
+  mode.value = next
+  error.value = ''
+  sendCodeHint.value = ''
+  code.value = ''
+  password.value = ''
+}
 
 const startCountdown = (seconds: number) => {
   codeCountdown.value = seconds
@@ -101,8 +156,12 @@ const submit = async () => {
     error.value = empathy.error.invalidPhone
     return
   }
-  if (!code.value) {
+  if (needsCode.value && !code.value) {
     error.value = empathy.error.invalidCode
+    return
+  }
+  if (needsPassword.value && (!password.value || password.value.length < 8)) {
+    error.value = '密码至少 8 位'
     return
   }
 
@@ -110,7 +169,13 @@ const submit = async () => {
   error.value = ''
 
   try {
-    await authStore.login(phone.value, code.value)
+    if (mode.value === 'sms') {
+      await authStore.login(phone.value, code.value)
+    } else if (mode.value === 'password') {
+      await authStore.passwordLogin(phone.value, password.value)
+    } else {
+      await authStore.register(phone.value, code.value, password.value)
+    }
     // PRD-2026Q2 §3.4：若此前因 token 失效被踢到登录页，回到原 URL。
     let target: string | null = null
     try {
@@ -121,7 +186,8 @@ const submit = async () => {
     }
     router.push(target && !target.includes('/login') ? target : '/upload')
   } catch (e: any) {
-    error.value = e?.response?.data?.message || empathy.error.invalidCode
+    const fallback = mode.value === 'password' ? '手机号或密码错误' : empathy.error.invalidCode
+    error.value = e?.response?.data?.message || fallback
   } finally {
     loading.value = false
   }
@@ -191,5 +257,36 @@ const submit = async () => {
   margin: var(--s-1) 0 0;
   font-size: var(--fs-caption);
   color: var(--text-muted);
+}
+
+/* 登录模式切换 tab（验证码登录 / 密码登录）+ 注册/登录切换行 —— 来自 #35 */
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.auth-tabs button {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.auth-tabs button.active {
+  color: #2563eb;
+  font-weight: 600;
+  border-bottom-color: #2563eb;
+}
+.switch-line {
+  text-align: center;
+  font-size: 0.88rem;
+  color: #6b7280;
+}
+.switch-line a {
+  color: #2563eb;
+  cursor: pointer;
 }
 </style>

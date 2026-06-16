@@ -4,6 +4,8 @@ const { success, pagination } = require('../utils/response');
 const { BusinessError } = require('../middleware/errorHandler');
 const { parseArrayField, scoreRecordHybrid, STATUS_TEXT_MAP, matchDiseaseText, buildCoarseFilter, inferGeneRequired } = require('../services/matchEngine');
 const { buildProfile } = require('../services/patientProfile');
+// P0 患者安全护栏：病历命中急症红旗时，让前端首屏改为「尽快就医」而非试验列表。
+const { detectRedFlags, buildSearchableText } = require('../services/redFlags');
 const { buildCriterionExplanation } = require('../utils/match-explainer');
 const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
 // PRD-2026Q4 T0-10：转化漏斗埋点
@@ -208,6 +210,8 @@ const getMatches = async (req, res, next) => {
         code: 0,
         message: 'success',
         data: [],
+        // 响应契约一致性：与有结果路径一样始终带 safety；无病历=无文本可扫，必然 redFlag:false。
+        safety: detectRedFlags(buildSearchableText(profileRecords)),
         pagination: { page, pageSize, total: 0, hasMore: false }
       });
     }
@@ -218,6 +222,10 @@ const getMatches = async (req, res, next) => {
         r._city = filters.city;
       }
     }
+
+    // P0 安全护栏：在出任何匹配结果之前先扫一遍急症红旗。命中后随响应回 safety，
+    // 前端据此把首屏换成急诊提示（不阻断匹配本身——医生仍可能需要看列表）。
+    const safety = detectRedFlags(buildSearchableText(profileRecords));
 
     // Stage 1: 粗筛 — 基于疾病标签+城市做 SQL 级过滤
     const primaryRecord = profileRecords[0] || {};
@@ -252,6 +260,7 @@ const getMatches = async (req, res, next) => {
         code: 0,
         message: 'success',
         data: [],
+        safety,
         pagination: { page, pageSize, total: 0, hasMore: false }
       });
     }
@@ -297,6 +306,7 @@ const getMatches = async (req, res, next) => {
       code: 0,
       message: 'success',
       data: list,
+      safety,
       pagination: {
         page,
         pageSize,
@@ -456,9 +466,13 @@ const findMatches = async (req, res, next) => {
       .map((trial) => sanitizeTrial(trial))
       .map((trial) => {
         const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
+        // CLINICAL-SAFETY FIX：与 getMatches 行为对齐 —— 硬排除（年龄/ECOG/癌种/先验疗法
+        // 不符）的试验绝不能返回给患者。此前 findMatches 漏掉此过滤，会把"仅限 18-65 岁"等
+        // 明确不符的试验推给患者，构成临床误导。
+        if (scored.excluded) return null;
         return buildDetailedMatchItem(trial, scored);
       })
-      .filter((item) => trialMatchesFilters(item, filters))
+      .filter((item) => item && trialMatchesFilters(item, filters))
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;

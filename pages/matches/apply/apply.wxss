@@ -67,3 +67,59 @@
 .action-bar {
   padding-top: 4rpx;
 }
+
+/* ===== P0 知情同意 ===== */
+.consent-card {
+  /* 复用 .card 基线样式 */
+}
+
+.consent-bullets {
+  margin: 16rpx 0 24rpx;
+}
+
+.consent-bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.consent-bullet-text {
+  flex: 1;
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx;
+  background: var(--bg-soft);
+  border-radius: 16rpx;
+}
+
+.consent-box {
+  flex-shrink: 0;
+  width: 40rpx;
+  height: 40rpx;
+  border: 2rpx solid var(--text-muted);
+  border-radius: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.consent-box.checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.consent-check-text {
+  flex: 1;
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: var(--text);
+}

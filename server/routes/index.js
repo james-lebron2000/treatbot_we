@@ -13,6 +13,7 @@ const authController = require('../controllers/auth');
 const userController = require('../controllers/user');
 const medicalController = require('../controllers/medical');
 const matchController = require('../controllers/match');
+const guidelineController = require('../controllers/guideline');
 const applicationController = require('../controllers/application');
 const adminController = require('../controllers/admin');
 // Q3-红线 §A.2：用户合规自助接口（注销 / 数据导出 / consent / 改密码）
@@ -39,6 +40,9 @@ router.post('/track', funnelController.track);
 router.post('/auth/weapp-login', strictLimiter, normalizePii, authController.weappLogin);
 router.post('/auth/send-code', strictLimiter, normalizePii, authController.sendVerificationCode);
 router.post('/auth/treatbot-login', strictLimiter, normalizePii, authController.treatbotLogin);
+// 账号密码：注册（手机号+验证码+密码）与密码登录，与 treatbot-login 同等敏感 → 同等限流 + PII 归一化。
+router.post('/auth/register', strictLimiter, normalizePii, authController.register);
+router.post('/auth/password-login', strictLimiter, normalizePii, authController.passwordLogin);
 // PRD-2026Q4 T0-7 followup（路由审计）：refreshToken 是凭证再签发路径，
 // 与 weapp-login / send-code / treatbot-login 同等敏感 → 同等限流。老实现漏了 strictLimiter，
 // 暴露 refresh-token 撞库 / 暴破面（leaked refresh token 在过期前可被重放）。
@@ -102,6 +106,11 @@ router.put('/medical/records/:id/activate', authMiddleware, medicalController.ac
 
 // ===== 匹配相关（需要认证） =====
 router.get('/matches', authMiddleware, matchController.getMatches);
+// A 轨：标准治疗（指南）匹配
+router.get('/medical/guidelines', authMiddleware, guidelineController.getGuidelines);
+// 病种科普（公开、无 PHI）：按癌种了解标准治疗，无需上传病历
+router.get('/guidelines/cancers', guidelineController.getCancerList);
+router.get('/guidelines/cancer/:key', guidelineController.getCancerEducationHandler);
 router.get('/matches/search', authMiddleware, matchController.searchTrials);
 router.get('/matches/filters', authMiddleware, matchController.getFilterOptions);
 router.post('/trials/matches/find', authMiddleware, matchController.findMatches);

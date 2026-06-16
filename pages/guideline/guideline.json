@@ -1,0 +1,9 @@
+{
+  "usingComponents": {
+    "icon": "/components/icon/icon",
+    "help-fab": "/components/help-fab/help-fab",
+    "medical-disclaimer": "/components/medical-disclaimer/medical-disclaimer"
+  },
+  "enablePullDownRefresh": true,
+  "navigationBarTitleText": "标准治疗"
+}

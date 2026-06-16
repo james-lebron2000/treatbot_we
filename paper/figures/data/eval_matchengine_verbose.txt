@@ -1,0 +1,122 @@
+=== TreatBot Match Engine Evaluation ===
+Threshold: 42 (SCORE_MIN)
+Dataset: 50 patient-trial pairs, 12 patients
+
+--- Binary Classification (eligible vs ineligible) ---
+  TP: 13  FP: 12
+  FN: 0  TN: 11
+  Precision: 52.0%
+  Recall:    100.0%
+  F1 Score:  68.4%
+  Accuracy:  66.7%
+
+--- Ranking Quality ---
+  Mean nDCG@10: 80.1%
+
+--- Uncertain Pairs ---
+  Moderate scores: 10/14
+
+--- Detailed Results ---
+
+MISCLASSIFICATIONS:
+  [FP] Patient P01 × Trial 22615
+    Label: ineligible | Score: 63 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 分期信息在试验标准中有对应条件; ECOG体能评分（1分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P02 × Trial 22615
+    Label: ineligible | Score: 78 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 分期信息在试验标准中有对应条件; 治疗线数（1线）精确符合试验要求; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P03 × Trial 22615
+    Label: ineligible | Score: 60 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 该试验通常需要基因检测结果，建议尽快补做检测; 分期信息在试验标准中有对应条件; ECOG体能评分（1分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P04 × Trial 22615
+    Label: ineligible | Score: 53 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 分期信息在试验标准中有对应条件; ECOG体能评分（3分）可能超出试验要求（≤2），存在排除风险; 试验当前处于招募中
+
+  [FP] Patient P06 × Trial AK112-312
+    Label: ineligible | Score: 43 | Excluded: false
+    Reasons: 无需基因检测即可评估; 分期信息在试验标准中有对应条件; 治疗线数（1线）精确符合试验要求; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P08 × Trial BAT-8010+1006-001-CR
+    Label: ineligible | Score: 55 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 该试验通常需要基因检测结果，建议尽快补做检测; 分期信息在试验标准中有对应条件; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P09 × Trial AK112-312
+    Label: ineligible | Score: 68 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 分期信息在试验标准中有对应条件; ECOG体能评分（1分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P10 × Trial AK112-312
+    Label: ineligible | Score: 76 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 基因匹配（MSI-H状态不确定）; 分期信息在试验标准中有对应条件; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P02 × Trial F0041-101
+    Label: ineligible | Score: 68 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 分期信息在试验标准中有对应条件; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P03 × Trial SCTB39G-X201
+    Label: ineligible | Score: 72 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 无需基因检测即可评估; 分期信息在试验标准中有对应条件; ECOG体能评分（1分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P08 × Trial TQB2930-III-01
+    Label: ineligible | Score: 65 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 该试验通常需要基因检测结果，建议尽快补做检测; 分期信息在试验标准中有对应条件; 治疗线数（2线）在试验接受范围内; ECOG体能评分（0分）符合试验要求（≤2）; 试验当前处于招募中
+
+  [FP] Patient P09 × Trial 22752
+    Label: ineligible | Score: 68 | Excluded: false
+    Reasons: 疾病方向与试验适应症直接匹配; 疾病标签精确命中; 分期信息在试验标准中有对应条件; ECOG体能评分（1分）符合试验要求（≤2）; 试验当前处于招募中
+
+ALL PAIRS:
+  ✗ [FP       ] P01 × 22615                  score=63 label=ineligible
+  ✗ [UNCERTAIN] P01 × WS2202                 score=93 label=uncertain
+  ✓ [UNCERTAIN] P01 × LM299-01-102           score=68 label=uncertain
+  ✗ [FP       ] P02 × 22615                  score=78 label=ineligible
+  ✓ [TP       ] P02 × SCTB39G-X201           score=62 label=eligible
+  ✓ [TP       ] P03 × F0041-101              score=72 label=eligible
+  ✗ [UNCERTAIN] P03 × GS-US-600-6165         score=82 label=uncertain
+  ✗ [FP       ] P03 × 22615                  score=60 label=ineligible
+  ✗ [FP       ] P04 × 22615                  score=53 label=ineligible
+  ✓ [TN       ] P04 × F0041-101              score= 0 label=ineligible
+  ✓ [TN       ] P04 × SCTB39G-X201           score= 0 label=ineligible
+  ✓ [TP       ] P05 × YST-02-105             score=72 label=eligible
+  ✓ [UNCERTAIN] P05 × RG001                  score=66 label=uncertain
+  ✓ [TN       ] P05 × 22615                  score= 0 label=ineligible
+  ✓ [TP       ] P06 × RG001                  score=66 label=eligible
+  ✓ [UNCERTAIN] P06 × YST-02-105             score=72 label=uncertain
+  ✗ [FP       ] P06 × AK112-312              score=43 label=ineligible
+  ✓ [TP       ] P07 × BAT-8010+1006-001-CR   score=83 label=eligible
+  ✓ [TP       ] P07 × TQB2930-III-01         score=98 label=eligible
+  ✓ [TN       ] P07 × F0041-101              score=29 label=ineligible
+  ✗ [FP       ] P08 × BAT-8010+1006-001-CR   score=55 label=ineligible
+  ✓ [UNCERTAIN] P08 × SYS6005-001            score=60 label=uncertain
+  ✓ [UNCERTAIN] P08 × SCTB39G-X201           score=33 label=uncertain
+  ✗ [FP       ] P09 × AK112-312              score=68 label=ineligible
+  ✓ [TN       ] P09 × XNW27011-III-01        score= 0 label=ineligible
+  ✓ [TP       ] P09 × SCTB39G-X201           score=63 label=eligible
+  ✗ [FP       ] P10 × AK112-312              score=76 label=ineligible
+  ✓ [UNCERTAIN] P10 × 22752                  score=63 label=uncertain
+  ✓ [UNCERTAIN] P10 × SCTB39G-X201           score=68 label=uncertain
+  ✓ [TP       ] P11 × XNW27011-III-01        score=83 label=eligible
+  ✓ [TP       ] P11 × SCTB39G-X201           score=63 label=eligible
+  ✓ [TN       ] P11 × BAT-8010+1006-001-CR   score= 0 label=ineligible
+  ✓ [TN       ] P12 × XNW27011-III-01        score= 0 label=ineligible
+  ✓ [TP       ] P12 × SCTB39G-X201           score=68 label=eligible
+  ✓ [TN       ] P12 × RG001                  score= 0 label=ineligible
+  ✓ [TP       ] P01 × SCTB39G-X201           score=68 label=eligible
+  ✗ [FP       ] P02 × F0041-101              score=68 label=ineligible
+  ✗ [FP       ] P03 × SCTB39G-X201           score=72 label=ineligible
+  ✓ [TP       ] P05 × SCTB39G-X201           score=72 label=eligible
+  ✓ [UNCERTAIN] P06 × SCTB39G-X201           score=72 label=uncertain
+  ✓ [UNCERTAIN] P07 × SYS6005-001            score=68 label=uncertain
+  ✗ [FP       ] P08 × TQB2930-III-01         score=65 label=ineligible
+  ✗ [FP       ] P09 × 22752                  score=68 label=ineligible
+  ✓ [UNCERTAIN] P10 × XP-001-V2-01           score=63 label=uncertain
+  ✗ [UNCERTAIN] P11 × YKSW202402             score= 0 label=uncertain
+  ✗ [UNCERTAIN] P12 × YKSW202402             score= 0 label=uncertain
+  ✓ [TN       ] P04 × HS-20124-101           score= 0 label=ineligible
+  ✓ [TN       ] P06 × BAT-8010+1006-001-CR   score= 0 label=ineligible
+  ✓ [TN       ] P09 × TQB2930-III-01         score= 0 label=ineligible
+  ✓ [TP       ] P07 × 22752                  score=49 label=eligible
+
+SUMMARY: P=52.0 R=100.0 F1=68.4 nDCG=80.1 threshold=42
