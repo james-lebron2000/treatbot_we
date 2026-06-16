@@ -1,34 +1,34 @@
 <template>
-  <section class="grid">
+  <section class="upload-shell grid">
     <!-- 首次引导（未上传时显示） -->
     <div v-if="!fileId && !Object.keys(parsedRecord).length" class="grid">
-      <div class="card" style="background:linear-gradient(135deg,#eff6ff,#f0fdf4);border:none;">
-        <h2 style="margin:0 0 8px;">把病历交给我们</h2>
-        <p style="color:#374151;font-size:0.95rem;line-height:1.6;">
+      <div class="card intro-card">
+        <h2 class="intro-card__title">把病历交给我们</h2>
+        <p class="intro-card__lede">
           拍照、扫描、PDF 都行。AI 几分钟帮您看懂关键信息，给出可以直接给医生看的摘要，并对接正在招募的新药临床试验。
         </p>
       </div>
 
       <PrivacyPromiseCard size="sm" :show-details-link="true" />
 
-      <div class="card" style="background:#fffbeb;border-color:#fcd34d;display:flex;justify-content:space-between;align-items:center;gap:12px;">
-        <div style="flex:1;min-width:0;">
-          <h3 style="margin:0 0 4px;font-size:0.98rem;color:#92400e;">先看看别人家的</h3>
-          <p style="margin:0;font-size:0.82rem;color:#78716c;line-height:1.5;">
+      <div class="card demo-card">
+        <div class="demo-card__body">
+          <h3 class="demo-card__title">先看看别人家的</h3>
+          <p class="demo-card__desc">
             30 秒看两份示例病历如何被看懂，不动用您的任何数据。
           </p>
         </div>
-        <button class="btn primary" style="white-space:nowrap;padding:8px 14px;" @click="$router.push('/demo')">
+        <button class="btn primary demo-card__cta" @click="$router.push('/demo')">
           看看示例 →
         </button>
       </div>
 
       <div class="card">
-        <h3 style="margin:0 0 10px;">需要准备什么？</h3>
-        <p style="font-size:0.9rem;color:#374151;line-height:1.8;margin:0;">
+        <h3 class="section-heading">需要准备什么？</h3>
+        <p class="prep-intro">
           向主治医生或医院病案室拿到以下任意一份就行（拍照或 PDF 都可以）：
         </p>
-        <div style="margin-top:10px;display:grid;gap:8px;">
+        <div class="tip-list">
           <div class="tip-card">
             <strong>病理报告</strong>（最重要）
             <span class="tip-desc">— 包含诊断、癌症类型、基因检测结果</span>
@@ -42,42 +42,44 @@
             <span class="tip-desc">— 包含 EGFR、ALK、KRAS 等突变信息</span>
           </div>
         </div>
-        <p style="font-size:0.8rem;color:#9ca3af;margin:10px 0 0;">
+        <p class="prep-note">
           没有电子版也没关系，手机拍照就行，文字清晰能读就可以。
         </p>
       </div>
 
-      <div class="card" style="background:#f0f9ff;border-color:#bae6fd;">
-        <h3 style="margin:0 0 6px;color:#075985;">手头没有报告？直接告诉我们也能匹配</h3>
-        <p style="margin:0 0 10px;font-size:0.85rem;color:#0c4a6e;line-height:1.6;">
+      <div class="card manual-card">
+        <h3 class="manual-card__title">手头没有报告？直接告诉我们也能匹配</h3>
+        <p class="manual-card__desc">
           只要 1-2 项关键信息（癌种、分期），我们就能帮您筛出可以尝试的试验。<strong>没做基因检测也不影响</strong>。
         </p>
-        <button class="btn ghost" @click="goManualEntry" style="width:100%;">直接告诉我们关键信息 →</button>
+        <button class="btn ghost btn-block" @click="goManualEntry">直接告诉我们关键信息 →</button>
       </div>
 
       <div class="card grid">
-        <h3 style="margin:0;">上传病历</h3>
+        <h3 class="section-heading section-heading--flush">上传病历</h3>
         <label class="upload-area" :class="{ 'has-files': files.length }">
-          <input type="file" accept="image/*,.pdf" multiple @change="onFileChange" style="display:none;" />
-          <div v-if="!files.length" style="text-align:center;padding:20px 0;">
-            <div style="font-size:2rem;">&#128196;</div>
-            <p style="margin:8px 0 0;color:#6b7280;">点这里选文件</p>
-            <p style="margin:4px 0 0;font-size:0.8rem;color:#9ca3af;">图片或 PDF 都行，可以一次选多张</p>
+          <input type="file" accept="image/*,.pdf" multiple @change="onFileChange" class="visually-hidden-input" />
+          <div v-if="!files.length" class="upload-area__empty">
+            <div class="upload-area__icon">&#128196;</div>
+            <p class="upload-area__hint">点这里选文件</p>
+            <p class="upload-area__sub">图片或 PDF 都行，可以一次选多张</p>
           </div>
-          <div v-else style="padding:10px 0;">
-            <p style="margin:0;color:#16a34a;">已选 {{ files.length }} 份</p>
-            <p v-for="f in files" :key="f.name" style="margin:2px 0;font-size:0.8rem;color:#6b7280;">{{ f.name }}</p>
+          <div v-else class="upload-area__filled">
+            <p class="upload-area__count">已选 {{ files.length }} 份</p>
+            <div class="file-grid">
+              <span v-for="f in files" :key="f.name" class="file-chip" :title="f.name">{{ f.name }}</span>
+            </div>
           </div>
         </label>
 
-        <div style="margin-top:4px;">
+        <div class="remark-row">
           <details>
-            <summary style="font-size:0.85rem;color:#6b7280;cursor:pointer;">想补充点什么？（选填）</summary>
-            <textarea v-model="remark" rows="2" placeholder="例如：这是我妈妈的病历，肺腺癌 IV 期" style="margin-top:6px;"></textarea>
+            <summary class="remark-summary">想补充点什么？（选填）</summary>
+            <textarea v-model="remark" rows="2" placeholder="例如：这是我妈妈的病历，肺腺癌 IV 期" class="remark-input"></textarea>
           </details>
         </div>
 
-        <button class="btn primary" :disabled="uploading || !files.length" @click="uploadAndParse" style="width:100%;padding:12px;">
+        <button class="btn primary btn-block btn-cta" :disabled="uploading || !files.length" @click="uploadAndParse">
           {{ uploading
             ? (batchStats.total > 1
                 ? `已处理 ${batchStats.completedCount + batchStats.erroredCount}/${batchStats.total} 份…`
@@ -85,93 +87,100 @@
             : (files.length > 1 ? `开始批量解析 ${files.length} 份（约 3-5 分钟）` : '开始解析（约 3 分钟）') }}
         </button>
 
-        <p style="font-size:0.78rem;color:#9ca3af;margin:6px 0 0;text-align:center;line-height:1.5;">
+        <p class="upload-reassure">
           🔒 数据仅在您的账户里 · 随时可删 · 不做任何其它用途
         </p>
       </div>
     </div>
 
     <!-- 解析中 -->
-    <div v-if="parseStatus && parseStatus !== 'error' && parseStatus !== 'completed' && !Object.keys(parsedRecord).length" class="card" style="text-align:center;padding:30px 16px;">
+    <div v-if="parseStatus && parseStatus !== 'error' && parseStatus !== 'completed' && !Object.keys(parsedRecord).length" class="card parse-card">
       <div class="pulse-dot"></div>
-      <p style="font-size:1rem;margin:12px 0 4px;">{{ uploadCopy.status.parsing }}</p>
-      <p style="font-size:0.85rem;color:#6b7280;">
-        {{ parseStatus === 'running' ? 'AI 在找诊断、分期、基因信息 —— 这些稍后您能直接核对修改' : uploadCopy.status.pending }}
-      </p>
+      <p class="parse-card__title">{{ uploadCopy.status.parsing }}</p>
+      <p class="parse-card__stage">{{ parseStageLabel }}</p>
+
+      <!-- 进度条：批量按已处理份数、单份按 SSE/轮询百分比；语义不变，只更清晰 -->
+      <div class="parse-progress" role="progressbar" :aria-valuenow="parseProgress" aria-valuemin="0" aria-valuemax="100">
+        <div class="parse-progress__fill" :style="{ width: parseProgress + '%' }"></div>
+      </div>
+
       <!-- 批量场景显示 X / Y 进度（更直观） -->
-      <p v-if="isBatchParse && batchStats.total > 1" style="color:#2563eb;font-weight:500;">
+      <p v-if="isBatchParse && batchStats.total > 1" class="parse-card__count">
         已处理 {{ batchStats.completedCount + batchStats.erroredCount }} / {{ batchStats.total }} 份
-        <span v-if="batchStats.completedCount" style="color:#16a34a;">（成功 {{ batchStats.completedCount }}）</span>
-        <span v-if="batchStats.erroredCount" style="color:#dc2626;">（失败 {{ batchStats.erroredCount }}）</span>
+        <span v-if="batchStats.completedCount" class="parse-card__count-ok">（成功 {{ batchStats.completedCount }}）</span>
+        <span v-if="batchStats.erroredCount" class="parse-card__count-err">（失败 {{ batchStats.erroredCount }}）</span>
       </p>
-      <p v-else-if="parseProgress > 0" style="color:#2563eb;">进度 {{ parseProgress }}%</p>
-      <p v-if="elapsedSeconds > 10" style="font-size:0.8rem;color:#9ca3af;">
-        已花 {{ elapsedSeconds }} 秒{{ elapsedSeconds > 30 ? '，这份内容偏多，再稍等一下' : '' }}
+      <p v-else-if="parseProgress > 0" class="parse-card__count">进度 {{ parseProgress }}%</p>
+
+      <!-- 软性 ETA：已用秒数 + 常规耗时区间，安抚等待焦虑 -->
+      <p class="parse-card__eta">
+        已用 {{ elapsedSeconds }}s，通常 30–60 秒{{ elapsedSeconds > 60 ? '；这份内容偏多，再稍等一下' : '' }}
       </p>
     </div>
 
     <!-- 解析错误 -->
-    <div v-if="uploadError.message" class="card" :style="errorCardStyle">
-      <p :style="{ color: uploadError.kind === 'rate_limit' ? '#b45309' : '#dc2626', margin:'0 0 8px', fontWeight: 500 }">
-        {{ errorTitle }}
-      </p>
-      <p style="font-size:0.85rem;color:#6b7280;margin:0 0 12px;line-height:1.6;">
+    <div v-if="uploadError.message" class="card error-card" :class="`error-card--${uploadError.kind || 'parse'}`">
+      <div class="error-card__head">
+        <span class="error-card__icon" aria-hidden="true">!</span>
+        <p class="error-card__title">{{ errorTitle }}</p>
+      </div>
+      <p class="error-card__helper">
         {{ errorHelper }}
       </p>
       <!-- 限流：不显示"重新识别"，给出替代入口 -->
       <template v-if="uploadError.kind === 'rate_limit'">
-        <button class="btn primary" @click="goManualEntry" style="width:100%;margin-bottom:8px;">
+        <button class="btn primary btn-block error-card__action" @click="goManualEntry">
           先不传，直接告诉我们关键信息
         </button>
-        <button class="btn ghost" @click="$router.push('/demo')" style="width:100%;">
+        <button class="btn ghost btn-block" @click="$router.push('/demo')">
           先看看别人家的示例
         </button>
       </template>
       <template v-else>
-        <button class="btn primary" @click="retryParse" style="width:100%;" :disabled="!file">{{ uploadCopy.cta.retry }}</button>
+        <button class="btn primary btn-block" @click="retryParse" :disabled="!file">{{ uploadCopy.cta.retry }}</button>
       </template>
     </div>
 
     <!-- 解析完成 — 结果展示 -->
     <div v-if="Object.keys(parsedRecord).length" class="grid">
-      <div class="card" style="background:#f0fdf4;border-color:#86efac;">
-        <h3 style="margin:0 0 8px;color:#166534;">好了</h3>
-        <p style="font-size:0.85rem;color:#374151;margin:0;">以下是我们从病历里看到的信息 —— 请您过一遍，哪里不对直接改。<strong>您改过的就是对的。</strong></p>
+      <div class="card done-card">
+        <h3 class="done-card__title">好了</h3>
+        <p class="done-card__desc">以下是我们从病历里看到的信息 —— 请您过一遍，哪里不对直接改。<strong>您改过的就是对的。</strong></p>
       </div>
 
       <RecordSummaryCard :record="parsedRecord" />
 
       <!-- Phase E.3：跨多份病历的疾病发展 + 治疗经过时间线（仅在 ≥2 份完成时展示） -->
-      <div v-if="timelineSummary && timelineSummary.events && timelineSummary.events.length" class="card" style="background:#eff6ff;border-color:#93c5fd;">
-        <h3 style="margin:0 0 8px;color:#1d4ed8;">疾病发展 & 治疗经过</h3>
-        <p v-if="timelineSummary.summaryNarrative" style="font-size:0.85rem;color:#374151;margin:0 0 10px;line-height:1.6;">
+      <div v-if="timelineSummary && timelineSummary.events && timelineSummary.events.length" class="card timeline-card">
+        <h3 class="timeline-card__title">疾病发展 & 治疗经过</h3>
+        <p v-if="timelineSummary.summaryNarrative" class="timeline-card__narrative">
           {{ timelineSummary.summaryNarrative }}
         </p>
-        <ul style="list-style:none;padding:0;margin:0;">
-          <li v-for="(event, idx) in timelineSummary.events.slice(0, 10)" :key="idx" style="padding:8px 0;border-bottom:1px solid #dbeafe;font-size:0.85rem;">
-            <span style="color:#2563eb;font-weight:500;">{{ event.date || '—' }}</span>
-            <span style="color:#1f2937;margin-left:8px;">{{ event.title }}</span>
-            <span v-if="event.detail" style="display:block;color:#6b7280;margin-top:2px;font-size:0.78rem;">{{ event.detail }}</span>
+        <ul class="timeline-list">
+          <li v-for="(event, idx) in timelineSummary.events.slice(0, 10)" :key="idx" class="timeline-item">
+            <span class="timeline-item__date">{{ event.date || '—' }}</span>
+            <span class="timeline-item__title">{{ event.title }}</span>
+            <span v-if="event.detail" class="timeline-item__detail">{{ event.detail }}</span>
           </li>
         </ul>
-        <p v-if="timelineSummary.events.length > 10" style="font-size:0.78rem;color:#9ca3af;margin:8px 0 0;">
+        <p v-if="timelineSummary.events.length > 10" class="timeline-card__more">
           展示前 10 项，其余 {{ timelineSummary.events.length - 10 }} 项可在病历详情查看
         </p>
       </div>
 
-      <div v-if="visibleMissingFields.length" class="card" style="border-color:#fcd34d;background:#fffbeb;">
-        <h3 style="margin:0 0 8px;color:#92400e;">再补一点信息会更准</h3>
-        <p style="font-size:0.85rem;color:#78716c;margin:0 0 10px;">
+      <div v-if="visibleMissingFields.length" class="card gap-card">
+        <h3 class="gap-card__title">再补一点信息会更准</h3>
+        <p class="gap-card__desc">
           有这些信息能帮您找到更合适的试验。不确定就点「？」看看，或者直接选「我不知道」。
         </p>
         <!-- PRD-2026Q3 §U2：每个字段外层包 FieldExplainer，提供白话说明 + 「我不知道」逃生口 -->
-        <div v-for="field in visibleMissingFields" :key="field.key" style="margin-bottom:14px;">
+        <div v-for="field in visibleMissingFields" :key="field.key" class="gap-field">
           <FieldExplainer
             :field-key="field.key"
             :fallback-label="field.label"
             @i-dont-know="onFieldUnknown(field.key)"
           >
-            <span v-if="getFieldHint(field)" style="display:block;font-size:0.78rem;color:#9ca3af;margin:-2px 0 4px;">— {{ getFieldHint(field) }}</span>
+            <span v-if="getFieldHint(field)" class="gap-field__hint">— {{ getFieldHint(field) }}</span>
             <select v-if="field.type === 'select'" v-model="gapValues[field.key]">
               <option value="">请选择</option>
               <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
@@ -179,7 +188,7 @@
             <input v-else :type="field.type === 'number' ? 'number' : 'text'" v-model="gapValues[field.key]" :placeholder="field.placeholder || ''" />
           </FieldExplainer>
         </div>
-        <p v-if="unknownFieldKeys.length" style="font-size:0.78rem;color:#a16207;margin:6px 0 0;">
+        <p v-if="unknownFieldKeys.length" class="gap-card__noted">
           已记下您不确定的：{{ unknownFieldLabels }}。后面我们会用其它信息辅助匹配。
         </p>
       </div>
@@ -189,11 +198,11 @@
         <div v-if="toastMessage" class="upload-toast" role="status">{{ toastMessage }}</div>
       </transition>
 
-      <button class="btn primary" :disabled="submitting" @click="toMatches" style="width:100%;padding:14px;font-size:1rem;">
+      <button class="btn primary btn-block btn-cta-lg" :disabled="submitting" @click="toMatches">
         {{ submitting ? '正在为您家人找合适的试验…' : '看看为家人找到的可能性' }}
       </button>
 
-      <button class="btn ghost" @click="resetUpload" style="width:100%;font-size:0.85rem;">上传其它病历</button>
+      <button class="btn ghost btn-block btn-secondary" @click="resetUpload">上传其它病历</button>
     </div>
 
     <ConsentModal
@@ -323,6 +332,17 @@ let parseStream: { close: () => void } | null = null
 let pollStartTime = 0
 let elapsedTimer: number | null = null
 const elapsedSeconds = ref(0)
+
+// 仅展示层：由已有的 parseProgress / parseStatus 派生一句白话阶段标签，安抚等待。
+// 不触碰任何 SSE / 上传 / 轮询 / 网络逻辑，纯 computed。
+const parseStageLabel = computed(() => {
+  if (parseStatus.value === 'uploading') return '正在上传病历…'
+  const p = parseProgress.value
+  if (p >= 100) return '完成'
+  if (p >= 70) return '正在整理结果…'
+  if (p >= 30) return '正在提取关键信息…'
+  return '正在识别病历文字…'
+})
 
 const missingFields = computed(() => getMissingFields(parsedRecord.value))
 // 已声明「不知道」的字段从展示里剔除；其余流程（验证、提交）逻辑不变
@@ -778,31 +798,272 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.upload-area {
-  display: block;
-  border: 2px dashed #d1d5db;
-  border-radius: 12px;
-  padding: 10px 16px;
-  cursor: pointer;
-  transition: border-color 0.2s;
+/* 桌面：上传流程收成一个聚焦的居中阅读列（移动优先，窄屏自然铺满）。 */
+.upload-shell {
+  width: 100%;
+  max-width: var(--container-read);
+  margin: 0 auto;
 }
-.upload-area:hover, .upload-area.has-files {
-  border-color: var(--primary);
+
+/* ---- 通用排版原语（替代散落内联） ---- */
+.section-heading {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  color: var(--text);
+}
+.section-heading--flush {
+  margin-bottom: 0;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-cta {
+  padding-top: var(--s-3);
+  padding-bottom: var(--s-3);
+}
+.btn-cta-lg {
+  padding-top: var(--s-4);
+  padding-bottom: var(--s-4);
+  font-size: var(--fs-subtitle);
+}
+.btn-secondary {
+  font-size: var(--fs-callout);
+}
+
+/* ---- 引导首屏卡片 ---- */
+.intro-card {
+  background: linear-gradient(135deg, var(--brand-soft), var(--bg-mint));
+  border: none;
+}
+.intro-card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-title);
+}
+.intro-card__lede {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-body);
+  line-height: var(--lh-relaxed);
+}
+
+/* ---- 看示例卡片：横向排布，窄屏自动换行 ---- */
+.demo-card {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
+}
+.demo-card__body {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.demo-card__title {
+  margin: 0 0 var(--s-1);
+  font-size: var(--fs-subtitle);
+  color: var(--amber-text);
+}
+.demo-card__desc {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
+}
+.demo-card__cta {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* ---- 需要准备什么 ---- */
+.prep-intro {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
+  margin: 0;
+}
+.tip-list {
+  margin-top: var(--s-3);
+  display: grid;
+  gap: var(--s-2);
 }
 .tip-card {
-  padding: 8px 12px;
-  background: #f8fafc;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  color: #374151;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
 }
 .tip-desc {
-  color: #9ca3af;
-  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.prep-note {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  margin: var(--s-3) 0 0;
+}
+
+/* ---- 手动录入卡片 ---- */
+.manual-card {
+  background: var(--bg-soft);
+  border-color: var(--brand-soft);
+}
+.manual-card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  color: var(--brand-hover);
+}
+.manual-card__desc {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  line-height: var(--lh-relaxed);
+}
+
+/* ---- 上传区 ---- */
+.upload-area {
+  display: block;
+  border: 2px dashed var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s-2) var(--s-4);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.upload-area:hover,
+.upload-area.has-files {
+  border-color: var(--brand);
+  background: var(--bg-soft);
+}
+.visually-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.upload-area__empty {
+  text-align: center;
+  padding: var(--s-6) 0;
+}
+.upload-area__icon {
+  font-size: 2rem;
+}
+.upload-area__hint {
+  margin: var(--s-2) 0 0;
+  color: var(--text-dim);
+}
+.upload-area__sub {
+  margin: var(--s-1) 0 0;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+.upload-area__filled {
+  padding: var(--s-2) 0;
+}
+.upload-area__count {
+  margin: 0 0 var(--s-2);
+  color: var(--mint-text);
+  font-weight: 500;
+}
+/* 文件预览：自适应换行的弹性网格，不再用拥挤的固定宽度逐行堆叠 */
+.file-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.file-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: var(--s-1) var(--s-3);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remark-row {
+  margin-top: var(--s-1);
+}
+.remark-summary {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  cursor: pointer;
+  /* a11y：可点摘要给足触达高度 */
+  min-height: var(--size-tap);
+  display: flex;
+  align-items: center;
+}
+.remark-input {
+  margin-top: var(--s-2);
+}
+.upload-reassure {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  margin: var(--s-2) 0 0;
+  text-align: center;
+  line-height: var(--lh-normal);
+}
+
+/* ---- 解析进行中 ---- */
+.parse-card {
+  text-align: center;
+  padding: var(--s-8) var(--s-4);
+}
+.parse-card__title {
+  font-size: var(--fs-subtitle);
+  margin: var(--s-3) 0 var(--s-1);
+  color: var(--text);
+}
+.parse-card__stage {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin: 0 0 var(--s-3);
+}
+.parse-progress {
+  height: var(--s-2);
+  background: var(--brand-soft);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  margin: 0 auto var(--s-2);
+  max-width: 320px;
+}
+.parse-progress__fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: var(--r-pill);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.parse-card__count {
+  color: var(--brand-hover);
+  font-weight: 500;
+  margin: var(--s-1) 0;
+}
+.parse-card__count-ok {
+  color: var(--mint-text);
+}
+.parse-card__count-err {
+  color: var(--red);
+}
+.parse-card__eta {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  margin: var(--s-1) 0 0;
 }
 .pulse-dot {
-  width: 16px; height: 16px;
-  background: #2563eb;
+  width: 16px;
+  height: 16px;
+  background: var(--brand);
   border-radius: 50%;
   margin: 0 auto;
   animation: pulse 1.5s ease-in-out infinite;
@@ -812,19 +1073,166 @@ onUnmounted(() => {
   50% { transform: scale(1.5); opacity: 0.5; }
 }
 
-/* PRD-2026Q3 §U2：「我不知道」点击后的轻量 toast */
+/* ---- 错误卡片：更强的视觉权重 ---- */
+.error-card {
+  border: 2px solid var(--red);
+  background: var(--red-soft);
+}
+/* 限流 = 等待（琥珀）、网络 = 提醒（蓝）、解析失败 = 错误（红） */
+.error-card--rate_limit {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+.error-card--network {
+  border-color: var(--brand);
+  background: var(--bg-soft);
+}
+.error-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.error-card__icon {
+  flex: 0 0 auto;
+  width: var(--s-6);
+  height: var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--red);
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.error-card--rate_limit .error-card__icon { background: var(--amber); }
+.error-card--network .error-card__icon { background: var(--brand); }
+.error-card__title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--red-text);
+}
+.error-card--rate_limit .error-card__title { color: var(--amber-text); }
+.error-card--network .error-card__title { color: var(--brand-hover); }
+.error-card__helper {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin: 0 0 var(--s-3);
+  line-height: var(--lh-relaxed);
+}
+.error-card__action {
+  margin-bottom: var(--s-2);
+}
+
+/* ---- 解析完成 ---- */
+.done-card {
+  background: var(--bg-mint);
+  border-color: var(--mint);
+}
+.done-card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  color: var(--mint-text);
+}
+.done-card__desc {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin: 0;
+  line-height: var(--lh-relaxed);
+}
+
+/* ---- 时间线 ---- */
+.timeline-card {
+  background: var(--bg-soft);
+  border-color: var(--brand-soft);
+}
+.timeline-card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  color: var(--brand-hover);
+}
+.timeline-card__narrative {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin: 0 0 var(--s-3);
+  line-height: var(--lh-relaxed);
+}
+.timeline-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.timeline-item {
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--brand-soft);
+  font-size: var(--fs-callout);
+}
+.timeline-item__date {
+  color: var(--brand);
+  font-weight: 500;
+}
+.timeline-item__title {
+  color: var(--text);
+  margin-left: var(--s-2);
+}
+.timeline-item__detail {
+  display: block;
+  color: var(--text-dim);
+  margin-top: 2px;
+  font-size: var(--fs-caption);
+}
+.timeline-card__more {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  margin: var(--s-2) 0 0;
+}
+
+/* ---- 字段补全 ---- */
+.gap-card {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+.gap-card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  color: var(--amber-text);
+}
+.gap-card__desc {
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  margin: 0 0 var(--s-3);
+  line-height: var(--lh-relaxed);
+}
+.gap-field {
+  margin-bottom: var(--s-4);
+}
+.gap-field__hint {
+  display: block;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  margin: -2px 0 var(--s-1);
+}
+.gap-card__noted {
+  font-size: var(--fs-caption);
+  color: var(--amber);
+  margin: var(--s-2) 0 0;
+}
+
+/* PRD-2026Q3 §U2：「我不知道」点击后的轻量 toast。
+   安全区/键盘友好：底部留出 home indicator + 输入法的空间，避免被遮挡。 */
 .upload-toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  bottom: max(var(--s-6), calc(env(safe-area-inset-bottom) + var(--s-2)));
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.92);
   color: #fff;
-  padding: 10px 16px;
-  border-radius: 999px;
-  font-size: 0.88rem;
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-callout);
   z-index: 1200;
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--shadow-2);
 }
 .fx-toast-enter-active, .fx-toast-leave-active {
   transition: opacity 180ms ease, transform 180ms ease;
@@ -832,5 +1240,12 @@ onUnmounted(() => {
 .fx-toast-enter-from, .fx-toast-leave-to {
   opacity: 0;
   transform: translate(-50%, 6px);
+}
+
+/* ---- 桌面断点：聚焦列略放宽到 720px，卡片间距更舒展 ---- */
+@media (min-width: 768px) {
+  .upload-shell {
+    max-width: 720px;
+  }
 }
 </style>

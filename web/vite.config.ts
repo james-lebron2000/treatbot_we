@@ -8,8 +8,31 @@ import path from 'node:path'
 // Vite 默认的 server.fs.allow 只包含 project root，需要显式把仓库根加进来。
 const repoRoot = path.resolve(__dirname, '..')
 
+// DEV-ONLY：shared/copy/*.js 是给 WeApp `require()` 用的纯数据 CJS 模块
+// （module.exports = {...}，无 require/import）。生产构建已由下方 build.commonjsOptions
+// 处理 CJS 互操作；但 Vite dev 会把它们当原生 ESM 直接吐给浏览器，报
+// `does not provide an export named 'default'`，连带 HelpFab / 上传页等所有引用 shared
+// 文案的页面在 dev 下白屏。此插件仅在 serve 阶段把这类纯数据 CJS 包成 ESM default 导出。
+function sharedCopyCjsToEsmDev() {
+  return {
+    name: 'shared-copy-cjs-to-esm-dev',
+    apply: 'serve' as const,
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      const file = id.split('?')[0]
+      if (/\/shared\/copy\/[^/]+\.js$/.test(file) && code.includes('module.exports')) {
+        return {
+          code: `const module = { exports: {} };\nconst exports = module.exports;\n${code}\nexport default module.exports;\n`,
+          map: null
+        }
+      }
+      return null
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), sharedCopyCjsToEsmDev()],
   base: '/treatbot/',
   resolve: {
     alias: {
