@@ -10,6 +10,76 @@ const histories = new Map(); // recordId -> { seq, events[] }
 
 const normalizeRecordId = (recordId) => `${recordId || ''}`.trim();
 
+// ── 跨 worker 广播（PM2 cluster 安全）────────────────────────────────────────
+// 处理 OCR 的 worker 与持有 SSE 连接的 worker 在 cluster 下可能不是同一个进程，进程内
+// EventEmitter 无法跨进程 → 客户端收不到进度。这里用 Redis pub/sub 把事件广播给所有 worker，
+// 各 worker 本地重放给自己的 SSE 订阅者。严格附加 + 可优雅降级：未配 Redis / 测试环境 /
+// Redis 不可用时，行为与原纯进程内实现完全一致。
+const crypto = require('crypto');
+const OCR_EVENTS_CHANNEL = 'ocr:events';
+const ORIGIN_ID = crypto.randomBytes(8).toString('hex'); // 本进程标识，过滤自己发的消息避免重复重放
+const REDIS_ENABLED =
+  process.env.NODE_ENV !== 'test' && String(process.env.OCR_EVENTS_REDIS || '').toLowerCase() !== 'false';
+
+let pubClient = null;
+let subClient = null;
+let redisInitTried = false;
+let testPublisher = null; // 测试注入：模拟跨 worker 发布器
+
+// 收到来自「其它 worker」的事件 → 本地重放给本 worker 的 SSE 订阅者；自己发的（originId 相同）跳过。
+const handleRemoteMessage = (raw) => {
+  try {
+    const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!msg || msg.originId === ORIGIN_ID) return;
+    const key = normalizeRecordId(msg.recordId);
+    if (key && msg.event) emitter.emit(key, msg.event);
+  } catch (e) {
+    // 坏消息忽略，不影响本地流
+  }
+};
+
+const initRedis = () => {
+  if (redisInitTried || !REDIS_ENABLED) return;
+  redisInitTried = true;
+  try {
+    const Redis = require('ioredis');
+    const opts = {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false
+    };
+    pubClient = new Redis(opts);
+    subClient = new Redis(opts);
+    pubClient.on('error', () => {}); // 降级：错误不抛，发布走 .catch 静默
+    subClient.on('error', () => {});
+    subClient.on('message', (_channel, raw) => handleRemoteMessage(raw));
+    subClient.subscribe(OCR_EVENTS_CHANNEL).catch(() => {});
+  } catch (e) {
+    pubClient = null;
+    subClient = null;
+  }
+};
+
+// 把事件广播给其它 worker（附 originId）。测试注入优先；否则经 Redis；都没有则 no-op。
+const broadcast = (key, event) => {
+  const payload = JSON.stringify({ recordId: key, originId: ORIGIN_ID, event });
+  if (testPublisher) {
+    try {
+      testPublisher(payload);
+    } catch (e) {
+      /* ignore */
+    }
+    return;
+  }
+  if (!REDIS_ENABLED) return;
+  initRedis();
+  if (pubClient) {
+    pubClient.publish(OCR_EVENTS_CHANNEL, payload).catch(() => {});
+  }
+};
+
 const readHistory = (recordId) => {
   const key = normalizeRecordId(recordId);
   if (!key) {
@@ -54,7 +124,8 @@ const publish = (recordId, event = {}) => {
   if (history.events.length > MAX_EVENTS_PER_RECORD) {
     history.events.splice(0, history.events.length - MAX_EVENTS_PER_RECORD);
   }
-  emitter.emit(key, next);
+  emitter.emit(key, next); // 本地立即投递（与原行为一致）
+  broadcast(key, next); // 跨 worker 广播（附 originId，自身忽略），cluster 下让其它 worker 的 SSE 也能收到
   return next;
 };
 
@@ -68,6 +139,7 @@ const subscribe = (recordId, listener) => {
   if (!key || typeof listener !== 'function') {
     return () => {};
   }
+  initRedis(); // 确保本 worker 已订阅 Redis 频道，才能收到其它 worker 发布的事件
   emitter.on(key, listener);
   return () => emitter.off(key, listener);
 };
@@ -130,6 +202,7 @@ const buildSnapshotEvent = (record, buildParseStatusEntry) => {
 const clearForTest = () => {
   histories.clear();
   emitter.removeAllListeners();
+  testPublisher = null;
 };
 
 module.exports = {
@@ -143,6 +216,11 @@ module.exports = {
     clearForTest,
     readHistory,
     sanitizeEvent,
-    TERMINAL_TYPES
+    TERMINAL_TYPES,
+    handleRemoteMessage,
+    setTestPublisher: (fn) => {
+      testPublisher = fn;
+    },
+    ORIGIN_ID
   }
 };
