@@ -236,6 +236,9 @@ const ensureIndexes = async () => {
   await safeAddIndex('medical_records', ['created_at']);
   // PRD-2026Q2 §3.5：多病历管理页 —— "某用户未删除病历"主路径索引
   await safeAddIndex('medical_records', ['user_id', 'deleted_at'], { name: 'idx_user_deleted' });
+  // 匹配热路径：getUserCompletedRecords 的 WHERE user_id=? AND deleted_at IS NULL AND status='completed'
+  // —— 第三列加 status 做覆盖，避免回表过滤状态（每次匹配请求都命中这条查询）。
+  await safeAddIndex('medical_records', ['user_id', 'deleted_at', 'status'], { name: 'idx_record_user_deleted_status' });
   // PRD-2026Q3 T1-3：matches 默认基线选择主路径
   await safeAddIndex('medical_records', ['user_id', 'is_active'], { name: 'idx_user_active' });
   // Admin H5 后台：按用户 / 状态 / 日期筛选上传数据的主路径索引

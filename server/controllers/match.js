@@ -9,6 +9,44 @@ const { safeText, sanitizeTrial, escapeLike } = require('../utils/text');
 // PRD-2026Q4 T0-10：转化漏斗埋点
 const funnelTracker = require('../services/funnelTracker');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
+const { createTtlCache } = require('../utils/ttlCache');
+
+// 粗筛回退（disease_tags 未填充时取全量招募中试验）的上限，防无界扫描拖慢响应。
+const TRIAL_FALLBACK_LIMIT = toPositiveIntEnv(process.env.TRIAL_FALLBACK_LIMIT, 1000);
+
+// 匹配评分结果的进程内缓存：同一(用户·病历版本·筛选·命中试验版本)的翻页/重复请求免重复评分。
+// key 由 buildMatchCacheKey 计算，已覆盖全部输入指纹 → 无脏读；TTL 仅兜底回收内存。
+const matchScoreCache = createTtlCache(toPositiveIntEnv(process.env.MATCH_CACHE_MAX, 500));
+const MATCH_CACHE_TTL_MS = toPositiveIntEnv(process.env.MATCH_CACHE_TTL_MS, 90000);
+
+function toPositiveIntEnv(value, fallback) {
+  const n = parseInt(value, 10);
+  return Number.isNaN(n) || n <= 0 ? fallback : n;
+}
+
+// 把一组行（病历 / 试验）压成「id:更新时间」指纹串：任一行新增/删除/更新都会改变它。
+const fingerprintRows = (rows) =>
+  (rows || [])
+    .map((r) => {
+      const u = r && r.updated_at;
+      const ts = u instanceof Date ? u.getTime() : u || '';
+      return `${(r && r.id) || ''}:${ts}`;
+    })
+    .join(',');
+
+const buildMatchCacheKey = (userId, profileRecords, filters, trials) =>
+  crypto
+    .createHash('sha1')
+    .update(
+      JSON.stringify({
+        u: userId || '',
+        r: fingerprintRows(profileRecords),
+        f: filters || {},
+        t: fingerprintRows(trials)
+      })
+    )
+    .digest('hex');
 
 /**
  * PRD-2026Q4 T0-10：MATCH_SHOWN 埋点封装。
@@ -243,7 +281,8 @@ const getMatches = async (req, res, next) => {
       trials = await Trial.findAll({
         where: fallbackWhere,
         attributes: trialAttrs,
-        order: [['updated_at', 'DESC']]
+        order: [['updated_at', 'DESC']],
+        limit: TRIAL_FALLBACK_LIMIT
       });
     }
 
@@ -261,30 +300,37 @@ const getMatches = async (req, res, next) => {
       city: filters.city || null
     });
 
-    // Stage 2: 精排 — 混合评分（原始启发式 + 条目级匹配）
-    const allMatches = trials
-      .map((trial) => sanitizeTrial(trial))
-      .map((trial) => {
-        let best = null;
-        for (const profileRecord of profileRecords) {
-          const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
-          // 硬排除的试验（如年龄/ECOG不符合）直接跳过
-          if (scored.excluded) continue;
-          if (!best || scored.score > best.score) {
-            best = scored;
+    // Stage 2: 精排 — 混合评分（原始启发式 + 条目级匹配）。
+    // 翻页性能：评分结果按「全部输入指纹」(用户·病历版本·筛选·命中试验版本) 缓存；
+    // 指纹覆盖所有输入 → 不存在脏读；翻页 / 短时间重复请求命中缓存，直接跳过整段评分。
+    const cacheKey = buildMatchCacheKey(req.userId, profileRecords, filters, trials);
+    let allMatches = matchScoreCache.get(cacheKey);
+    if (!allMatches) {
+      allMatches = trials
+        .map((trial) => sanitizeTrial(trial))
+        .map((trial) => {
+          let best = null;
+          for (const profileRecord of profileRecords) {
+            const scored = scoreRecordHybrid(profileRecord, trial, structuredProfile);
+            // 硬排除的试验（如年龄/ECOG不符合）直接跳过
+            if (scored.excluded) continue;
+            if (!best || scored.score > best.score) {
+              best = scored;
+            }
           }
-        }
-        return best ? buildDetailedMatchItem(trial, best) : null;
-      })
-      .filter((item) => item && trialMatchesFilters(item, filters))
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        // 稳定 tiebreaker: 更新时间新的在前，其次按 id 字典序确保结果每次一致
-        const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-        const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-        if (tA !== tB) return tB - tA;
-        return `${a.id}`.localeCompare(`${b.id}`);
-      });
+          return best ? buildDetailedMatchItem(trial, best) : null;
+        })
+        .filter((item) => item && trialMatchesFilters(item, filters))
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          // 稳定 tiebreaker: 更新时间新的在前，其次按 id 字典序确保结果每次一致
+          const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          if (tA !== tB) return tB - tA;
+          return `${a.id}`.localeCompare(`${b.id}`);
+        });
+      matchScoreCache.set(cacheKey, allMatches, MATCH_CACHE_TTL_MS);
+    }
 
     const list = allMatches.slice(offset, offset + pageSize);
 
@@ -439,7 +485,8 @@ const findMatches = async (req, res, next) => {
       trials = await Trial.findAll({
         where: fallbackWhere,
         attributes: trialAttrs,
-        order: [['updated_at', 'DESC']]
+        order: [['updated_at', 'DESC']],
+        limit: TRIAL_FALLBACK_LIMIT
       });
     }
 
