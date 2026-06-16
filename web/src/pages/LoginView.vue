@@ -1,5 +1,5 @@
 <template>
-  <section class="grid">
+  <section class="grid login-col">
     <div v-if="mode !== 'register'" class="auth-tabs">
       <button type="button" :class="{ active: mode === 'sms' }" @click="switchMode('sms')">验证码登录</button>
       <button type="button" :class="{ active: mode === 'password' }" @click="switchMode('password')">密码登录</button>
@@ -10,9 +10,9 @@
 
     <input v-model.trim="phone" placeholder="手机号（仅用于登录，不外传）" maxlength="11" inputmode="numeric" />
 
-    <div v-if="needsCode" style="display:flex;gap:8px;align-items:stretch;">
-      <input v-model.trim="code" placeholder="验证码 (6 位，演示环境请输 000000)" maxlength="6" inputmode="numeric" @keyup.enter="submit" style="flex:1;" />
-      <button type="button" class="btn" :disabled="sendingCode || codeCountdown > 0" @click="onSendCode" style="white-space:nowrap;">
+    <div v-if="needsCode" class="code-row">
+      <input v-model.trim="code" placeholder="验证码 (6 位，演示环境请输 000000)" maxlength="6" inputmode="numeric" @keyup.enter="submit" class="code-input" />
+      <button type="button" class="btn code-btn" :disabled="sendingCode || codeCountdown > 0" @click="onSendCode">
         {{ sendingCode ? '发送中…' : (codeCountdown > 0 ? `${codeCountdown}s 后可重发` : '获取验证码') }}
       </button>
     </div>
@@ -26,11 +26,11 @@
       @keyup.enter="submit"
     />
 
-    <button class="btn primary" :disabled="loading" @click="submit" style="width:100%;">
+    <button class="btn primary submit-btn" :disabled="loading" @click="submit">
       {{ submitLabel }}
     </button>
-    <p v-if="error" style="color:#dc2626;font-size:0.9rem;">{{ error }}</p>
-    <p v-if="sendCodeHint" style="color:#16a34a;font-size:0.85rem;">{{ sendCodeHint }}</p>
+    <p v-if="error" class="msg msg-error">{{ error }}</p>
+    <p v-if="sendCodeHint" class="msg msg-hint">{{ sendCodeHint }}</p>
 
     <div class="switch-line">
       <template v-if="mode === 'register'">
@@ -41,13 +41,13 @@
       </template>
     </div>
 
-    <PrivacyPromiseCard size="sm" :show-details-link="true" style="margin-top:12px;" />
+    <PrivacyPromiseCard size="sm" :show-details-link="true" class="privacy-promise" />
 
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6;text-align:center;">
-      <a href="javascript:void(0)" style="color:#2563eb;font-size:0.88rem;" @click="router.push('/demo')">
+    <div class="demo-links">
+      <a href="javascript:void(0)" class="demo-link" @click="router.push('/demo')">
         先看看别人家的病历怎么被看懂 →
       </a>
-      <p style="margin:4px 0 0;font-size:0.78rem;color:#9ca3af;">
+      <p class="demo-sub">
         30 秒的示例 · 不用登录 · 看完再决定要不要用
       </p>
     </div>
@@ -195,6 +195,71 @@ const submit = async () => {
 </script>
 
 <style scoped>
+/* 登录列：移动端满宽，桌面端收成 ~420px 聚焦窄列居中 */
+.login-col {
+  max-width: 420px;
+  margin-inline: auto;
+}
+
+/* 验证码行：输入框可压缩(min-width:0 防被按钮挤裁)，按钮不收缩，带间距 */
+.code-row {
+  display: flex;
+  gap: var(--s-2);
+  align-items: stretch;
+}
+
+.code-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.submit-btn {
+  width: 100%;
+}
+
+.msg {
+  margin: 0;
+  font-size: var(--fs-callout);
+  line-height: var(--lh-normal);
+}
+
+.msg-error {
+  color: var(--red);
+}
+
+.msg-hint {
+  color: var(--mint);
+}
+
+.privacy-promise {
+  margin-top: var(--s-3);
+}
+
+/* 演示入口：与上方表单用细分隔线分隔，整体居中 */
+.demo-links {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.demo-link {
+  color: var(--brand);
+  font-size: var(--fs-callout);
+}
+
+.demo-sub {
+  margin: var(--s-1) 0 0;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+
+/* 登录模式切换 tab（验证码登录 / 密码登录）+ 注册/登录切换行 —— 来自 #35 */
 .auth-tabs {
   display: flex;
   gap: 8px;
