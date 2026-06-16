@@ -1,6 +1,6 @@
 <template>
-  <main class="app-shell" :class="{ 'app-shell-admin': isAdminRoute }">
-    <header v-if="!isAdminRoute" class="app-header">
+  <main class="app-shell" :class="{ 'app-shell-admin': isAdminRoute, 'app-shell--console': isCroBoardRoute }">
+    <header v-if="!isAdminRoute && !isCroRoute" class="app-header">
       <h1>数愈健康</h1>
       <p class="app-tagline">您的病历，您做主 · 温和陪伴每一步</p>
     </header>
@@ -49,6 +49,9 @@ const HelpFab = defineAsyncComponent(() => import('./components/HelpFab.vue'))
 
 const route = useRoute()
 const isAdminRoute = computed(() => route.path.startsWith('/admin'))
+// CRO 控制台是面向运营方的独立界面：隐藏患者端头部；看板页用宽容器（--console）。
+const isCroRoute = computed(() => route.path.startsWith('/cro'))
+const isCroBoardRoute = computed(() => route.path === '/cro')
 const showTabBar = computed(() => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value)
 const showHelpFab = computed(
   () => route.path !== '/login' && !route.path.startsWith('/cro') && !isAdminRoute.value && route.path !== '/onboarding'
