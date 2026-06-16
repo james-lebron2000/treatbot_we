@@ -210,6 +210,8 @@ const getMatches = async (req, res, next) => {
         code: 0,
         message: 'success',
         data: [],
+        // 响应契约一致性：与有结果路径一样始终带 safety；无病历=无文本可扫，必然 redFlag:false。
+        safety: detectRedFlags(buildSearchableText(profileRecords)),
         pagination: { page, pageSize, total: 0, hasMore: false }
       });
     }
