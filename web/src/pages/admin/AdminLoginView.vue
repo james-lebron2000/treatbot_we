@@ -72,7 +72,7 @@ const submit = async () => {
   display: grid;
   place-items: center;
   background: var(--bg-soft);
-  padding: var(--s-6);
+  padding: var(--s-4);
   font-family: var(--font-sans);
 }
 
@@ -83,6 +83,12 @@ const submit = async () => {
   background: var(--bg);
   padding: var(--s-8) var(--s-6);
   box-shadow: var(--shadow-2);
+}
+
+@media (min-width: 480px) {
+  .admin-login {
+    padding: var(--s-6);
+  }
 }
 
 .eyebrow {
@@ -126,9 +132,10 @@ label {
 }
 
 label input {
+  min-height: var(--size-tap);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  padding: 10px var(--s-3);
+  padding: var(--s-2) var(--s-3);
   font-family: inherit;
   font-size: var(--fs-body);
   color: var(--text);
@@ -136,7 +143,8 @@ label input {
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-label input:focus {
+label input:focus,
+label input:focus-visible {
   outline: none;
   border-color: var(--brand);
   box-shadow: var(--shadow-focus);
@@ -144,6 +152,7 @@ label input:focus {
 
 .primary-btn {
   width: 100%;
+  min-height: var(--size-tap);
   border: none;
   border-radius: var(--r-md);
   background: var(--brand);
@@ -157,6 +166,11 @@ label input:focus {
 
 .primary-btn:hover:not(:disabled) {
   background: var(--brand-hover);
+}
+
+.primary-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .primary-btn:active:not(:disabled) {

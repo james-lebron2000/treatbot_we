@@ -38,18 +38,36 @@
           <h3>上传数据</h3>
           <span>默认不显示用户已删除的病历</span>
         </div>
-        <div v-if="loading" class="state-card">加载中...</div>
-        <div v-else class="table-wrap">
-          <table>
+        <div class="table-scroll">
+          <table v-if="loading" class="skeleton-table" aria-hidden="true">
             <thead>
               <tr>
                 <th>上传人</th>
                 <th>上传时间</th>
                 <th>状态</th>
-                <th>文件</th>
+                <th class="col-file">文件</th>
                 <th>诊断信息</th>
                 <th>匹配 / 报名</th>
-                <th>结构化摘要</th>
+                <th class="col-summary">结构化摘要</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="n in 6" :key="n">
+                <td v-for="c in 8" :key="c"><span class="skeleton-line"></span></td>
+              </tr>
+            </tbody>
+          </table>
+          <table v-else>
+            <thead>
+              <tr>
+                <th>上传人</th>
+                <th>上传时间</th>
+                <th>状态</th>
+                <th class="col-file">文件</th>
+                <th>诊断信息</th>
+                <th>匹配 / 报名</th>
+                <th class="col-summary">结构化摘要</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -62,9 +80,12 @@
                 </td>
                 <td>{{ formatDateTime(record.uploadTime) }}</td>
                 <td>
-                  <span class="status-pill" :class="record.parseStatus">{{ statusText(record.parseStatus) }}</span>
+                  <span class="status-pill" :class="record.parseStatus">
+                    <span class="status-pill__icon" aria-hidden="true">{{ statusIcon(record.parseStatus) }}</span>
+                    {{ statusText(record.parseStatus) }}
+                  </span>
                 </td>
-                <td>
+                <td class="col-file">
                   <strong>{{ record.fileType || '-' }}</strong>
                   <small>{{ fileSize(record.fileSize) }}</small>
                 </td>
@@ -74,15 +95,15 @@
                   <small>{{ record.geneMutation || '-' }}</small>
                 </td>
                 <td>{{ record.matchCount || 0 }} / {{ record.applicationCount || 0 }}</td>
-                <td>{{ structuredSummary(record) }}</td>
+                <td class="col-summary">{{ structuredSummary(record) }}</td>
                 <td>
-                  <a v-if="record.fileUrl" class="text-btn" :href="record.fileUrl" target="_blank" rel="noreferrer">查看文件</a>
-                  <span v-else>-</span>
+                  <a v-if="record.fileUrl" class="text-link" :href="record.fileUrl" target="_blank" rel="noreferrer">查看文件</a>
+                  <span v-else class="file-na">文件不可用</span>
                 </td>
               </tr>
             </tbody>
           </table>
-          <div v-if="records.length === 0" class="empty">暂无上传数据</div>
+          <div v-if="!loading && records.length === 0" class="empty">暂无上传数据</div>
         </div>
       </section>
 
@@ -97,9 +118,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../../services/api'
 
 type AdminRecord = Record<string, any>
+
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const forbidden = ref(false)
@@ -108,20 +133,45 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 
+const qStr = (v: unknown) => (typeof v === 'string' ? v : Array.isArray(v) ? String(v[0] ?? '') : '')
+
 const filters = reactive({
-  keyword: '',
-  userId: '',
-  status: '',
-  startDate: '',
-  endDate: ''
+  keyword: qStr(route.query.keyword),
+  userId: qStr(route.query.userId),
+  status: qStr(route.query.status),
+  startDate: qStr(route.query.startDate),
+  endDate: qStr(route.query.endDate)
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+
+const statusIcon = (status: string) => {
+  const map: Record<string, string> = {
+    pending: '○',
+    running: '◐',
+    completed: '✓',
+    error: '!'
+  }
+  return map[status] || '·'
+}
+
+// 把当前筛选 / 分页同步到地址栏 query，便于返回时还原上下文（不影响请求逻辑）。
+const syncQuery = () => {
+  const next: Record<string, string> = {}
+  if (filters.keyword) next.keyword = filters.keyword
+  if (filters.userId) next.userId = filters.userId
+  if (filters.status) next.status = filters.status
+  if (filters.startDate) next.startDate = filters.startDate
+  if (filters.endDate) next.endDate = filters.endDate
+  if (page.value > 1) next.page = String(page.value)
+  router.replace({ query: next }).catch(() => {})
+}
 
 const loadRecords = async (nextPage = 1) => {
   loading.value = true
   forbidden.value = false
   page.value = nextPage
+  syncQuery()
   try {
     const res = await api.getAdminRecords({
       page: page.value,
@@ -176,7 +226,10 @@ const structuredSummary = (record: AdminRecord) => {
   return parts.length ? parts.join(' / ') : '-'
 }
 
-onMounted(() => loadRecords())
+onMounted(() => {
+  const startPage = Number(qStr(route.query.page)) || 1
+  loadRecords(startPage > 0 ? startPage : 1)
+})
 </script>
 
 <style scoped>
@@ -205,6 +258,7 @@ onMounted(() => loadRecords())
 .toolbar label {
   display: grid;
   gap: var(--s-1);
+  flex: 1 1 150px;
   min-width: 150px;
   color: var(--text-dim);
   font-size: var(--fs-callout);
@@ -215,6 +269,7 @@ onMounted(() => loadRecords())
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   padding: var(--s-2) var(--s-3);
+  min-height: var(--size-tap);
   font-family: inherit;
   font-size: var(--fs-callout);
   color: var(--text);
@@ -237,6 +292,7 @@ onMounted(() => loadRecords())
   color: #fff;
   cursor: pointer;
   padding: 10px var(--s-4);
+  min-height: var(--size-tap);
   font-size: var(--fs-callout);
   font-weight: 600;
   transition: background 150ms ease, transform 100ms ease;
@@ -277,8 +333,14 @@ td small {
   font-size: var(--fs-caption);
 }
 
-.table-wrap {
+/* 横向滚动容器：窄屏不撑破布局，右侧渐隐提示「可横向滚动」。 */
+.table-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  background:
+    linear-gradient(to right, var(--bg) 30%, transparent),
+    linear-gradient(to left, var(--bg-soft), transparent 60%) right / 40px 100% no-repeat;
 }
 
 table {
@@ -304,15 +366,21 @@ th {
   background: var(--bg-soft);
 }
 
-td:first-child,
-td:nth-child(4),
-td:nth-child(5) {
+table:not(.skeleton-table) td:first-child,
+table:not(.skeleton-table) td:nth-child(4),
+table:not(.skeleton-table) td:nth-child(5) {
   display: grid;
   gap: var(--s-1);
 }
 
+.skeleton-table td {
+  vertical-align: middle;
+}
+
 .status-pill {
   display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: var(--r-pill);
   padding: 3px var(--s-2);
   background: var(--brand-soft);
@@ -320,6 +388,11 @@ td:nth-child(5) {
   font-size: var(--fs-caption);
   font-weight: 600;
   white-space: nowrap;
+}
+
+.status-pill__icon {
+  font-size: var(--fs-caption);
+  line-height: 1;
 }
 
 .status-pill.completed {
@@ -337,15 +410,52 @@ td:nth-child(5) {
   color: var(--amber-text);
 }
 
-.text-btn {
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-tap);
   color: var(--brand);
   font-weight: 600;
   font-size: var(--fs-callout);
   transition: color 150ms ease;
 }
 
-.text-btn:hover {
+.text-link:hover {
   color: var(--brand-hover);
+}
+
+.file-na {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-style: italic;
+}
+
+/* ── 加载骨架 ───────────────────────────────────────────── */
+.skeleton-line {
+  display: block;
+  height: 14px;
+  width: 80%;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: skeleton-shimmer 1.3s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line::after { animation: none; }
 }
 
 .pagination {
@@ -369,9 +479,34 @@ td:nth-child(5) {
   border-color: var(--red);
 }
 
+/* 窄屏隐藏低优先级列（保留在 DOM 中，仅 CSS 隐藏）。 */
+@media (max-width: 768px) {
+  .col-file,
+  .col-summary {
+    display: none;
+  }
+
+  table {
+    min-width: 720px;
+  }
+}
+
 @media (max-width: 640px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .toolbar label {
-    min-width: 100%;
+    min-width: 0;
+  }
+
+  .primary-btn {
+    width: 100%;
+  }
+
+  .pagination {
+    justify-content: space-between;
   }
 }
 </style>

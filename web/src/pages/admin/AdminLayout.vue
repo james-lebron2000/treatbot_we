@@ -1,6 +1,14 @@
 <template>
-  <section class="admin-layout">
-    <aside class="admin-sidebar">
+  <section class="admin-layout" :class="{ 'drawer-open': drawerOpen }">
+    <!-- Scrim: only interactive on mobile when the drawer is open -->
+    <div
+      class="admin-scrim"
+      :class="{ visible: drawerOpen }"
+      aria-hidden="true"
+      @click="closeDrawer"
+    ></div>
+
+    <aside id="admin-drawer" class="admin-sidebar" :class="{ open: drawerOpen }">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 28 28" width="28" height="28" fill="none">
@@ -20,6 +28,7 @@
           :to="item.to"
           class="admin-nav-item"
           :class="{ active: route.path === item.to }"
+          @click="closeDrawer"
         >
           <span class="nav-icon" aria-hidden="true" v-html="item.icon"></span>
           <span>{{ item.label }}</span>
@@ -29,7 +38,21 @@
 
     <div class="admin-content">
       <header class="admin-topbar">
-        <div>
+        <button
+          class="drawer-toggle"
+          type="button"
+          aria-label="打开导航菜单"
+          aria-controls="admin-drawer"
+          :aria-expanded="drawerOpen"
+          @click="toggleDrawer"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <div class="topbar-head">
           <p class="eyebrow">Admin Console</p>
           <h2>{{ currentTitle }}</h2>
         </div>
@@ -44,11 +67,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
+
+const drawerOpen = ref(false)
+const toggleDrawer = () => {
+  drawerOpen.value = !drawerOpen.value
+}
+const closeDrawer = () => {
+  drawerOpen.value = false
+}
+
+// Close the off-canvas drawer whenever navigation changes.
+watch(
+  () => route.path,
+  () => {
+    drawerOpen.value = false
+  }
+)
 
 const navItems = [
   {
@@ -94,21 +133,51 @@ const logout = () => {
 </script>
 
 <style scoped>
+/* Mobile-first: single column, sidebar is an off-canvas drawer. */
 .admin-layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  position: relative;
   min-height: 100vh;
   background: var(--bg-soft);
   font-family: var(--font-sans);
 }
 
+/* ── Scrim (mobile drawer backdrop) ───────────────────────── */
+.admin-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 200ms ease, visibility 200ms ease;
+}
+
+.admin-scrim.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── Sidebar / drawer ─────────────────────────────────────── */
 .admin-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: min(280px, 84vw);
+  height: 100%;
   border-right: 1px solid var(--line);
   background: var(--bg);
   padding: var(--s-6) var(--s-3);
   display: flex;
   flex-direction: column;
   gap: var(--s-6);
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 240ms ease;
+}
+
+.admin-sidebar.open {
+  transform: translateX(0);
 }
 
 .brand {
@@ -150,9 +219,10 @@ const logout = () => {
   display: flex;
   align-items: center;
   gap: var(--s-3);
+  min-height: var(--size-tap);
   border-radius: var(--r-md);
   color: var(--text-dim);
-  padding: 10px var(--s-3);
+  padding: var(--s-2) var(--s-3);
   font-size: var(--fs-callout);
   font-weight: 500;
   transition: background 150ms ease, color 150ms ease;
@@ -161,6 +231,11 @@ const logout = () => {
 .admin-nav-item:hover {
   background: var(--brand-soft);
   color: var(--brand-hover);
+}
+
+.admin-nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .admin-nav-item.active {
@@ -173,25 +248,30 @@ const logout = () => {
   display: inline-flex;
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
 }
 
+/* ── Content column ───────────────────────────────────────── */
 .admin-content {
   min-width: 0;
-  padding: var(--s-6);
+  padding: var(--s-4);
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
 }
 
+/* ── Sticky top bar ───────────────────────────────────────── */
 .admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--s-4);
+  gap: var(--s-3);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  padding: var(--s-4) var(--s-6);
+  padding: var(--s-3) var(--s-4);
   box-shadow: var(--shadow-1);
 }
 
@@ -202,8 +282,13 @@ const logout = () => {
 
 .admin-topbar h2 {
   color: var(--text);
-  font-size: var(--fs-title);
+  font-size: var(--fs-subtitle);
   line-height: var(--lh-tight);
+}
+
+.topbar-head {
+  min-width: 0;
+  flex: 1;
 }
 
 .eyebrow {
@@ -212,13 +297,39 @@ const logout = () => {
   text-transform: uppercase;
   letter-spacing: 1px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+/* Hamburger — shown on mobile/tablet, hidden on desktop. */
+.drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--size-tap);
+  height: var(--size-tap);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.drawer-toggle:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.drawer-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .top-actions {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
   color: var(--text-dim);
   font-size: var(--fs-callout);
 }
@@ -226,13 +337,15 @@ const logout = () => {
 .admin-name {
   background: var(--brand-soft);
   color: var(--brand-hover);
-  padding: 4px var(--s-3);
+  padding: var(--s-1) var(--s-3);
   border-radius: var(--r-pill);
   font-weight: 600;
   font-size: var(--fs-caption);
+  white-space: nowrap;
 }
 
 .back-link {
+  min-height: var(--size-tap);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   color: var(--text-dim);
@@ -240,6 +353,7 @@ const logout = () => {
   font-size: var(--fs-callout);
   background: var(--bg);
   cursor: pointer;
+  white-space: nowrap;
   transition: border-color 150ms ease, color 150ms ease;
 }
 
@@ -248,29 +362,51 @@ const logout = () => {
   color: var(--brand);
 }
 
-@media (max-width: 760px) {
+.back-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Desktop (≥900px): static 240px sidebar + fluid content ── */
+@media (min-width: 900px) {
   .admin-layout {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  /* Drawer mechanics are inert on desktop. */
+  .admin-scrim {
+    display: none;
   }
 
   .admin-sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    padding: var(--s-4);
-    flex-direction: column;
+    position: sticky;
+    top: 0;
+    z-index: auto;
+    width: auto;
+    height: 100vh;
+    transform: none;
+    transition: none;
   }
 
-  .admin-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s-2);
+  .drawer-toggle {
+    display: none;
   }
 
   .admin-content {
-    padding: var(--s-4);
+    padding: var(--s-6);
   }
 
   .admin-topbar {
-    padding: var(--s-3) var(--s-4);
+    padding: var(--s-4) var(--s-6);
+  }
+
+  .admin-topbar h2 {
+    font-size: var(--fs-title);
+  }
+
+  .top-actions {
+    gap: var(--s-3);
   }
 }
 </style>
