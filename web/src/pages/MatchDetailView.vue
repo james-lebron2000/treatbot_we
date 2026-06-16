@@ -1,71 +1,92 @@
 <template>
-  <section class="grid">
-    <h2>试验详情</h2>
+  <section class="detail-page grid">
+    <h2 class="detail-title">试验详情</h2>
     <div class="card" v-if="loading">加载中...</div>
     <div class="card" v-else-if="error">{{ error }}</div>
 
     <div v-else-if="trial" class="grid">
-      <div class="card">
-        <h3>{{ trial.name }}</h3>
-        <p><strong>匹配度：</strong><span :style="{ color: trial.score >= 70 ? '#16a34a' : trial.score >= 50 ? '#d97706' : '#dc2626' }">{{ trial.score }}%</span></p>
-        <p><strong>适应症：</strong>{{ trial.indication }}</p>
-        <p><strong>申办方：</strong>{{ trial.sponsor }}</p>
-        <p><strong>状态：</strong>{{ trial.statusText || trial.status }}</p>
+      <!-- 概览：试验名 + 彩色匹配度 + 关键属性 -->
+      <div class="card detail-overview">
+        <h3 class="detail-name">{{ trial.name }}</h3>
+        <span class="score-pill" :class="`score-pill--${scoreTier(trial.score)}`">{{ trial.score }}%</span>
+        <dl class="meta-list">
+          <div class="meta-row"><dt>适应症</dt><dd>{{ trial.indication }}</dd></div>
+          <div class="meta-row"><dt>申办方</dt><dd>{{ trial.sponsor }}</dd></div>
+          <div class="meta-row"><dt>状态</dt><dd>{{ trial.statusText || trial.status }}</dd></div>
+        </dl>
       </div>
 
       <div class="card" v-if="trial.reasons && trial.reasons.length">
-        <h4>匹配依据</h4>
-        <p v-for="r in trial.reasons" :key="r" style="color:#16a34a;font-size:0.9rem;">{{ r }}</p>
+        <h4 class="section-head">匹配依据</h4>
+        <ul class="criteria-list criteria-list--check">
+          <li v-for="r in trial.reasons" :key="r">{{ r }}</li>
+        </ul>
       </div>
 
       <div class="card">
-        <h4>研究介绍</h4>
-        <p>{{ trial.description }}</p>
+        <h4 class="section-head">研究介绍</h4>
+        <p class="body-text">{{ trial.description }}</p>
       </div>
 
+      <!-- 入排标准：分号串拆成清单，空时回退占位文案 -->
       <div class="card">
-        <h4>入排标准</h4>
-        <p><strong>入选：</strong>{{ (trial.inclusion || []).join('；') || '待补' }}</p>
-        <p><strong>排除：</strong>{{ (trial.exclusion || []).join('；') || '待补' }}</p>
+        <h4 class="section-head">入排标准</h4>
+        <div class="criteria-block criteria-block--include">
+          <p class="criteria-label">入选</p>
+          <ul v-if="toCriteriaList((trial.inclusion || []).join('；')).length" class="criteria-list criteria-list--check">
+            <li v-for="(c, i) in toCriteriaList((trial.inclusion || []).join('；'))" :key="`in-${i}`">{{ c }}</li>
+          </ul>
+          <p v-else class="muted criteria-empty">待补</p>
+        </div>
+        <div class="criteria-block criteria-block--exclude">
+          <p class="criteria-label">排除</p>
+          <ul v-if="toCriteriaList((trial.exclusion || []).join('；')).length" class="criteria-list criteria-list--dot">
+            <li v-for="(c, i) in toCriteriaList((trial.exclusion || []).join('；'))" :key="`ex-${i}`">{{ c }}</li>
+          </ul>
+          <p v-else class="muted criteria-empty">待补</p>
+        </div>
       </div>
 
       <div class="card" v-if="trial.hospitals && trial.hospitals.length">
-        <h4>研究中心</h4>
-        <p v-for="h in trial.hospitals" :key="h" style="font-size:0.9rem;">{{ h }}</p>
+        <h4 class="section-head">研究中心</h4>
+        <ul class="criteria-list criteria-list--dot">
+          <li v-for="h in trial.hospitals" :key="h">{{ h }}</li>
+        </ul>
       </div>
 
-      <div class="card" v-if="trial.required_documents" style="border-left:3px solid #2563eb;">
-        <h4 style="margin:0 0 8px;color:#1e40af;">报名所需资料</h4>
-        <ul v-if="docList.length" style="margin:0;padding-left:18px;font-size:0.9rem;line-height:1.8;color:#374151;">
+      <div class="card accent-card accent-card--brand" v-if="trial.required_documents">
+        <h4 class="section-head section-head--brand">报名所需资料</h4>
+        <ul v-if="docList.length" class="criteria-list criteria-list--dot">
           <li v-for="doc in docList" :key="doc">{{ doc }}</li>
         </ul>
-        <p v-else style="white-space:pre-wrap;font-size:0.9rem;color:#374151;">{{ trial.required_documents }}</p>
-        <p style="font-size:0.8rem;color:#9ca3af;margin:8px 0 0;">请向主治医生或医院病案室索取以上资料</p>
+        <p v-else class="body-text pre-wrap">{{ trial.required_documents }}</p>
+        <p class="hint-text">请向主治医生或医院病案室索取以上资料</p>
       </div>
 
-      <div class="card" v-if="trial.patient_subsidy" style="border-left:3px solid #16a34a;background:#f0fdf4;">
-        <h4 style="margin:0 0 6px;color:#166534;">患者补助</h4>
-        <p style="font-size:0.95rem;color:#166534;margin:0;">{{ trial.patient_subsidy }}</p>
+      <div class="card accent-card accent-card--mint" v-if="trial.patient_subsidy">
+        <h4 class="section-head section-head--mint">患者补助</h4>
+        <p class="subsidy-text">{{ trial.patient_subsidy }}</p>
       </div>
 
       <div class="card" v-if="trial.contact && trial.contact.phone">
-        <h4>联系方式</h4>
-        <p>{{ trial.contact.name }}：{{ trial.contact.phone }}</p>
+        <h4 class="section-head">联系方式</h4>
+        <p class="body-text">{{ trial.contact.name }}：{{ trial.contact.phone }}</p>
       </div>
 
-      <div class="card" style="text-align:center;">
-        <button v-if="!applied" @click="applyTrial" :disabled="applying" style="padding:0.8rem 2rem;font-size:1rem;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      <!-- 报名 CTA：未申请时移动端底部吸附；申请后展示回执卡 -->
+      <div v-if="!applied" class="apply-bar">
+        <button class="btn primary apply-btn" @click="applyTrial" :disabled="applying">
           {{ applying ? '提交中...' : '申请报名' }}
         </button>
-        <div v-else class="card" style="background:#f0fdf4;border-color:#86efac;text-align:left;">
-          <p style="color:#166534;font-weight:bold;margin:0 0 6px;">申请已提交</p>
-          <p style="color:#374151;font-size:0.9rem;margin:0;line-height:1.6;">
-            {{ trial.sponsor || '研究机构' }}的工作人员将在 <strong>3 个工作日内</strong>通过电话联系您，请保持手机畅通。
-          </p>
-          <p style="color:#6b7280;font-size:0.8rem;margin:8px 0 0;">
-            您可以在"申请"页面查看所有申请状态。
-          </p>
-        </div>
+      </div>
+      <div v-else class="card receipt-card">
+        <p class="receipt-title">申请已提交</p>
+        <p class="body-text">
+          {{ trial.sponsor || '研究机构' }}的工作人员将在 <strong>3 个工作日内</strong>通过电话联系您，请保持手机畅通。
+        </p>
+        <p class="hint-text receipt-hint">
+          您可以在"申请"页面查看所有申请状态。
+        </p>
       </div>
     </div>
   </section>
@@ -91,6 +112,23 @@ const docList = computed(() => {
   // 按换行、顿号、分号拆分
   return raw.split(/[;\n；、\r]+/).map((s: string) => s.trim()).filter(Boolean)
 })
+
+// 纯函数：按列表页同款分档给匹配度上色。≥75 高、50–74 中、<50 低。
+const scoreTier = (score: number): 'high' | 'mid' | 'low' => {
+  const n = Number(score) || 0
+  if (n >= 75) return 'high'
+  if (n >= 50) return 'mid'
+  return 'low'
+}
+
+// 纯函数：把分号/换行串成的入排标准拆成清单条目；空则返回空数组（模板回退原文/占位）。
+const toCriteriaList = (text: string): string[] => {
+  if (!text) return []
+  return String(text)
+    .split(/[;\n；、\r]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
 
 const loadDetail = async () => {
   loading.value = true
@@ -142,3 +180,253 @@ const applyTrial = async () => {
 
 onMounted(loadDetail)
 </script>
+
+<style scoped>
+/* 桌面下把内容收进舒适阅读列；移动端整宽。 */
+.detail-page {
+  max-width: var(--container-read);
+  margin-inline: auto;
+  /* 给移动端底部吸附 CTA 让位（含安全区），避免遮住末尾内容 */
+  padding-bottom: calc(var(--size-tap) + var(--s-6) + env(safe-area-inset-bottom, 0px));
+}
+
+.detail-title {
+  font-size: var(--fs-title);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+
+/* ---- 概览卡 ---- */
+.detail-overview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--s-2) var(--s-3);
+}
+
+.detail-name {
+  margin: 0;
+  font-size: var(--fs-subtitle);
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+.meta-list {
+  grid-column: 1 / -1;
+  margin: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+
+.meta-row {
+  display: flex;
+  gap: var(--s-2);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+}
+
+.meta-row dt {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.meta-row dt::after {
+  content: '：';
+}
+
+.meta-row dd {
+  margin: 0;
+  color: var(--text);
+}
+
+/* ---- 匹配度彩色徽标（与列表页分档一致）---- */
+.score-pill {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-callout);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.score-pill--high {
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+.score-pill--mid {
+  background: var(--brand-soft);
+  color: var(--brand-hover);
+}
+
+.score-pill--low {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+}
+
+/* ---- 区块标题 ---- */
+.section-head {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-subtitle);
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+.section-head--brand {
+  color: var(--brand-hover);
+}
+
+.section-head--mint {
+  color: var(--mint-text);
+}
+
+/* ---- 正文 / 辅助文案 ---- */
+.body-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-relaxed);
+  color: var(--text-dim);
+}
+
+.pre-wrap {
+  white-space: pre-wrap;
+}
+
+.hint-text {
+  margin: var(--s-2) 0 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+/* ---- 入排标准 / 清单 ---- */
+.criteria-block + .criteria-block {
+  margin-top: var(--s-3);
+}
+
+.criteria-label {
+  margin: 0 0 var(--s-1);
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.criteria-empty {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+.criteria-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s-1);
+}
+
+.criteria-list li {
+  position: relative;
+  padding-left: var(--s-4);
+  font-size: var(--fs-body);
+  line-height: var(--lh-relaxed);
+  color: var(--text-dim);
+}
+
+/* 入选 / 匹配依据：绿色对勾标记 */
+.criteria-list--check li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--mint);
+  font-weight: 700;
+}
+
+/* 排除 / 中性清单：圆点标记 */
+.criteria-list--dot li::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0.7em;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--text-muted);
+}
+
+/* ---- 强调卡（资料 / 补助）：左边色条 + 柔色底 ---- */
+.accent-card {
+  border-left: 3px solid var(--line);
+}
+
+.accent-card--brand {
+  border-left-color: var(--brand);
+  background: var(--bg-soft);
+}
+
+.accent-card--mint {
+  border-left-color: var(--mint);
+  background: var(--bg-mint);
+}
+
+.subsidy-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-relaxed);
+  color: var(--mint-text);
+}
+
+/* ---- 报名 CTA ---- */
+.apply-bar {
+  text-align: center;
+}
+
+.apply-btn {
+  width: 100%;
+  font-size: var(--fs-subtitle);
+  font-weight: 600;
+}
+
+/* ---- 申请回执卡 ---- */
+.receipt-card {
+  background: var(--bg-mint);
+  border-color: var(--mint);
+}
+
+.receipt-title {
+  margin: 0 0 var(--s-1);
+  font-weight: 700;
+  color: var(--mint-text);
+}
+
+.receipt-hint {
+  color: var(--text-dim);
+}
+
+/* 移动端：报名按钮吸附底部，触达 ≥44px，含刘海安全区。 */
+@media (max-width: 640px) {
+  .apply-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    padding: var(--s-2) var(--s-3);
+    padding-bottom: calc(var(--s-2) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+/* 桌面：恢复常规文档流，按钮回到内容列内、左对齐宽度自适应。 */
+@media (min-width: 641px) {
+  .apply-btn {
+    width: auto;
+    min-width: 240px;
+    padding-inline: var(--s-8);
+  }
+}
+</style>

@@ -3,30 +3,30 @@
     <h2>为您家人找到的可能性</h2>
 
     <!-- PRD-2026Q2 §3.5：当前病历切换入口（徽标）。没有 active 病历时也展示，便于引导用户。 -->
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#f9fafb;border-color:#e5e7eb;">
-      <div style="flex:1;min-width:0;">
-        <p class="muted" style="margin:0;font-size:0.75rem;">当前病历</p>
-        <p style="margin:2px 0 0;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+    <div class="card active-record">
+      <div class="active-record__body">
+        <p class="muted active-record__label">当前病历</p>
+        <p class="active-record__value">
           {{ activeRecordLabel }}
         </p>
       </div>
-      <router-link to="/records" class="btn ghost" style="padding:6px 12px;font-size:0.85rem;white-space:nowrap;">切换</router-link>
+      <router-link to="/records" class="btn ghost active-record__switch">切换</router-link>
     </div>
 
     <!-- 手动录入面板（用户没有病历时的入口）-->
-    <div v-if="manualEntryOpen" class="card" style="background:#f0f9ff;border-color:#bae6fd;">
-      <h3 style="margin:0 0 6px;color:#075985;">告诉我们基本情况就行</h3>
-      <p style="margin:0 0 12px;font-size:0.85rem;color:#0c4a6e;">
+    <div v-if="manualEntryOpen" class="card manual-entry">
+      <h3 class="manual-entry__title">告诉我们基本情况就行</h3>
+      <p class="manual-entry__hint">
         只要填写癌种，我们就能帮您找。没做基因检测也能查 —— <strong>有一批试验不需要基因结果</strong>。
       </p>
-      <div style="display:grid;gap:10px;">
-        <div>
-          <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">癌种 <span style="color:#dc2626;">*</span></label>
+      <div class="manual-entry__fields">
+        <div class="field">
+          <label class="field__label">癌种 <span class="field__required">*</span></label>
           <input v-model="manualDisease" placeholder="例如：非小细胞肺癌、胃腺癌" />
         </div>
-        <div style="display:flex;gap:8px;">
-          <div style="flex:1;">
-            <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">分期</label>
+        <div class="manual-entry__row">
+          <div class="field">
+            <label class="field__label">分期</label>
             <select v-model="manualStage">
               <option value="">不限</option>
               <option value="I期">I期</option>
@@ -35,25 +35,25 @@
               <option value="IV期">IV期</option>
             </select>
           </div>
-          <div style="flex:1;">
-            <label style="font-size:0.85rem;color:#374151;display:block;margin-bottom:4px;">城市</label>
+          <div class="field">
+            <label class="field__label">城市</label>
             <input v-model="manualCity" placeholder="例如：北京" />
           </div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px;">
-        <button class="btn primary" :disabled="!manualDisease.trim()" @click="applyManualEntry" style="flex:1;">
+      <div class="manual-entry__actions">
+        <button class="btn primary manual-entry__btn" :disabled="!manualDisease.trim()" @click="applyManualEntry">
           找找看
         </button>
-        <button class="btn ghost" @click="closeManualEntry" style="flex:1;">先不用</button>
+        <button class="btn ghost manual-entry__btn" @click="closeManualEntry">先不用</button>
       </div>
     </div>
 
     <!-- 无基因提示条 -->
-    <div v-if="showNoGeneHint" class="card" style="background:#fffbeb;border-color:#fcd34d;padding:10px 12px;">
-      <p style="margin:0;font-size:0.88rem;color:#92400e;">
+    <div v-if="showNoGeneHint" class="card no-gene-hint">
+      <p class="no-gene-hint__text">
         没做基因检测也没关系 —— 下面 <strong>{{ noGeneFriendlyCount }}</strong> 个试验不需要检测也能参加。
-        <a href="#" @click.prevent="toggleGeneAgnosticOnly" style="color:#1d4ed8;text-decoration:underline;">
+        <a href="#" @click.prevent="toggleGeneAgnosticOnly" class="no-gene-hint__link">
           {{ filterGeneAgnosticOnly ? '看看全部' : '只看这些 →' }}
         </a>
       </p>
@@ -68,7 +68,7 @@
     <p class="muted" v-if="total > 0">为您找到 {{ total }} 个可能适合的试验 · 最匹配的排在前面</p>
 
     <!-- 筛选栏 -->
-    <div v-if="filterOptions.phases.length || filterOptions.cities.length" style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <div v-if="filterOptions.phases.length || filterOptions.cities.length" class="filter-row">
       <select v-model="filterPhase" @change="resetAndLoad">
         <option value="">全部阶段</option>
         <option v-for="p in filterOptions.phases" :key="p" :value="p">{{ p }}</option>
@@ -84,71 +84,85 @@
       </select>
     </div>
 
-    <div class="card" v-if="loading" style="text-align:center;padding:30px;">
-      <div style="color:#2563eb;">正在为家人找合适的试验…</div>
+    <!-- 加载骨架：占位卡片，避免内容跳动 -->
+    <div v-if="loading" class="results-grid" aria-busy="true">
+      <div v-for="n in 4" :key="n" class="card skeleton-card" aria-hidden="true">
+        <div class="skeleton-line skeleton-line--title"></div>
+        <div class="skeleton-line skeleton-line--reason"></div>
+        <div class="skeleton-tags">
+          <span class="skeleton-pill"></span>
+          <span class="skeleton-pill"></span>
+        </div>
+        <div class="skeleton-line skeleton-line--meta"></div>
+      </div>
+      <p class="results-status">正在为家人找合适的试验…</p>
     </div>
-    <div class="card" v-else-if="error">{{ error }}</div>
-    <div v-else-if="!matches.length && !loading" class="card" style="text-align:center;padding:20px;">
-      <p style="color:#6b7280;margin:0 0 4px;">目前没找到完全贴合的试验</p>
-      <p style="font-size:0.85rem;color:#9ca3af;margin:0 0 10px;line-height:1.6;">
+    <div class="card error-card" v-else-if="error">{{ error }}</div>
+    <div v-else-if="!matches.length && !loading" class="card empty-state">
+      <div class="empty-state__icon" aria-hidden="true">🔍</div>
+      <p class="empty-state__title">目前没找到完全贴合的试验</p>
+      <p class="empty-state__hint">
         这不代表没有 —— 我们每周更新试验库，下周再来看看？<br/>
         也可以调整条件，或者让医生协助预筛。
       </p>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;">
+      <div class="empty-state__actions">
         <button class="btn primary" @click="openManualEntry">调整癌种 / 城市</button>
         <router-link to="/upload" class="btn ghost">重新上传病历</router-link>
       </div>
     </div>
 
-    <div v-for="match in matches" :key="match.id" class="card grid" style="gap:6px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <h3 style="margin:0;font-size:0.95rem;flex:1;">{{ match.name }}</h3>
-        <span :style="matchLevelStyle(match.score)" style="padding:2px 8px;border-radius:4px;font-size:0.8rem;white-space:nowrap;margin-left:8px;">
-          {{ matchLevelText(match.score) }}
-        </span>
-      </div>
-
-      <!-- U3 痛点 A：置顶一句白话「为什么适合您家人」。
-           不出现分数；用 glossary.matchReasons 字典翻译 reason key，命中前 2 条拼成句子。 -->
-      <p v-if="topReasonSentence(match)" class="why-fit">
-        <span class="why-fit-icon" aria-hidden="true">✓</span>
-        <span class="why-fit-text">
-          <span class="why-fit-label">为什么适合您家人：</span>{{ topReasonSentence(match) }}
-        </span>
-      </p>
-
-      <div style="display:flex;flex-wrap:wrap;gap:4px;">
-        <span class="badge">{{ match.phase }}</span>
-        <span class="badge">{{ match.location }}</span>
-        <span class="badge" v-if="match.statusText">{{ match.statusText }}</span>
-        <span v-if="match.geneRequired === false" class="badge" style="background:#dcfce7;color:#166534;">无需基因检测</span>
-      </div>
-
-      <!-- 详细原因（保留原 humanizeReasons 折叠展示，作为辅助信息） -->
-      <details v-if="match.reasons && match.reasons.length" class="reason-detail">
-        <summary>详细原因</summary>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 0">
-          <span v-for="(reason, idx) in humanizeReasons(match.reasons).slice(0, 6)" :key="idx"
-                style="font-size:0.75rem;padding:2px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32">
-            {{ reason }}
+    <div v-if="matches.length" class="results-grid">
+      <div v-for="match in matches" :key="match.id" class="card match-card">
+        <div class="match-card__header">
+          <h3 class="match-card__name">{{ match.name }}</h3>
+          <span class="score-pill" :class="scoreTier(match.score)">
+            <span class="score-pill__pct">{{ match.score }}%</span>
+            <span class="score-pill__label">{{ matchLevelText(match.score) }}</span>
           </span>
         </div>
-      </details>
 
-      <p style="margin:0;font-size:0.85rem;color:#6b7280;">{{ match.indication }} | {{ match.institution }}</p>
+        <!-- U3 痛点 A：置顶一句白话「为什么适合您家人」。
+             不出现分数；用 glossary.matchReasons 字典翻译 reason key，命中前 2 条拼成句子。 -->
+        <p v-if="topReasonSentence(match)" class="why-fit">
+          <span class="why-fit-icon" aria-hidden="true">✓</span>
+          <span class="why-fit-text">
+            <span class="why-fit-label">为什么适合您家人：</span>{{ topReasonSentence(match) }}
+          </span>
+        </p>
 
-      <div style="display:flex;gap:8px;">
-        <button class="btn ghost" @click="goDetail(match.id)" style="flex:1;">查看详情</button>
-        <button class="btn primary" @click="apply(match)" style="flex:1;" :disabled="match.applied">
-          {{ match.applied ? '已申请' : '想让研究团队联系我' }}
-        </button>
+        <div class="match-card__tags">
+          <span class="badge">{{ match.phase }}</span>
+          <span class="badge">{{ match.location }}</span>
+          <span class="badge" v-if="match.statusText">{{ match.statusText }}</span>
+          <span v-if="match.geneRequired === false" class="badge badge--gene">无需基因检测</span>
+        </div>
+
+        <!-- 详细原因（保留原 humanizeReasons 折叠展示，作为辅助信息） -->
+        <details v-if="match.reasons && match.reasons.length" class="reason-detail">
+          <summary>详细原因</summary>
+          <div class="reason-detail__list">
+            <span v-for="(reason, idx) in humanizeReasons(match.reasons).slice(0, 6)" :key="idx"
+                  class="reason-detail__chip">
+              {{ reason }}
+            </span>
+          </div>
+        </details>
+
+        <p class="match-card__meta">{{ match.indication }} | {{ match.institution }}</p>
+
+        <div class="match-card__actions">
+          <button class="btn ghost match-card__btn" @click="goDetail(match.id)">查看详情</button>
+          <button class="btn primary match-card__btn" @click="apply(match)" :disabled="match.applied">
+            {{ match.applied ? '已申请' : '想让研究团队联系我' }}
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- 分页 -->
-    <div v-if="total > pageSize" style="display:flex;justify-content:center;gap:8px;margin-top:1rem">
+    <div v-if="total > pageSize" class="pager">
       <button class="btn ghost" :disabled="currentPage <= 1" @click="goPage(currentPage - 1)">上一页</button>
-      <span class="muted" style="line-height:2.2">{{ currentPage }} / {{ totalPages }}</span>
+      <span class="muted pager__status">{{ currentPage }} / {{ totalPages }}</span>
       <button class="btn ghost" :disabled="currentPage >= totalPages" @click="goPage(currentPage + 1)">下一页</button>
     </div>
 
@@ -265,6 +279,14 @@ const matchLevelStyle = (score: number) => {
   if (score >= 65) return { background: '#fef3c7', color: '#92400e' }
   if (score >= 50) return { background: '#e0e7ff', color: '#3730a3' }
   return { background: '#f3f4f6', color: '#6b7280' }
+}
+
+// 纯函数：把匹配分数映射到分数胶囊的配色档（仅返回 class，配色走 scoped 设计 token）。
+// ≥75 高分=薄荷绿，50–74 中段=品牌蓝，<50 低段=琥珀色。
+const scoreTier = (score: number): string => {
+  if (score >= 75) return 'score-pill--high'
+  if (score >= 50) return 'score-pill--mid'
+  return 'score-pill--low'
 }
 
 // 将工程术语转为患者能理解的话
@@ -463,20 +485,125 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ── 当前病历徽标 ───────────────────────────────────────── */
+.active-record {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-soft);
+}
+
+.active-record__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.active-record__label {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.active-record__value {
+  margin: 2px 0 0;
+  font-size: var(--fs-callout);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-record__switch {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── 手动录入面板 ───────────────────────────────────────── */
+.manual-entry {
+  background: var(--brand-soft);
+  border-color: var(--brand-soft);
+}
+
+.manual-entry__title {
+  margin: 0 0 var(--s-1);
+  color: var(--brand-hover);
+  font-size: var(--fs-subtitle);
+}
+
+.manual-entry__hint {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
+}
+
+.manual-entry__fields {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.manual-entry__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+
+.field__label {
+  display: block;
+  margin-bottom: var(--s-1);
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+}
+
+.field__required {
+  color: var(--red);
+}
+
+.manual-entry__actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.manual-entry__btn {
+  flex: 1;
+}
+
+/* ── 无基因提示条 ───────────────────────────────────────── */
+.no-gene-hint {
+  background: var(--amber-soft);
+  border-color: var(--amber-soft);
+  padding: var(--s-2) var(--s-3);
+}
+
+.no-gene-hint__text {
+  margin: 0;
+  font-size: var(--fs-callout);
+  color: var(--amber-text);
+  line-height: var(--lh-normal);
+}
+
+.no-gene-hint__link {
+  color: var(--brand-hover);
+  text-decoration: underline;
+}
+
+/* ── 诊断信息折叠 ───────────────────────────────────────── */
 .record-summary-toggle {
-  margin-bottom: 4px;
+  margin-bottom: var(--s-1);
 }
 
 .summary-trigger {
   cursor: pointer;
-  font-size: 0.9rem;
-  color: #2563eb;
+  font-size: var(--fs-body);
+  color: var(--brand);
   font-weight: 500;
-  padding: 6px 0;
+  padding: var(--s-2) 0;
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s-1);
+  min-height: var(--size-tap);
 }
 
 .summary-trigger::-webkit-details-marker {
@@ -493,25 +620,162 @@ details[open] > .summary-trigger::before {
 }
 
 .toggle-hint {
-  font-size: 0.78rem;
-  color: #9ca3af;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
   font-weight: 400;
 }
 
+/* ── 筛选栏 ─────────────────────────────────────────────
+   窄屏 2 列网格（避免下拉框被挤窄/溢出），≥768 转为按内容横向铺排可换行。 */
+.filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+
+.filter-row > select {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .filter-row > select {
+    flex: 1 1 160px;
+    width: auto;
+  }
+}
+
+/* ── 结果网格 ───────────────────────────────────────────
+   GOAL 2：移动单列，≥768 多列自适应铺满宽屏；卡片等高、可读。 */
+.results-grid {
+  display: grid;
+  gap: var(--s-3);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .results-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+}
+
+.results-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  text-align: center;
+  color: var(--brand);
+  font-size: var(--fs-callout);
+}
+
+/* ── 试验卡片 ───────────────────────────────────────────
+   flex 纵向布局，操作按钮锚定底部 (margin-top:auto) 保证网格内等高。 */
+.match-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-bottom: 0;
+}
+
+.match-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.match-card__name {
+  margin: 0;
+  font-size: var(--fs-subtitle);
+  line-height: var(--lh-tight);
+  flex: 1;
+}
+
+/* ── 分数胶囊（GOAL 4）：分档配色，展示百分比 + 文案标签 ── */
+.score-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.score-pill__pct {
+  font-size: var(--fs-callout);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.score-pill__label {
+  font-size: var(--fs-caption);
+  line-height: 1.1;
+  opacity: 0.85;
+}
+
+.score-pill--high {
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+.score-pill--mid {
+  background: var(--brand-soft);
+  color: var(--brand-hover);
+}
+
+.score-pill--low {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+}
+
+/* ── 标签行 ─────────────────────────────────────────────── */
+.match-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+
+.badge--gene {
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+.match-card__meta {
+  margin: 0;
+  font-size: var(--fs-callout);
+  color: var(--text-dim);
+}
+
+.match-card__actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: auto;
+  padding-top: var(--s-1);
+}
+
+.match-card__btn {
+  flex: 1;
+}
+
 /* PRD-2026Q3 §U3 痛点 A：每张卡片置顶的「为什么适合您家人」白话句。
-   字号比试验名小一档（试验名 0.95rem → 这里 0.85rem），暖色系（成功色） + ✓ 图标。 */
+   GOAL 5：薄荷绿底 + 左色条 + ✓ 图标，作为卡片内最显眼的信息块。 */
 .why-fit {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  margin: 2px 0 0;
-  padding: 6px 10px;
-  background: #f0fdf4;
-  border-left: 3px solid #16a34a;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: #166534;
+  gap: var(--s-1);
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-mint);
+  border-left: 3px solid var(--mint);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-callout);
+  line-height: var(--lh-normal);
+  color: var(--mint-text);
 }
 
 .why-fit-icon {
@@ -519,9 +783,9 @@ details[open] > .summary-trigger::before {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #16a34a;
+  background: var(--mint);
   color: #fff;
-  font-size: 0.72rem;
+  font-size: var(--fs-caption);
   line-height: 18px;
   text-align: center;
   font-weight: 700;
@@ -534,19 +798,20 @@ details[open] > .summary-trigger::before {
 
 .why-fit-label {
   font-weight: 600;
-  color: #15803d;
+  color: var(--mint-text);
 }
 
+/* ── 详细原因折叠 ───────────────────────────────────────── */
 .reason-detail {
   margin: 0;
 }
 
 .reason-detail > summary {
   cursor: pointer;
-  font-size: 0.78rem;
-  color: #6b7280;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
   list-style: none;
-  padding: 2px 0;
+  padding: var(--s-1) 0;
 }
 
 .reason-detail > summary::-webkit-details-marker {
@@ -561,5 +826,115 @@ details[open] > .summary-trigger::before {
 
 .reason-detail[open] > summary::before {
   content: '▾ ';
+}
+
+.reason-detail__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  margin: var(--s-1) 0 0;
+}
+
+.reason-detail__chip {
+  font-size: var(--fs-caption);
+  padding: 2px var(--s-1);
+  border-radius: var(--r-sm);
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+/* ── 错误 / 空态 ───────────────────────────────────────── */
+.error-card {
+  color: var(--red-text);
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--s-6) var(--s-4);
+}
+
+.empty-state__icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-bottom: var(--s-2);
+}
+
+.empty-state__title {
+  color: var(--text-dim);
+  margin: 0 0 var(--s-1);
+  font-size: var(--fs-body);
+}
+
+.empty-state__hint {
+  font-size: var(--fs-callout);
+  color: var(--text-muted);
+  margin: 0 0 var(--s-3);
+  line-height: var(--lh-relaxed);
+}
+
+.empty-state__actions {
+  display: flex;
+  gap: var(--s-2);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: var(--s-2);
+}
+
+/* ── 加载骨架 ───────────────────────────────────────────── */
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-bottom: 0;
+}
+
+.skeleton-line,
+.skeleton-pill {
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-line--title { height: 18px; width: 70%; }
+.skeleton-line--reason { height: 32px; width: 100%; border-radius: var(--r-sm); }
+.skeleton-line--meta { height: 12px; width: 50%; }
+
+.skeleton-tags {
+  display: flex;
+  gap: var(--s-1);
+}
+
+.skeleton-pill {
+  height: 18px;
+  width: 64px;
+  border-radius: var(--r-pill);
+}
+
+.skeleton-line::after,
+.skeleton-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: skeleton-shimmer 1.3s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* ── 分页 ───────────────────────────────────────────────── */
+.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+
+.pager__status {
+  line-height: 2.2;
 }
 </style>
