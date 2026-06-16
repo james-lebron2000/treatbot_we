@@ -19,6 +19,9 @@ body {
   color: var(--text);
   line-height: var(--lh-relaxed);
   -webkit-font-smoothing: antialiased;
+  /* iOS：禁止字体被系统自动放大导致布局错位，缩放仍由用户手势控制 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 a {
@@ -28,13 +31,23 @@ a {
 
 .app-shell {
   min-height: 100vh;
-  max-width: 960px;
+  max-width: var(--container-app);
   margin: 0 auto;
   padding: var(--s-3);
   padding-bottom: calc(var(--s-3) + 76px + env(safe-area-inset-bottom, 0px));
+  /* 横屏 / 刘海屏安全区，避免内容贴边或被遮挡 */
+  padding-left: max(var(--s-3), env(safe-area-inset-left));
+  padding-right: max(var(--s-3), env(safe-area-inset-right));
 }
 
-.app-shell-admin {
+/* 宽容器变体：CRO / 运营等桌面密集型控制台。
+   compound 选择器（.app-shell.app-shell--console）特异性高于 .app-shell，
+   保证桌面断点下不会被 .app-shell 的 max-width 覆盖。 */
+.app-shell.app-shell--console {
+  max-width: var(--container-console);
+}
+
+.app-shell.app-shell-admin {
   max-width: none;
   padding: 0;
 }
@@ -71,6 +84,7 @@ a {
   background: var(--bg);
   border-radius: var(--r-lg);
   padding: var(--s-4);
+  /* 固定底部 tab-bar 让位 + 底部安全区 */
   padding-bottom: calc(var(--s-12) + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-1);
 }
@@ -101,16 +115,31 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   flex: 1;
+  /* a11y：底部导航整块均可点，最小 44px 触达高度 */
+  min-height: var(--size-tap);
+  padding: var(--s-1) 0;
   text-decoration: none;
   color: var(--text-muted);
   font-size: var(--fs-caption);
-  transition: color 150ms ease;
+  transition: color 150ms ease, transform 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .tab-item.active {
   color: var(--brand);
+}
+
+.tab-item:active {
+  transform: translateY(1px);
+}
+
+.tab-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--r-sm);
 }
 
 .tab-icon {
@@ -130,6 +159,11 @@ a {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* a11y：所有按钮最小 44px 触达高度 */
+  min-height: var(--size-tap);
   border: none;
   border-radius: var(--r-pill);
   padding: var(--s-2) var(--s-4);
@@ -168,6 +202,16 @@ a {
   gap: var(--s-2);
 }
 
+/* 布局原语 —— 替代散落的内联 flex/grid，可在 scoped 样式里复用。
+   .responsive-grid 自动按可用宽度铺满：窄屏单列，宽屏多列，无需手写断点。 */
+.stack { display: flex; flex-direction: column; gap: var(--s-3); }
+.cluster { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.responsive-grid {
+  display: grid;
+  gap: var(--s-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
 input,
 select,
 textarea {
@@ -178,6 +222,13 @@ textarea {
   font: inherit;
   background: var(--bg);
   color: var(--text);
+}
+
+/* a11y：文本类控件最小 44px 触达高度（勾选框 / 单选框保持原生尺寸） */
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  min-height: var(--size-tap);
 }
 
 input:focus-visible,
@@ -210,19 +261,47 @@ textarea:focus-visible {
   color: var(--brand-hover);
 }
 
+/* ---- 响应式断点 ----
+   基线移动优先（≤640 用基础 padding）；≥768 平板、≥1024 桌面逐级放宽。 */
+@media (min-width: 768px) {
+  .app-shell {
+    padding: var(--s-4);
+  }
+}
+
 @media (min-width: 1024px) {
   .app-shell {
-    max-width: 1120px;
+    max-width: var(--container-wide);
+    padding: var(--s-6);
+  }
+  /* console 变体在宽屏继续用更宽容器 */
+  .app-shell.app-shell--console {
+    max-width: var(--container-console);
   }
 }
 
 @media (max-width: 640px) {
-  .app-shell {
-    padding: 10px;
-  }
-
   .app-main {
     padding: var(--s-3);
     padding-bottom: calc(var(--s-12) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 380px) {
+  .app-shell {
+    padding-left: max(var(--s-2), env(safe-area-inset-left));
+    padding-right: max(var(--s-2), env(safe-area-inset-right));
+  }
+}
+
+/* a11y：尊重「减少动态效果」系统偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
