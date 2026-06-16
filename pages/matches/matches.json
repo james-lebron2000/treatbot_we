@@ -2,7 +2,8 @@
   "usingComponents": {
     "help-fab": "/components/help-fab/help-fab",
     "icon": "/components/icon/icon",
-    "parse-progress-banner": "/components/parse-progress-banner/parse-progress-banner"
+    "parse-progress-banner": "/components/parse-progress-banner/parse-progress-banner",
+    "medical-disclaimer": "/components/medical-disclaimer/medical-disclaimer"
   },
   "enablePullDownRefresh": true,
   "navigationBarTitleText": "试验匹配"

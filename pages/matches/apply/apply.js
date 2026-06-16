@@ -2,6 +2,8 @@ const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
 // Q3-红线 §B.2：报名提交成功 = 漏斗 application_submitted
 const { track } = require('../../../utils/track')
+// P0：报名前知情同意文案与 scope/policyVersion（单一来源）
+const safety = require('../../../shared/copy/safety.js')
 
 const PHONE_REG = /^1\d{10}$/
 
@@ -16,7 +18,14 @@ Page({
       disease: '',
       phone: ''
     },
-    submitting: false
+    submitting: false,
+    // P0 知情同意
+    consent: safety.consent,
+    consentChecked: false
+  },
+
+  toggleConsent() {
+    this.setData({ consentChecked: !this.data.consentChecked })
   },
 
   onLoad(options) {
@@ -77,6 +86,12 @@ Page({
       return
     }
 
+    // P0：未勾选知情同意不允许提交
+    if (!this.data.consentChecked) {
+      wx.showToast({ title: this.data.consent.requireToast, icon: 'none' })
+      return
+    }
+
     const validationMessage = this.validateForm()
     if (validationMessage) {
       wx.showToast({
@@ -91,6 +106,13 @@ Page({
 
     try {
       await auth.ensureLogin()
+
+      // P0：报名前记录 share_with_cro 知情同意（审计轨迹）。
+      // 勾选框是强制闸；此处补一条服务端 UserConsent 记录，失败不阻断报名。
+      try {
+        await api.recordConsent(this.data.consent.scope, this.data.consent.policyVersion)
+      } catch (e) { /* 网络失败不阻断；同意已前端强制勾选 */ }
+
       const recordId = wx.getStorageSync('currentRecordId') || ''
       const disease = `${this.data.form.disease || ''}`.trim()
       const name = `${this.data.form.name || ''}`.trim()

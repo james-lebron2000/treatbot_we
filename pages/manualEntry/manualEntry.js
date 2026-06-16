@@ -132,7 +132,8 @@ Page({
         }
       }
 
-      wx.switchTab({ url: '/pages/matches/matches' })
+      // P2：录入完成先落「治疗方案」(标准治疗 A 轨)
+      wx.switchTab({ url: '/pages/guideline/guideline' })
     } catch (error) {
       wx.showToast({ title: copy.error.unknown, icon: 'none' })
     } finally {

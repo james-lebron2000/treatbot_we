@@ -1,0 +1,4 @@
+<view class="medical-disclaimer tone-{{tone}}">
+  <text class="medical-disclaimer-mark">ⓘ</text>
+  <text class="medical-disclaimer-text">{{text || fallback}}</text>
+</view>

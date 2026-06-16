@@ -1,12 +1,36 @@
 <view class="container">
+  <!-- P0 急症红旗：命中时置顶急诊提示，盖过试验列表（找研究不是当务之急）。 -->
+  <view class="emergency-banner" wx:if="{{safety && safety.redFlag}}">
+    <view class="emergency-head">
+      <icon name="alert-circle" color="red" size="40" strokeWidth="2.5" />
+      <text class="emergency-title">{{emergencyCopy.title}}</text>
+    </view>
+    <text class="emergency-cats">病历中注意到：{{safety.categoryLabels}}</text>
+    <text class="emergency-body">{{emergencyCopy.body}}</text>
+    <button class="btn btn-danger emergency-cta" bindtap="callEmergency">
+      <icon name="phone-call" color="white" size="32" />
+      <text>{{emergencyCopy.cta}}</text>
+    </button>
+  </view>
+
   <view class="page-header">
     <view class="page-title-group">
-      <text class="page-title">为家人找到的新药</text>
-      <text class="page-subtitle">围绕您上传的病历，为家人找出可能能免费用上的新药 —— 每一种都说清楚为什么适合。</text>
+      <text class="page-title">为家人找到的新药研究</text>
+      <text class="page-subtitle">围绕您上传的病历，为家人找出可能可以报名的新药临床研究 —— 每一种都说清楚为什么符合报名条件。是否适合参加，请由医生判断。</text>
     </view>
     <view class="filter-btn" bindtap="loadMatches">
       <text>刷新</text>
     </view>
+  </view>
+
+  <!-- A 轨入口：引导先看标准治疗，建立判断基准 -->
+  <view class="guideline-entry" bindtap="goToGuideline">
+    <icon name="lightbulb" color="brand" size="36" />
+    <view class="guideline-entry-body">
+      <text class="guideline-entry-title">先看标准治疗，心里有把尺子</text>
+      <text class="guideline-entry-desc">了解指南推荐的规范方案，再判断这些新药研究适不适合</text>
+    </view>
+    <icon name="chevron-right" color="text-muted" size="32" />
   </view>
 
   <!-- PRD-2026Q2 §P1-5：每个 stat 加 8 字内说明。
@@ -30,8 +54,14 @@
     </view>
   </view>
 
+  <!-- P0：入组符合度 ≠ 疗效。先把最危险的误读堵在结果列表之前。 -->
+  <view class="eligibility-clarifier">
+    <icon name="alert-circle" color="amber" size="28" />
+    <text class="eligibility-clarifier-text">{{eligibilityClarifier}}</text>
+  </view>
+
   <view class="score-rule-tip">
-    <text>我们先展示最匹配的几种新药 · 数量少会自动放宽标准让您多几个选择。</text>
+    <text>我们先展示最符合报名条件的几种 · 数量少会自动放宽标准让您多几个选择。</text>
   </view>
 
   <view class="score-fallback-tip" wx:if="{{lowScoreMode}}">
@@ -95,14 +125,14 @@
           </view>
           <view class="match-score-badge">
             <text class="score">{{item.score}}%</text>
-            <text class="label">匹配度</text>
+            <text class="label">{{scoreLabel}}</text>
           </view>
         </view>
       </view>
 
       <view class="match-card-summary">
         <view class="match-tags">
-          <text class="tag tag-free" wx:if="{{item.freeAccess}}">免费用药</text>
+          <text class="tag tag-free" wx:if="{{item.freeAccess}}">{{researchTagFree}}</text>
           <text class="tag tag-level level-{{item.score >= 80 ? 'high' : (item.score >= 60 ? 'mid' : 'low')}}">{{item.matchLevel}}</text>
           <text class="tag tag-primary">{{item.phase}}</text>
         </view>
@@ -150,11 +180,17 @@
           </view>
         </view>
 
+        <!-- P0：明示研究性质，纠正「这是已获批常规用药」的误读。 -->
+        <view class="research-note">
+          <icon name="alert-circle" color="text-dim" size="26" />
+          <text class="research-note-text">{{natureNote}}</text>
+        </view>
+
         <view class="match-actions">
-          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看用药详情</button>
+          <button class="btn btn-default" catchtap="viewDetail" data-id="{{item.id}}">看研究详情</button>
           <button class="btn btn-primary apply-btn" catchtap="applyTrial" data-id="{{item.id}}">
             <icon name="phone-call" color="white" size="32" />
-            <text class="apply-btn-text">申请免费用药</text>
+            <text class="apply-btn-text">{{applyCta}}</text>
           </button>
         </view>
       </view>
@@ -220,5 +256,6 @@
       </view>
     </view>
   </view>
+  <medical-disclaimer wx:if="{{!loading}}" />
   <help-fab />
 </view>

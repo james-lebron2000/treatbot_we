@@ -10,6 +10,16 @@
     </view>
   </view>
 
+  <!-- A 轨入口：看懂这个病 + 标准治疗 -->
+  <view class="guideline-entry" bindtap="goToGuideline">
+    <icon name="lightbulb" color="brand" size="36" />
+    <view class="guideline-entry-body">
+      <text class="guideline-entry-title">看懂这个病 · 标准治疗</text>
+      <text class="guideline-entry-desc">对照指南，先了解规范治疗大概是什么</text>
+    </view>
+    <icon name="chevron-right" color="text-muted" size="32" />
+  </view>
+
   <view class="loading" wx:if="{{loading}}">
     <text>马上好…</text>
   </view>

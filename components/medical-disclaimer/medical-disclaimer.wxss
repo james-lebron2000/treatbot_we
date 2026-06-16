@@ -1,0 +1,29 @@
+/* P0 医疗免责：克制、不抢视线，但始终在场。尺寸用 rpx（1px=2rpx）。 */
+.medical-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin: 24rpx 0;
+}
+
+.medical-disclaimer-mark {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.medical-disclaimer-text {
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* tone=card：需要强调时（如试验详情页）给一个浅边框卡片 */
+.medical-disclaimer.tone-card {
+  padding: 24rpx 28rpx;
+  background: var(--bg-soft);
+  border: 2rpx solid var(--line);
+  border-radius: 20rpx;
+  margin: 32rpx 0;
+}

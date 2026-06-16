@@ -130,16 +130,16 @@
           </view>
           <view class="match-score-badge level-{{item.matchTone}}">
             <text class="score">{{item.score}}%</text>
-            <text class="label">匹配度</text>
+            <text class="label">入组符合度</text>
           </view>
         </view>
         <view class="match-tags">
-          <text class="tag tag-free" wx:if="{{item.freeAccess}}">免费用药</text>
+          <text class="tag tag-free" wx:if="{{item.freeAccess}}">研究用药·免费</text>
           <text class="tag tag-level level-{{item.matchTone}}">{{item.matchLevel}}</text>
           <text class="tag tag-primary" wx:if="{{item.phase}}">{{item.phase}}</text>
           <text class="tag tag-warning" wx:if="{{item.status}}">{{item.status}}</text>
         </view>
-        <text class="match-reason" wx:if="{{item.humanReason}}">为什么适合：{{item.humanReason}}</text>
+        <text class="match-reason" wx:if="{{item.humanReason}}">为什么符合：{{item.humanReason}}</text>
         <text class="match-meta" wx:if="{{item.indication}}">主治：{{item.indication}}</text>
         <text class="match-meta" wx:if="{{item.manufacturer || item.institution}}">提供：{{item.manufacturer}}<text wx:if="{{item.manufacturer && item.institution}}"> ｜ </text>{{item.institution}}</text>
       </view>
@@ -154,6 +154,8 @@
       <text class="matches-cta-text">看完整新药详情 →</text>
     </view>
   </view>
+
+  <medical-disclaimer wx:if="{{record}}" />
 
   <!-- 底部操作 -->
   <view wx:if="{{record}}" class="footer-actions">

@@ -125,6 +125,11 @@ Page({
     wx.navigateTo({ url: '/pages/upload/upload' })
   },
 
+  // A 轨入口：看标准治疗（指南）。guideline 已是 tab，用 switchTab。
+  goToGuideline() {
+    wx.switchTab({ url: '/pages/guideline/guideline' })
+  },
+
   viewRecord(e) {
     const { id } = e.currentTarget.dataset
     if (!id) {
