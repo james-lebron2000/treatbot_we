@@ -11,7 +11,18 @@
  *  - 纯函数，default 注入 guidelines.json，便于单测（server/tests/guidelineMatcher.test.js）。
  */
 
-const guidelines = require('../data/guidelines.json');
+// 容错加载：guidelines.json 缺失不应崩整个 API 启动。
+// 背景：部署时若 GHCR 镜像拉取超时会回退到"源码本地 build"，该路径下镜像可能不含此数据文件
+// （2026-06 一次 7-PR 连环合并触发的部署事故根因）。与 matchEngine 懒加载数据同philosophy：
+// 缺失则指南功能降级为"暂无可用指南"，但 API 正常启动、匹配/认证等其余功能不受影响。
+let guidelines;
+try {
+  guidelines = require('../data/guidelines.json');
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.warn('[guidelineMatcher] guidelines.json 加载失败，指南功能降级为空数据集:', err && err.message);
+  guidelines = { _meta: {}, cancers: [] };
+}
 
 // 已知可作为「驱动基因/标志物」用于一线选药的基因（大写）。
 const KNOWN_DRIVERS = ['EGFR', 'ALK', 'ROS1', 'KRAS', 'HER2', 'MET', 'RET', 'BRAF', 'NTRK'];
