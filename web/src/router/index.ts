@@ -13,6 +13,7 @@ const AdminLoginView = () => import('../pages/admin/AdminLoginView.vue')
 const AdminLayout = () => import('../pages/admin/AdminLayout.vue')
 const AdminDashboardView = () => import('../pages/admin/DashboardView.vue')
 const AdminUsersView = () => import('../pages/admin/UsersView.vue')
+const AdminCasesView = () => import('../pages/admin/CasesView.vue')
 const AdminRecordsView = () => import('../pages/admin/RecordsView.vue')
 const AdminOperationsView = () => import('../pages/admin/OperationsView.vue')
 const CroBoardView = () => import('../pages/CroBoardView.vue')
@@ -48,6 +49,7 @@ const router = createRouter({
         { path: '', redirect: '/admin/dashboard' },
         { path: 'dashboard', component: AdminDashboardView },
         { path: 'users', component: AdminUsersView },
+        { path: 'cases', component: AdminCasesView },
         { path: 'records', component: AdminRecordsView },
         { path: 'operations', component: AdminOperationsView }
       ]

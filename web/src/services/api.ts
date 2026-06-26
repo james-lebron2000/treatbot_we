@@ -549,6 +549,57 @@ export const api = {
     return unwrap<any>(data)
   },
 
+  // ===== 患者/病例索引（运营）=====
+  // 多病人：全平台病例索引（跨账号）。返回 { data:[...], pagination:{...} }。
+  // 与 getAdminUsers 一样吃 buildQueryString，空值自动剔除。
+  async getAdminCases(params: Record<string, unknown> = {}) {
+    const query = buildQueryString({ page: 1, pageSize: 20, ...params })
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/cases?${query}`)
+    return unwrap<any>(data)
+  },
+
+  // ===== 计费（CPA 结算）=====
+  // month=YYYY-MM；format=json → { data:{ month, rows[], total_amount, total_count } }。
+  async getAdminBillingSummary(month: string) {
+    const query = buildQueryString({ month, format: 'json' })
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/billing/summary?${query}`)
+    return unwrap<any>(data)
+  },
+  // format=csv → 直接拿 Blob，交给调用方触发下载（带 token 走 http 拦截器）。
+  async exportAdminBillingSummary(month: string): Promise<{ blob: Blob; filename: string }> {
+    const query = buildQueryString({ month, format: 'csv' })
+    const res = await http.get(`/api/admin/billing/summary?${query}`, { responseType: 'blob' })
+    const disposition = (res.headers['content-disposition'] as string) || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    const filename = match ? match[1] : `billing_${month}.csv`
+    return { blob: res.data as Blob, filename }
+  },
+
+  // ===== 试验字段复核（OCR 抽取队列）=====
+  async getAdminTrialFieldReview(params: Record<string, unknown> = {}) {
+    const query = buildQueryString(params)
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/trials/field-review${query ? `?${query}` : ''}`)
+    return unwrap<any>(data)
+  },
+  async resolveAdminTrialFieldReview(id: string, payload: Record<string, unknown> = {}) {
+    const { data } = await http.post<ApiResponse<any>>(
+      `/api/admin/trials/field-review/${encodeURIComponent(id)}/resolve`,
+      payload
+    )
+    return unwrap<any>(data)
+  },
+
+  // ===== OCR 失败重试 =====
+  async getAdminOcrFailures(params: Record<string, unknown> = {}) {
+    const query = buildQueryString(params)
+    const { data } = await http.get<ApiResponse<any>>(`/api/admin/ocr-failures${query ? `?${query}` : ''}`)
+    return unwrap<any>(data)
+  },
+  async retryAdminOcrFailure(id: string) {
+    const { data } = await http.post<ApiResponse<any>>(`/api/admin/ocr-failures/${encodeURIComponent(id)}/retry`, {})
+    return unwrap<any>(data)
+  },
+
   // ===== Demo（公开免登录）=====
   // 用裸 axios 而不是 http：避免请求拦截器附带 Authorization header（带过期 token 会触发
   // 401 → forceRedirectToLogin 副作用，把演示用户踢去登录页；同时少了 Authorization
