@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const {
   User,
   MedicalRecord,
+  MedicalCase,
   TrialApplication,
   Trial,
   CroCompany,
@@ -1737,6 +1738,66 @@ const resolveTrialFieldReview = async (req, res, next) => {
   }
 };
 
+// 患者/病例管理（多病人）：跨用户列出全部病例（一病例=一病人），关联 owner 用户便于运营识别。
+const getCaseList = async (req, res, next) => {
+  try {
+    const page = toPositiveInt(req.query.page, 1);
+    const pageSize = Math.min(toPositiveInt(req.query.pageSize, 20), 100);
+    const offset = (page - 1) * pageSize;
+    const { keyword } = req.query;
+
+    const where = {};
+    if (keyword) {
+      where[Op.or] = [
+        { id: { [Op.like]: `%${escapeLike(keyword)}%` } },
+        { patient_label: { [Op.like]: `%${escapeLike(keyword)}%` } },
+        { user_id: { [Op.like]: `%${escapeLike(keyword)}%` } }
+      ];
+    }
+
+    const { count, rows } = await MedicalCase.findAndCountAll({
+      where,
+      order: [['updated_at', 'DESC']],
+      limit: pageSize,
+      offset
+    });
+
+    const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+    const users = userIds.length
+      ? await User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'phone', 'nickname'] })
+      : [];
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const list = rows.map((c) => {
+      const u = userById.get(c.user_id);
+      const comp = c.completeness || {};
+      const ent = c.entities || {};
+      return {
+        caseId: c.id,
+        patientLabel: c.patient_label || null,
+        ownerUserId: c.user_id,
+        ownerPhone: u ? u.phone : null,
+        ownerNickname: u ? u.nickname : null,
+        status: c.status,
+        diagnosis: ent.diagnosis || null,
+        recordCount: Array.isArray(c.source_record_ids) ? c.source_record_ids.length : 0,
+        completenessPercent: typeof comp.percent === 'number' ? comp.percent : null,
+        updatedAt: c.updated_at,
+        createdAt: c.created_at
+      };
+    });
+
+    res.json({
+      code: 0,
+      message: 'success',
+      data: list,
+      pagination: { page, pageSize, total: count, hasMore: offset + rows.length < count }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   adminLogin,
   getAdminSession,
@@ -1744,6 +1805,7 @@ module.exports = {
   getUserList,
   revealField,
   getRecordList,
+  getCaseList,
   getUserMatches,
   getApplicationList,
   updateApplicationStatus,

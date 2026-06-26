@@ -133,6 +133,8 @@ router.get('/admin/session', authMiddleware, requireAdminToken, logAdmin('view_a
 router.get('/admin/dashboard', authMiddleware, requireAdminToken, logAdmin('view_dashboard'), adminController.getDashboardStats);
 router.get('/admin/users', authMiddleware, requireAdminToken, logAdmin('view_users'), adminController.getUserList);
 router.get('/admin/records', authMiddleware, requireAdminToken, logAdmin('view_records'), adminController.getRecordList);
+// 患者/病例管理（多病人）：跨用户病例列表
+router.get('/admin/cases', authMiddleware, requireAdminToken, logAdmin('view_cases'), adminController.getCaseList);
 router.get('/admin/applications', authMiddleware, requireAdminToken, logAdmin('view_applications'), adminController.getApplicationList);
 // PRD-2026Q4 T0-7 followup（路由审计）：显式 pin 角色，避免一旦废弃 user-allowlist
 // fallback 后 ops 失去访问。三个角色都允许。
